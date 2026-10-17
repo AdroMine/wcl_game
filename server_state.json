@@ -1,0 +1,167 @@
+{
+  "config": {
+    "theme": {
+      "title": "A Journey into the Underworld",
+      "subtitle": "Underworld Engine • Mobile Pub Game Platform",
+      "primaryBg": "#08090c",
+      "ivory": "#f4f0e8",
+      "gold": "#c4a45a"
+    },
+    "team_size": 2,
+    "admin_passcode": "underworld",
+    "roles": [
+      {
+        "id": "navigator",
+        "name": "Navigator",
+        "color": "#38bdf8",
+        "icon": "compass",
+        "description": "Charts subterranean currents and celestial markers in the Stygian mist."
+      },
+      {
+        "id": "oracle",
+        "name": "Oracle",
+        "color": "#c084fc",
+        "icon": "eye",
+        "description": "Deciphers echoes, prophetic portents, and spectral whispers."
+      },
+      {
+        "id": "scholar",
+        "name": "Scholar",
+        "color": "#34d399",
+        "icon": "book",
+        "description": "Knows ancient ciphers, Greek tablets, and forbidden cartography."
+      },
+      {
+        "id": "torchbearer",
+        "name": "Torchbearer",
+        "color": "#fb923c",
+        "icon": "flame",
+        "description": "Wields the sacred eternal flame through the cavernous gloom."
+      },
+      {
+        "id": "negotiator",
+        "name": "Negotiator",
+        "color": "#f43f5e",
+        "icon": "shield",
+        "description": "Strikes pacts with shade sentinels and Charon's ferrymen."
+      }
+    ],
+    "rounds": [
+      {
+        "id": "round-1",
+        "type": "ASCII_SPLITTER",
+        "title": "Round 1: The Stygian Totem",
+        "subtitle": "Align all phone screens side-by-side to assemble the severed mythic codeword.",
+        "durationSeconds": 300,
+        "data": {
+          "codewords": [
+            "ORACLE",
+            "SIRENS",
+            "PORTAL",
+            "CHARON",
+            "VOYAGE"
+          ],
+          "mode": "HORIZONTAL",
+          "pointsBase": 100,
+          "pointsSpeedBonusMax": 100
+        }
+      },
+      {
+        "id": "round-2",
+        "type": "ASYMMETRIC_TEXT_PUZZLE",
+        "title": "Round 2: The Gates of Tartarus",
+        "subtitle": "Each crew member holds an isolated fragment of the Stygian incantation. Speak aloud to combine your clues.",
+        "durationSeconds": 360,
+        "data": {
+          "themeTitle": "The Whispers of Tartarus Gate",
+          "narrative": "The iron gate demands a sacred beast's name. Each role holds a different constraint whispered across the river Styx.",
+          "answerCodeword": "CERBERUS",
+          "points": 200,
+          "roleClues": [
+            {
+              "roleId": "navigator",
+              "title": "Astral Inscription",
+              "clue": "The word has 8 letters. The 1st letter is C, and the 5th letter is E.",
+              "detail": "Visible in the celestial cavern zenith."
+            },
+            {
+              "roleId": "oracle",
+              "title": "Spectral Riddle",
+              "clue": "A three-headed sentinel beast who guards the subterranean gates so no soul escapes.",
+              "detail": "Echoes from the depths of Erebus."
+            },
+            {
+              "roleId": "scholar",
+              "title": "Linguistic Cipher",
+              "clue": "Letter 2 is E, Letter 3 is R, and Letter 4 is B. (Spells C-E-R-B...)",
+              "detail": "Ancient Greek tablet translation."
+            },
+            {
+              "roleId": "torchbearer",
+              "title": "Flame Reflections",
+              "clue": "The 6th letter matches Letter 3 ('R'). The 7th letter is 'U'.",
+              "detail": "Illuminated in the altar fire."
+            },
+            {
+              "roleId": "negotiator",
+              "title": "Ferryman's Clause",
+              "clue": "The final 8th letter is 'S'. Complete word is the guardian hound of Hades.",
+              "detail": "Agreed in blood with Charon."
+            }
+          ]
+        }
+      },
+      {
+        "id": "round-3",
+        "type": "OFFLINE_TASK_TIMER",
+        "title": "Round 3: Charon's Physical Trial",
+        "subtitle": "An in-person physical challenge at the pub table. Complete it before the sands of time empty!",
+        "durationSeconds": 240,
+        "data": {
+          "prompt": "Stack 5 beer coasters / drink mats vertically on the pub table, or place all phones in a circle touching corners while singing a 10-second sea shanty to summon Charon!",
+          "rules": [
+            "Every member of the crew must participate physically.",
+            "Once completed, show the bartender/Admin or enter the secret Pub Rune Code below.",
+            "Verification Code is announced live in the pub by the Game Master."
+          ],
+          "verificationCode": "OBOLUS",
+          "points": 250
+        }
+      }
+    ]
+  },
+  "state": "ROUND_ACTIVE",
+  "current_round_index": 0,
+  "round_ends_at": 1792105481558,
+  "round_is_paused": false,
+  "paused_time_left_seconds": null,
+  "players": [
+    [
+      "p_1792104713736_3wkqsxx",
+      {
+        "id": "p_1792104713736_3wkqsxx",
+        "name": "Orpheus",
+        "roleId": "navigator",
+        "join_code": "JBV",
+        "teamId": null,
+        "joined_at": 1792104713736,
+        "last_seen_at": 1792104713736,
+        "is_online": true
+      }
+    ],
+    [
+      "p_1792105013504_y5148nr",
+      {
+        "id": "p_1792105013504_y5148nr",
+        "name": "Eurydice",
+        "roleId": "navigator",
+        "join_code": "FBF",
+        "teamId": null,
+        "joined_at": 1792105013504,
+        "last_seen_at": 1792105013504,
+        "is_online": true
+      }
+    ]
+  ],
+  "teams": []
+}

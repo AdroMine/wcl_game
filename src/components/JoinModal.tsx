@@ -1,0 +1,113 @@
+import React, { useState } from 'react';
+import { useGameSession } from '../context/GameContext';
+import { ArrowRight } from 'lucide-react';
+
+export const JoinModal: React.FC = () => {
+  const { join, payload } = useGameSession();
+  const [name, setName] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!name.trim()) {
+      setError('Please enter a display name or mythological alias.');
+      return;
+    }
+
+    try {
+      setLoading(true);
+      setError(null);
+      await join(name.trim());
+    } catch (err: any) {
+      setError(err.message || 'Failed to enter the Underworld.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const roles = payload?.config.roles || [];
+
+  return (
+    <div className="min-h-[85vh] flex flex-col justify-center items-center px-4 py-8">
+      <div className="w-full max-w-[440px] bg-[#10121a] border border-[#2a2e3d] rounded-2xl p-6 shadow-2xl relative overflow-hidden">
+        {/* Subtle mythic background glow */}
+        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-64 h-32 bg-[#c4a45a]/10 rounded-full blur-3xl pointer-events-none" />
+
+        {/* Header */}
+        <div className="text-center space-y-2 relative z-10">
+          <div className="inline-flex items-center justify-center w-12 h-12 rounded-xl bg-[#161922] border border-[#c4a45a]/40 text-[#c4a45a] font-serif font-black text-xl shadow-gold-glow mb-2">
+            Ψ
+          </div>
+          <h2 className="text-2xl font-serif font-black tracking-wide text-[#f4f0e8] uppercase">
+            A Journey into the Underworld
+          </h2>
+          <p className="text-xs text-[#8e95a5] leading-relaxed max-w-xs mx-auto">
+            A live collaborative pub game. Enter your name to be dealt a sacred role and receive your physical beacon.
+          </p>
+        </div>
+
+        {/* Join Form */}
+        <form onSubmit={handleSubmit} className="mt-6 space-y-4 relative z-10">
+          <div>
+            <label className="block text-[11px] font-mono uppercase tracking-wider text-[#c4a45a] mb-1.5 font-semibold">
+              Shade / Adventurer Name
+            </label>
+            <input
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="e.g. Orpheus, Elena, Sam..."
+              maxLength={24}
+              autoFocus
+              className="w-full bg-[#161922] border border-[#2a2e3d] focus:border-[#c4a45a] focus:ring-1 focus:ring-[#c4a45a] rounded-xl px-4 py-3 text-sm text-[#f4f0e8] placeholder-[#8e95a5]/50 outline-none transition-all font-sans"
+            />
+          </div>
+
+          {error && (
+            <div className="p-2.5 rounded-lg bg-red-950/60 border border-red-500/50 text-red-300 text-xs">
+              {error}
+            </div>
+          )}
+
+          <button
+            type="submit"
+            disabled={loading}
+            className="w-full py-3.5 px-4 rounded-xl bg-gradient-to-r from-[#c4a45a] to-[#e5cb87] hover:from-[#d8b86e] hover:to-[#f0d89e] text-[#08090c] font-serif font-bold text-sm tracking-wide flex items-center justify-center space-x-2 shadow-gold-glow transition-all disabled:opacity-50"
+          >
+            <span>{loading ? 'Attuning Spirit...' : 'Enter the Realm'}</span>
+            <ArrowRight className="w-4 h-4" />
+          </button>
+        </form>
+
+        {/* Roles Preview */}
+        <div className="mt-8 pt-6 border-t border-[#2a2e3d]/80 relative z-10">
+          <p className="text-[10px] font-mono uppercase tracking-wider text-[#8e95a5] text-center mb-3">
+            Balanced Role Pool (Dealt Evenly)
+          </p>
+          <div className="grid grid-cols-5 gap-1.5 text-center">
+            {roles.map((r) => (
+              <div
+                key={r.id}
+                className="p-1.5 rounded-lg border border-[#2a2e3d] bg-[#161922]/60 flex flex-col items-center space-y-1"
+              >
+                <div
+                  className="w-3.5 h-3.5 rounded-full"
+                  style={{ backgroundColor: r.color }}
+                />
+                <span className="text-[9px] font-medium text-[#f4f0e8] truncate w-full">
+                  {r.name}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Footer Notice */}
+        <p className="text-[10px] text-[#8e95a5]/70 text-center mt-5 font-mono">
+          Immortal Session • Offline/Low Data Resilient
+        </p>
+      </div>
+    </div>
+  );
+};

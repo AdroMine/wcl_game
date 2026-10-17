@@ -1,0 +1,19 @@
+{
+  "name": "Underworld Engine • Pub Game Platform",
+  "short_name": "Underworld",
+  "description": "Mobile-first, low-bandwidth collaborative pub game platform for live social events.",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#08090c",
+  "theme_color": "#08090c",
+  "categories": ["games", "entertainment", "social"],
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "192x192 512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

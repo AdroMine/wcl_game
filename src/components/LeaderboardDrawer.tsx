@@ -8,6 +8,17 @@ export const LeaderboardDrawer: React.FC = () => {
   const isFullScreenState = payload?.state === 'ROUND_LEADERBOARD';
   const isOpen = isFullScreenState || isLeaderboardOpen;
 
+  // Lock background body scroll when drawer/modal is open
+  React.useEffect(() => {
+    if (isOpen) {
+      const originalOverflow = document.body.style.overflow;
+      document.body.style.overflow = 'hidden';
+      return () => {
+        document.body.style.overflow = originalOverflow;
+      };
+    }
+  }, [isOpen]);
+
   if (!isOpen) return null;
 
   const leaderboard = payload?.teams_leaderboard || [];
@@ -47,7 +58,12 @@ export const LeaderboardDrawer: React.FC = () => {
 
   return (
     <div
-      className={`fixed inset-0 z-50 flex flex-col justify-end transition-all duration-300 ${
+      onClick={(e) => {
+        if (!isFullScreenState && e.target === e.currentTarget) {
+          setIsLeaderboardOpen(false);
+        }
+      }}
+      className={`fixed inset-0 z-50 flex flex-col justify-end transition-all duration-300 overscroll-contain ${
         isFullScreenState ? 'bg-[#08090c]' : 'bg-black/75 backdrop-blur-sm'
       }`}
     >
@@ -87,7 +103,7 @@ export const LeaderboardDrawer: React.FC = () => {
         </div>
 
         {/* Content List */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-3">
+        <div className="flex-1 overflow-y-auto overscroll-contain p-4 space-y-3">
           {leaderboard.length === 0 ? (
             <div className="text-center py-12 space-y-2 text-[#8e95a5]">
               <Users className="w-8 h-8 mx-auto opacity-40 text-[#c4a45a]" />

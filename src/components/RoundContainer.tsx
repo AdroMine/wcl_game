@@ -1,12 +1,13 @@
 import React from 'react';
 import { useGameSession } from '../context/GameContext';
 import { AsciiSplitterRound } from './rounds/AsciiSplitterRound';
+import { ShadesInTheMistRound } from './rounds/ShadesInTheMistRound';
 import { AsymmetricTextPuzzleRound } from './rounds/AsymmetricTextPuzzleRound';
 import { OfflineTaskTimerRound } from './rounds/OfflineTaskTimerRound';
 import { Clock, PauseCircle } from 'lucide-react';
 
 export const RoundContainer: React.FC = () => {
-  const { currentRound, timeRemainingSeconds, payload, team, player, switchPlayer } = useGameSession();
+  const { currentRound, timeRemainingSeconds, payload } = useGameSession();
 
   if (!currentRound) {
     return (
@@ -64,32 +65,10 @@ export const RoundContainer: React.FC = () => {
         </div>
       </div>
 
-      {/* Solo Testing Teammate Switcher Bar */}
-      {team && team.player_ids.length > 1 && (
-        <div className="bg-[#10121a] border border-[#2a2e3d] rounded-xl p-2 flex items-center space-x-1.5 overflow-x-auto text-[10px] font-mono">
-          <span className="text-[#8e95a5] flex-shrink-0 px-1 font-bold">SOLO VIEW:</span>
-          {team.player_ids.map((pid, idx) => {
-            const isCurrent = player?.id === pid;
-            const memberInfo = payload?.teams_leaderboard?.find(t => t.id === team.id)?.members[idx];
-            return (
-              <button
-                key={pid}
-                onClick={() => switchPlayer(pid)}
-                className={`px-2 py-1 rounded-lg border flex-shrink-0 transition-all font-bold ${
-                  isCurrent
-                    ? 'bg-[#c4a45a] text-[#08090c] border-[#c4a45a]'
-                    : 'bg-[#161922] text-[#8e95a5] border-[#2a2e3d] hover:text-[#f4f0e8]'
-                }`}
-              >
-                Slot #{idx + 1}: {memberInfo?.name || `Shade ${idx + 1}`} ({memberInfo?.roleName || 'Role'})
-              </button>
-            );
-          })}
-        </div>
-      )}
 
       {/* Dynamic Pluggable Round Component */}
       {currentRound.type === 'ASCII_SPLITTER' && <AsciiSplitterRound />}
+      {currentRound.type === 'PRISONERS_DILEMMA' && <ShadesInTheMistRound />}
       {currentRound.type === 'ASYMMETRIC_TEXT_PUZZLE' && <AsymmetricTextPuzzleRound />}
       {currentRound.type === 'OFFLINE_TASK_TIMER' && <OfflineTaskTimerRound />}
     </div>

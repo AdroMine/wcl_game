@@ -22,3 +22,12 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+scratch_*.ts
+graphify-out/
+
+.agents/
+.gemini/
+.impeccable
+.env
+.env*
+!.env.example

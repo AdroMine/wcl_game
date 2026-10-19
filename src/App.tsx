@@ -5,18 +5,28 @@ import { JoinModal } from './components/JoinModal';
 import { LobbyTeamFormation } from './components/LobbyTeamFormation';
 import { RoundContainer } from './components/RoundContainer';
 import { LeaderboardDrawer } from './components/LeaderboardDrawer';
-import { AdminControlPanel } from './components/AdminControlPanel';
+
+const AdminControlPanel = React.lazy(() =>
+  import('./components/AdminControlPanel').then(m => ({ default: m.AdminControlPanel }))
+);
+const SoloTesterWorkbench = React.lazy(() =>
+  import('./components/SoloTesterWorkbench').then(m => ({ default: m.SoloTesterWorkbench }))
+);
 
 const MainGameContent: React.FC = () => {
   const { player, payload } = useGameSession();
   const [isAdminView, setIsAdminView] = useState(() => {
     return window.location.pathname.includes('/admin') || window.location.hash.includes('admin');
   });
+  const [isSoloTesterView, setIsSoloTesterView] = useState(() => {
+    return window.location.pathname.includes('/solotester') || window.location.hash.includes('solotester');
+  });
 
   // Listen to popstate or hash changes
   useEffect(() => {
     const handleLocationChange = () => {
       setIsAdminView(window.location.pathname.includes('/admin') || window.location.hash.includes('admin'));
+      setIsSoloTesterView(window.location.pathname.includes('/solotester') || window.location.hash.includes('solotester'));
     };
     window.addEventListener('popstate', handleLocationChange);
     window.addEventListener('hashchange', handleLocationChange);
@@ -26,25 +36,33 @@ const MainGameContent: React.FC = () => {
     };
   }, []);
 
-  const openAdmin = () => {
-    setIsAdminView(true);
-    window.history.pushState(null, '', '/admin');
-  };
 
   const closeAdmin = () => {
     setIsAdminView(false);
+    setIsSoloTesterView(false);
     window.history.pushState(null, '', '/');
   };
 
+  // Render Solo Tester full-screen workbench
+  if (isSoloTesterView) {
+    return (
+      <React.Suspense fallback={<div className="p-8 text-center text-xs font-mono text-[#8e95a5]">Loading Solo Workbench...</div>}>
+        <SoloTesterWorkbench />
+      </React.Suspense>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-[#08090c] text-[#f4f0e8] underworld-bg-mesh flex flex-col justify-between selection:bg-[#c4a45a] selection:text-[#08090c]">
-      {/* Centered Mobile-First 480px Container */}
-      <div className="w-full max-w-[480px] mx-auto min-h-screen flex flex-col bg-[#08090c] border-x border-[#2a2e3d]/40 shadow-2xl relative">
+      {/* Centered Container: Responsive 480px for players, spacious 4xl for admin dashboard */}
+      <div className={`w-full ${isAdminView ? 'max-w-4xl' : 'max-w-[480px]'} mx-auto min-h-screen flex flex-col bg-[#08090c] border-x border-[#2a2e3d]/40 shadow-2xl relative transition-all duration-300`}>
         <Navbar />
 
-        <main className="flex-1 px-4 pb-12">
+        <main className={`flex-1 ${isAdminView ? 'px-4 sm:px-6' : 'px-4'} pb-12`}>
           {isAdminView ? (
-            <AdminControlPanel payload={payload} onClose={closeAdmin} />
+            <React.Suspense fallback={<div className="p-8 text-center text-xs font-mono text-[#8e95a5]">Loading Admin Panel...</div>}>
+              <AdminControlPanel payload={payload} onClose={closeAdmin} />
+            </React.Suspense>
           ) : !player ? (
             <JoinModal />
           ) : payload?.state === 'LOBBY_TEAM_FORMATION' ? (
@@ -63,12 +81,14 @@ const MainGameContent: React.FC = () => {
         <footer className="py-4 px-4 text-center border-t border-[#2a2e3d]/50 bg-[#08090c]/80 text-[10px] font-mono text-[#8e95a5]">
           <div className="flex items-center justify-between">
             <span>UNDERWORLD ENGINE • PUB REALTIME</span>
-            <button
-              onClick={isAdminView ? closeAdmin : openAdmin}
-              className="text-[#c4a45a] hover:underline font-bold"
-            >
-              {isAdminView ? 'Player Screen' : 'Admin Gate'}
-            </button>
+            {isAdminView && (
+              <button
+                onClick={closeAdmin}
+                className="text-[#c4a45a] hover:underline font-bold"
+              >
+                Exit Admin
+              </button>
+            )}
           </div>
         </footer>
       </div>

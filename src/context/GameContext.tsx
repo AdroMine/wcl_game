@@ -1,6 +1,17 @@
 import React, { createContext, useContext, useEffect, useState, useRef, useCallback } from 'react';
-import type { SyncPayload, Player, Team, RoleConfig, RoundConfig } from '../types';
-import { joinPlayer, leavePlayer, formTeamApi, renameTeamApi, submitRoundAnswerApi, pollSyncApi } from '../lib/api';
+import type { SyncPayload, Player, Team, RoleConfig, RoundConfig, Round2Match } from '../types';
+import {
+  joinPlayer,
+  leavePlayer,
+  formTeamApi,
+  renameTeamApi,
+  submitRoundAnswerApi,
+  pollSyncApi,
+  round2PairByCodeApi,
+  round2CastVoteApi,
+  round2AdvancePhaseApi,
+  requestRoundHintApi,
+} from '../lib/api';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 
 interface GameContextType {
@@ -9,6 +20,7 @@ interface GameContextType {
   team: Team | null;
   role: RoleConfig | null;
   currentRound: RoundConfig | null;
+  round2Match: Round2Match | null;
   connectionStatus: 'connected' | 'connecting' | 'reconnecting' | 'polling-fallback' | 'disconnected';
   lastSyncedAt: Date | null;
   lowDataMode: boolean;
@@ -20,8 +32,13 @@ interface GameContextType {
   formTeam: (joinCodes: string[], customName?: string) => Promise<{ success: boolean; error?: string }>;
   renameTeam: (name: string) => Promise<{ success: boolean; error?: string }>;
   submitAnswer: (answer: string) => Promise<{ success: boolean; message: string; points?: number; isCorrect?: boolean }>;
+  requestHint: (hintIndex: number) => Promise<{ success: boolean; hint?: string; error?: string }>;
   switchPlayer: (playerId: string) => void;
+  pairRound2: (opponentBattleCode: string) => Promise<{ success: boolean; error?: string }>;
+  voteRound2: (vote: 'TRUCE' | 'AMBUSH') => Promise<{ success: boolean; error?: string }>;
+  advanceRound2: (matchId?: string) => Promise<void>;
   timeRemainingSeconds: number;
+  refresh: () => Promise<void>;
 }
 
 const GameContext = createContext<GameContextType | undefined>(undefined);
@@ -165,6 +182,9 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         .on('postgres_changes', { event: '*', schema: 'public', table: 'players' }, () => {
           runPoll();
         })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'round2_matches' }, () => {
+          runPoll();
+        })
         .subscribe((status) => {
           if (status === 'SUBSCRIBED') {
             setConnectionStatus('connected');
@@ -199,6 +219,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const team = payload?.team || null;
   const role = player && payload ? payload.config.roles.find(r => r.id === player.roleId) || null : null;
   const currentRound = payload ? payload.config.rounds[payload.current_round_index] || null : null;
+  const round2Match = payload?.round2_match || null;
 
   // Real-time server synchronized timer countdown
   const [timeRemainingSeconds, setTimeRemainingSeconds] = useState<number>(0);
@@ -273,9 +294,55 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return res;
   };
 
+  const requestHint = async (hintIndex: number) => {
+    if (!team) return { success: false, error: 'You must form or belong to a crew first.' };
+    try {
+      const res = await requestRoundHintApi(team.id, hintIndex);
+      await runPoll();
+      return res;
+    } catch (err: any) {
+      return { success: false, error: err.message || 'Failed to request hint.' };
+    }
+  };
+
   const switchPlayer = async (targetPlayerId: string) => {
     localStorage.setItem(PLAYER_ID_KEY, targetPlayerId);
     await runPoll();
+  };
+
+  const pairRound2 = async (opponentBattleCode: string) => {
+    if (!team) return { success: false, error: 'You must form or belong to a crew first.' };
+    try {
+      const res = await round2PairByCodeApi(team.id, opponentBattleCode);
+      await runPoll();
+      return res;
+    } catch (err: any) {
+      return { success: false, error: err.message || 'Failed to link squads.' };
+    }
+  };
+
+  const voteRound2 = async (vote: 'TRUCE' | 'AMBUSH') => {
+    if (!player || !team || !round2Match) {
+      return { success: false, error: 'Cannot vote: match or player record not found.' };
+    }
+    try {
+      const res = await round2CastVoteApi(round2Match.id, player.id, team.id, vote);
+      await runPoll();
+      return res;
+    } catch (err: any) {
+      return { success: false, error: err.message || 'Failed to cast ballot.' };
+    }
+  };
+
+  const advanceRound2 = async (matchId?: string) => {
+    const id = matchId || round2Match?.id;
+    if (!id) return;
+    try {
+      await round2AdvancePhaseApi(id);
+      await runPoll();
+    } catch (err) {
+      console.warn('Advance round 2 error:', err);
+    }
   };
 
   return (
@@ -286,6 +353,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         team,
         role,
         currentRound,
+        round2Match,
         connectionStatus,
         lastSyncedAt,
         lowDataMode,
@@ -297,8 +365,13 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         formTeam,
         renameTeam,
         submitAnswer,
+        requestHint,
         switchPlayer,
+        pairRound2,
+        voteRound2,
+        advanceRound2,
         timeRemainingSeconds,
+        refresh: runPoll,
       }}
     >
       {children}

@@ -1,51 +1,127 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useGameSession } from '../../context/GameContext';
-import { getPlayerAsciiSlice, MYTHIC_DECORATIVE_BORDERS } from '../../lib/asciiEngine';
-import { Maximize2, Minimize2, RotateCw, ZoomIn, ZoomOut, CheckCircle2, AlertCircle, Sparkles, Move } from 'lucide-react';
+import {
+  getPlayerAsciiSlice,
+} from '../../lib/asciiEngine';
+import {
+  ROUND1_HINTS,
+  generateHintText,
+} from '../../lib/round1Engine';
+import type { PlayerSlotInfo } from '../../lib/round1Engine';
+import {
+  Maximize2,
+  Minimize2,
+  RotateCw,
+  ZoomIn,
+  ZoomOut,
+  CheckCircle2,
+  AlertCircle,
+  Sparkles,
+  AlignVerticalJustifyStart,
+  AlignVerticalJustifyCenter,
+  AlignVerticalJustifyEnd,
+  AlignLeft,
+  AlignCenter,
+  AlignRight,
+  Lightbulb,
+  Clock,
+  Check,
+} from 'lucide-react';
 import confetti from 'canvas-confetti';
 
-type AlignmentAnchor =
-  | 'center'
-  | 'top'
-  | 'bottom'
-  | 'left'
-  | 'right'
-  | 'top-left'
-  | 'top-right'
-  | 'bottom-left'
-  | 'bottom-right';
+type AlignmentAnchor = 'start' | 'center' | 'end';
 
 export const AsciiSplitterRound: React.FC = () => {
-  const { player, team, role, currentRound, submitAnswer } = useGameSession();
+  const { player, team, role, currentRound, submitAnswer, requestHint, payload } = useGameSession();
 
   // Fullscreen & WakeLock states
   const [isFullscreen, setIsFullscreen] = useState(false);
   const wakeLockRef = useRef<any>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
 
-  // Alignment controls
+  // Alignment & Sizing controls
   const [anchor, setAnchor] = useState<AlignmentAnchor>('center');
-  const [rotation, setRotation] = useState<0 | 90 | 180 | 270>(0);
-  const [fontSize, setFontSize] = useState<number>(14);
+  const [rotation, setRotation] = useState<0 | 90 | 180 | 270>(90); // Default to 90deg for horizontal table placement on phones
+  const [zoomLevel, setZoomLevel] = useState<number>(1.0); // 1.0 = exact 100% edge-to-edge
   const [showHud, setShowHud] = useState(true);
   const hudTimeoutRef = useRef<number | null>(null);
+
+  // Screen orientation & dimensions tracking
+  const [windowDimensions, setWindowDimensions] = useState({
+    w: typeof window !== 'undefined' ? window.innerWidth : 400,
+    h: typeof window !== 'undefined' ? window.innerHeight : 800,
+  });
+
+  useEffect(() => {
+    const handleResize = () => {
+      setWindowDimensions({
+        w: window.innerWidth,
+        h: window.innerHeight,
+      });
+    };
+    window.addEventListener('resize', handleResize);
+    window.addEventListener('orientationchange', handleResize);
+    return () => {
+      window.removeEventListener('resize', handleResize);
+      window.removeEventListener('orientationchange', handleResize);
+    };
+  }, []);
 
   // Codeword submission state
   const [codewordInput, setCodewordInput] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [submitResult, setSubmitResult] = useState<{ success: boolean; message: string; points?: number } | null>(null);
 
-  // Calculate player slice
+  // Hint requesting state
+  const [requestingHintIndex, setRequestingHintIndex] = useState<number | null>(null);
+  const [hintError, setHintError] = useState<string | null>(null);
+
+  // Live timer tick for calculating hints availability and points decay
+  const [, setTimerTick] = useState(0);
+  useEffect(() => {
+    const interval = setInterval(() => setTimerTick(t => t + 1), 1000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // Calculate player slot index
   const teamMembers = team?.player_ids || [];
-  const teamSize = Math.max(teamMembers.length, 1);
+  const teamSize = Math.max(teamMembers.length, payload?.config?.team_size || 5);
   const playerSlotIndex = player ? teamMembers.indexOf(player.id) : 0;
-  const safeSlot = playerSlotIndex >= 0 ? playerSlotIndex : 0;
+  const activeSlot = playerSlotIndex >= 0 ? playerSlotIndex : 0;
 
   // Active word assigned to team or fallback
   const assignedWord = team?.assignedCodeword || 'ORACLE';
-  const asciiSlice = getPlayerAsciiSlice(assignedWord, safeSlot, teamSize, 'HORIZONTAL');
+  const asciiSlice = getPlayerAsciiSlice(assignedWord, activeSlot, teamSize, 'HORIZONTAL');
+
+  // Role for current active slot
+  const currentSlotRole = payload?.config?.roles?.[activeSlot] || role || {
+    name: `Slot ${activeSlot + 1}`,
+    color: '#c4a45a',
+  };
 
   const roundCompleted = currentRound && team?.round_submissions[currentRound.id]?.completed;
   const completedSubmission = currentRound ? team?.round_submissions[currentRound.id] : undefined;
+
+  // Build slot info for generating accurate hint texts
+  const slotMembers: PlayerSlotInfo[] = teamMembers.map((pid, idx) => {
+    const leaderboardTeam = payload?.teams_leaderboard?.find(t => t.id === team?.id);
+    const memberObj = leaderboardTeam?.members?.[idx];
+    const roleCfg = payload?.config?.roles?.[idx];
+    return {
+      slotIndex: idx,
+      playerName: memberObj?.name || (pid === player?.id ? player.name : `Crew Shade #${idx + 1}`),
+      roleName: roleCfg?.name || `Role #${idx + 1}`,
+      roleColor: roleCfg?.color || '#c4a45a',
+    };
+  });
+
+  // Calculate elapsed time in seconds
+  const roundStartedAt = payload?.round_started_at
+    ? Number(payload.round_started_at)
+    : (payload?.round_ends_at ? Math.max(0, Number(payload.round_ends_at) - (currentRound?.durationSeconds || 300) * 1000) : Date.now() - 60000);
+  const elapsedSeconds = Math.max(0, Math.floor((Date.now() - roundStartedAt) / 1000));
+
+  const hintsTaken = team?.hints_taken || [];
 
   // Screen Wake Lock API for pub table placement
   const requestWakeLock = async () => {
@@ -58,10 +134,10 @@ export const AsciiSplitterRound: React.FC = () => {
     }
   };
 
-  const releaseWakeLock = async () => {
+  const releaseWakeLock = () => {
     if (wakeLockRef.current) {
       try {
-        await wakeLockRef.current.release();
+        wakeLockRef.current.release();
         wakeLockRef.current = null;
       } catch (e) {
         // ignore
@@ -69,21 +145,82 @@ export const AsciiSplitterRound: React.FC = () => {
     }
   };
 
-  // Toggle faux-fullscreen
+  // Cleanly exit fullscreen and release resources
+  const exitFullscreenCleanly = async () => {
+    setIsFullscreen(false);
+    document.body.classList.remove('faux-fullscreen-active');
+    releaseWakeLock();
+    try {
+      if (document.fullscreenElement) {
+        await document.exitFullscreen();
+      }
+    } catch (e) {
+      // ignore
+    }
+    // If our history entry was pushed, pop it cleanly
+    if (window.history.state?.underworld_fullscreen) {
+      window.history.back();
+    }
+  };
+
+  // Toggle Fullscreen & Table Alignment mode
   const toggleFullscreen = async () => {
     if (!isFullscreen) {
       setIsFullscreen(true);
       document.body.classList.add('faux-fullscreen-active');
+      window.history.pushState({ underworld_fullscreen: true }, '');
       await requestWakeLock();
       resetHudTimeout();
+
+      try {
+        if (document.documentElement.requestFullscreen && !document.fullscreenElement) {
+          await document.documentElement.requestFullscreen();
+        }
+      } catch (e) {
+        // iOS or permission denied: faux-fullscreen fallback takes over smoothly
+      }
     } else {
-      setIsFullscreen(false);
-      document.body.classList.remove('faux-fullscreen-active');
-      await releaseWakeLock();
+      await exitFullscreenCleanly();
     }
   };
 
-  // Auto-fading HUD controls (3 seconds inactivity)
+  // Mobile Back button / Edge Back Gesture support
+  useEffect(() => {
+    const handlePopState = () => {
+      if (isFullscreen) {
+        setIsFullscreen(false);
+        document.body.classList.remove('faux-fullscreen-active');
+        releaseWakeLock();
+        try {
+          if (document.fullscreenElement) {
+            document.exitFullscreen();
+          }
+        } catch (e) {
+          // ignore
+        }
+      }
+    };
+
+    const handleFullscreenChange = () => {
+      if (!document.fullscreenElement && isFullscreen) {
+        setIsFullscreen(false);
+        document.body.classList.remove('faux-fullscreen-active');
+        releaseWakeLock();
+        if (window.history.state?.underworld_fullscreen) {
+          window.history.back();
+        }
+      }
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    return () => {
+      window.removeEventListener('popstate', handlePopState);
+      document.removeEventListener('fullscreenchange', handleFullscreenChange);
+    };
+  }, [isFullscreen]);
+
+  // Auto-fading HUD controls (3.5 seconds inactivity)
   const resetHudTimeout = () => {
     setShowHud(true);
     if (hudTimeoutRef.current) {
@@ -111,7 +248,13 @@ export const AsciiSplitterRound: React.FC = () => {
   const handleZoom = (e: React.MouseEvent, delta: number) => {
     e.stopPropagation();
     resetHudTimeout();
-    setFontSize(prev => Math.min(32, Math.max(9, prev + delta)));
+    setZoomLevel(prev => Math.min(2.0, Math.max(0.6, Math.round((prev + delta) * 10) / 10)));
+  };
+
+  const handleResetZoom = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    resetHudTimeout();
+    setZoomLevel(1.0);
   };
 
   const handleAnchorSelect = (e: React.MouseEvent, a: AlignmentAnchor) => {
@@ -132,8 +275,8 @@ export const AsciiSplitterRound: React.FC = () => {
 
       if (res.success && res.isCorrect) {
         confetti({
-          particleCount: 120,
-          spread: 80,
+          particleCount: 140,
+          spread: 90,
           origin: { y: 0.6 },
           colors: ['#c4a45a', '#f4f0e8', '#38bdf8', '#c084fc', '#34d399'],
         });
@@ -145,172 +288,233 @@ export const AsciiSplitterRound: React.FC = () => {
     }
   };
 
-  // Helper styles for alignment
-  const getAnchorClasses = () => {
-    switch (anchor) {
-      case 'top':
-        return 'items-start justify-center pt-0';
-      case 'bottom':
-        return 'items-end justify-center pb-0';
-      case 'left':
-        return 'items-center justify-start pl-0';
-      case 'right':
-        return 'items-center justify-end pr-0';
-      case 'top-left':
-        return 'items-start justify-start pt-0 pl-0';
-      case 'top-right':
-        return 'items-start justify-end pt-0 pr-0';
-      case 'bottom-left':
-        return 'items-end justify-start pb-0 pl-0';
-      case 'bottom-right':
-        return 'items-end justify-end pb-0 pr-0';
-      case 'center':
-      default:
-        return 'items-center justify-center';
+  const handleRequestHint = async (hintIndex: number) => {
+    try {
+      setRequestingHintIndex(hintIndex);
+      setHintError(null);
+      const res = await requestHint(hintIndex);
+      if (!res.success) {
+        setHintError(res.error || 'Failed to unlock hint');
+      }
+    } catch (err: any) {
+      setHintError(err.message || 'Hint request failed');
+    } finally {
+      setRequestingHintIndex(null);
     }
   };
 
-  // Render Faux-Fullscreen Mode
+  // Geometry calculation for the rotated canvas
+  const isPortrait = windowDimensions.h > windowDimensions.w;
+  const isSideways = rotation === 90 || rotation === 270;
+
+  // When rotated 90 or 270 on portrait phones, the canvas dimensions swap so it fills 100% of the screen
+  const canvasWidth = isSideways && isPortrait ? windowDimensions.h : windowDimensions.w;
+  const canvasHeight = isSideways && isPortrait ? windowDimensions.w : windowDimensions.h;
+
+  // Vertical alignment within the canvas respecting physical rotation
+  const getVerticalAlignmentStyle = () => {
+    if (anchor === 'center') return { justifyContent: 'center' };
+
+    // In 90deg clockwise rotation:
+    // Physical RIGHT corresponds to element-space flex-start (Y = 0)
+    // Physical LEFT corresponds to element-space flex-end (Y = max)
+    if (rotation === 90) {
+      if (anchor === 'start') return { justifyContent: 'flex-end', paddingBottom: '0px' }; // Physical LEFT
+      if (anchor === 'end') return { justifyContent: 'flex-start', paddingTop: '0px' };   // Physical RIGHT
+    } else if (rotation === 270) {
+      if (anchor === 'start') return { justifyContent: 'flex-start', paddingTop: '0px' }; // Physical LEFT
+      if (anchor === 'end') return { justifyContent: 'flex-end', paddingBottom: '0px' };  // Physical RIGHT
+    } else {
+      // 0deg or 180deg
+      if (anchor === 'start') return { justifyContent: 'flex-start', paddingTop: '0px' }; // Physical TOP
+      if (anchor === 'end') return { justifyContent: 'flex-end', paddingBottom: '0px' };   // Physical BOTTOM
+    }
+    return { justifyContent: 'center' };
+  };
+
+  // Columns per line
+  const colCount = Math.max(1, asciiSlice[0]?.length || 36);
+  const rowCount = asciiSlice.length;
+
+  // Height of slice: in fullscreen mode, fills 100% of canvasHeight from bezel to bezel
+  const blockHeight = isFullscreen ? canvasHeight : Math.min(canvasHeight * 0.35, ((canvasWidth / colCount) * 1.35 * rowCount));
+
+  // Render Vector SVG Totem: reaches the exact 100% edge of the screen with zero dead margin
+  const renderVectorTotem = (widthPx: number, heightPx: number, isFullscreenMode: boolean) => {
+    return (
+      <div
+        className="w-full h-full flex items-center justify-center select-none"
+        style={{
+          width: isFullscreenMode ? `${widthPx}px` : '100%',
+          maxWidth: '100%',
+        }}
+      >
+        <svg
+          viewBox={`0 0 ${colCount * 10} ${rowCount * 14}`}
+          preserveAspectRatio="none"
+          style={{
+            width: isFullscreenMode ? '100%' : '100%',
+            maxWidth: '100%',
+            height: isFullscreenMode ? `${Math.round(heightPx)}px` : '75px',
+            maxHeight: '100%',
+            transform: isFullscreenMode && zoomLevel !== 1 ? `scale(${zoomLevel})` : undefined,
+            transformOrigin: 'center center',
+            display: 'block',
+            filter: `drop-shadow(0 0 10px ${currentSlotRole?.color || '#c4a45a'}70)`,
+          }}
+        >
+          {asciiSlice.map((line, rIdx) => {
+            return line.split('').map((char, cIdx) => {
+              if (char === '█') {
+                return (
+                  <rect
+                    key={`${rIdx}-${cIdx}`}
+                    x={cIdx * 10}
+                    y={rIdx * 14}
+                    width={10}
+                    height={14}
+                    fill={currentSlotRole?.color || '#f4f0e8'}
+                  />
+                );
+              }
+              return null;
+            });
+          })}
+        </svg>
+      </div>
+    );
+  };
+
+  // --------------------------------------------------------------------------
+  // RENDER: FULLSCREEN / TABLE ALIGNMENT MODE
+  // --------------------------------------------------------------------------
   if (isFullscreen) {
     return (
       <div
+        ref={containerRef}
         onClick={resetHudTimeout}
-        className="fixed inset-0 w-screen h-screen bg-black z-[99999] overflow-hidden select-none flex flex-col"
+        className="fixed inset-0 w-screen h-screen bg-black z-[99999] overflow-hidden select-none flex items-center justify-center"
       >
         {/* Floating Auto-Fading HUD */}
         <div
-          className={`absolute top-0 left-0 right-0 p-3 z-50 transition-opacity duration-300 flex items-center justify-between pointer-events-auto ${
-            showHud ? 'opacity-100' : 'opacity-0 pointer-events-none'
-          }`}
+          className={`absolute top-0 left-0 right-0 p-2 sm:p-3 z-50 transition-opacity duration-300 flex flex-wrap items-center justify-between gap-2 pointer-events-auto ${showHud ? 'opacity-100' : 'opacity-0 pointer-events-none'
+            }`}
         >
           {/* Slot Badge */}
-          <div className="bg-[#10121a]/90 backdrop-blur border border-[#c4a45a]/60 px-3 py-1.5 rounded-full flex items-center space-x-2 text-xs font-mono text-[#f4f0e8] shadow-lg">
+          <div className="bg-[#10121a]/95 backdrop-blur border border-[#c4a45a]/60 px-3 py-1.5 rounded-full flex items-center space-x-2 text-xs font-mono text-[#f4f0e8] shadow-2xl shrink-0">
             <span
-              className="w-2.5 h-2.5 rounded-full"
-              style={{ backgroundColor: role?.color || '#c4a45a' }}
+              className="w-2.5 h-2.5 rounded-full shrink-0"
+              style={{ backgroundColor: currentSlotRole?.color || '#c4a45a' }}
             />
-            <span className="font-bold">SLOT #{safeSlot + 1} OF {teamSize}</span>
-            <span className="text-[#8e95a5]">({role?.name})</span>
+            <span className="font-bold">SLOT #{activeSlot + 1} OF {teamSize}</span>
+            <span className="text-[#8e95a5]">({currentSlotRole?.name})</span>
           </div>
 
-          {/* Controls Bar */}
-          <div className="flex items-center space-x-1.5 bg-[#10121a]/90 backdrop-blur border border-[#2a2e3d] p-1 rounded-full shadow-lg">
-            {/* Font Zoom */}
-            <button
-              onClick={(e) => handleZoom(e, -1)}
-              title="Decrease Font Size"
-              className="p-1.5 rounded-full bg-[#161922] text-[#f4f0e8] hover:text-[#c4a45a] text-xs font-mono font-bold"
-            >
-              <ZoomOut className="w-3.5 h-3.5" />
-            </button>
-            <span className="text-[10px] font-mono text-[#8e95a5] px-1">{fontSize}px</span>
-            <button
-              onClick={(e) => handleZoom(e, 1)}
-              title="Increase Font Size"
-              className="p-1.5 rounded-full bg-[#161922] text-[#f4f0e8] hover:text-[#c4a45a] text-xs font-mono font-bold"
-            >
-              <ZoomIn className="w-3.5 h-3.5" />
-            </button>
+          {/* Controls Bar - Mobile Friendly Touch Targets (min 44px) */}
+          <div className="flex items-center space-x-1 sm:space-x-1.5 bg-[#10121a]/95 backdrop-blur border border-[#2a2e3d] p-1 rounded-full shadow-2xl shrink-0">
+            {/* Edge Snapping */}
+            <div className="flex items-center bg-[#161922] rounded-full p-0.5 border border-[#2a2e3d]">
+              <button
+                onClick={(e) => handleAnchorSelect(e, 'start')}
+                title={isSideways ? "Align Left (Snap to physical left edge)" : "Align Top (Snap to top edge)"}
+                className={`w-11 h-11 min-w-[44px] min-h-[44px] flex items-center justify-center rounded-full transition-colors ${anchor === 'start' ? 'bg-[#c4a45a] text-[#08090c]' : 'text-[#8e95a5] hover:text-[#f4f0e8]'
+                  }`}
+              >
+                {isSideways ? <AlignLeft className="w-5 h-5" /> : <AlignVerticalJustifyStart className="w-5 h-5" />}
+              </button>
+              <button
+                onClick={(e) => handleAnchorSelect(e, 'center')}
+                title="Center Alignment"
+                className={`w-11 h-11 min-w-[44px] min-h-[44px] flex items-center justify-center rounded-full transition-colors ${anchor === 'center' ? 'bg-[#c4a45a] text-[#08090c]' : 'text-[#8e95a5] hover:text-[#f4f0e8]'
+                  }`}
+              >
+                {isSideways ? <AlignCenter className="w-5 h-5" /> : <AlignVerticalJustifyCenter className="w-5 h-5" />}
+              </button>
+              <button
+                onClick={(e) => handleAnchorSelect(e, 'end')}
+                title={isSideways ? "Align Right (Snap to physical right edge)" : "Align Bottom (Snap to bottom edge)"}
+                className={`w-11 h-11 min-w-[44px] min-h-[44px] flex items-center justify-center rounded-full transition-colors ${anchor === 'end' ? 'bg-[#c4a45a] text-[#08090c]' : 'text-[#8e95a5] hover:text-[#f4f0e8]'
+                  }`}
+              >
+                {isSideways ? <AlignRight className="w-5 h-5" /> : <AlignVerticalJustifyEnd className="w-5 h-5" />}
+              </button>
+            </div>
+
+            {/* Zoom Controls */}
+            <div className="flex items-center bg-[#161922] rounded-full px-1 py-0.5 border border-[#2a2e3d]">
+              <button
+                onClick={(e) => handleZoom(e, -0.1)}
+                title="Zoom Out (Reduce Text Width)"
+                className="w-11 h-11 min-w-[44px] min-h-[44px] flex items-center justify-center rounded-full text-[#8e95a5] hover:text-[#f4f0e8]"
+              >
+                <ZoomOut className="w-5 h-5" />
+              </button>
+              <button
+                onClick={handleResetZoom}
+                title="Reset to 100% Edge-to-Edge"
+                className="min-h-[44px] px-2 flex items-center justify-center text-xs font-mono text-[#c4a45a] font-bold hover:underline"
+              >
+                {Math.round(zoomLevel * 100)}%
+              </button>
+              <button
+                onClick={(e) => handleZoom(e, 0.1)}
+                title="Zoom In (Increase Text Width)"
+                className="w-11 h-11 min-w-[44px] min-h-[44px] flex items-center justify-center rounded-full text-[#8e95a5] hover:text-[#f4f0e8]"
+              >
+                <ZoomIn className="w-5 h-5" />
+              </button>
+            </div>
 
             {/* Rotate */}
             <button
               onClick={handleRotate}
               title={`Rotate Screen (${rotation}°)`}
-              className="p-1.5 rounded-full bg-[#161922] text-[#f4f0e8] hover:text-[#c4a45a]"
+              className="w-11 h-11 min-w-[44px] min-h-[44px] flex items-center justify-center rounded-full bg-[#161922] border border-[#2a2e3d] text-[#c4a45a] hover:bg-[#c4a45a] hover:text-[#08090c] transition-colors"
             >
-              <RotateCw className="w-3.5 h-3.5" />
+              <RotateCw className="w-5 h-5" />
             </button>
 
             {/* Exit Fullscreen */}
             <button
-              onClick={toggleFullscreen}
-              title="Exit Alignment Mode"
-              className="p-1.5 rounded-full bg-red-950/80 border border-red-500/50 text-red-200 hover:bg-red-900"
+              onClick={exitFullscreenCleanly}
+              title="Exit Table Alignment Mode"
+              className="w-11 h-11 min-w-[44px] min-h-[44px] flex items-center justify-center rounded-full bg-red-950/80 border border-red-500/50 text-red-200 hover:bg-red-900 transition-colors"
             >
-              <Minimize2 className="w-3.5 h-3.5" />
+              <Minimize2 className="w-5 h-5" />
             </button>
           </div>
         </div>
 
-        {/* Floating Anchor Snapping Matrix (Bottom HUD) */}
+        {/* Rotatable Monospace Canvas that fills exact physical viewport */}
         <div
-          className={`absolute bottom-3 left-1/2 -translate-x-1/2 z-50 transition-opacity duration-300 pointer-events-auto ${
-            showHud ? 'opacity-100' : 'opacity-0 pointer-events-none'
-          }`}
-        >
-          <div className="bg-[#10121a]/90 backdrop-blur border border-[#2a2e3d] px-3 py-2 rounded-2xl flex items-center space-x-2 text-[10px] font-mono shadow-xl">
-            <span className="text-[#8e95a5] flex items-center space-x-1">
-              <Move className="w-3 h-3 text-[#c4a45a]" />
-              <span className="hidden xs:inline">Snap Edge:</span>
-            </span>
-            <div className="grid grid-cols-3 gap-1">
-              {(['top-left', 'top', 'top-right', 'left', 'center', 'right', 'bottom-left', 'bottom', 'bottom-right'] as AlignmentAnchor[]).map((a) => (
-                <button
-                  key={a}
-                  onClick={(e) => handleAnchorSelect(e, a)}
-                  className={`px-1.5 py-0.5 rounded text-[9px] uppercase font-bold border transition-colors ${
-                    anchor === a
-                      ? 'bg-[#c4a45a] text-[#08090c] border-[#c4a45a]'
-                      : 'bg-[#161922] text-[#8e95a5] border-[#2a2e3d] hover:text-[#f4f0e8]'
-                  }`}
-                >
-                  {a.replace('-', ' ')}
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        {/* Main Fullscreen Canvas with ASCII Totem Slice */}
-        <div
-          className={`flex-1 w-full h-full flex ${getAnchorClasses()} overflow-hidden bg-black transition-all`}
           style={{
+            width: `${canvasWidth}px`,
+            height: `${canvasHeight}px`,
             transform: `rotate(${rotation}deg)`,
+            transformOrigin: 'center center',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            paddingLeft: 'max(16px, env(safe-area-inset-left))',
+            paddingRight: 'max(16px, env(safe-area-inset-right))',
+            boxSizing: 'border-box',
+            ...getVerticalAlignmentStyle(),
           }}
+          className="bg-black select-none overflow-hidden transition-all duration-150"
         >
-          <div
-            className="ascii-totem text-center font-mono font-bold leading-none select-none tracking-tighter"
-            style={{
-              fontSize: `${fontSize}px`,
-              color: role?.color || '#f4f0e8',
-              textShadow: '0 0 10px rgba(196, 164, 90, 0.25)',
-            }}
-          >
-            {/* If slot 0, show top mythic cap */}
-            {safeSlot === 0 && (
-              <div className="text-[#c4a45a] text-[10px] tracking-normal mb-1 opacity-70">
-                {MYTHIC_DECORATIVE_BORDERS.topCap.map((l, i) => (
-                  <div key={i}>{l}</div>
-                ))}
-              </div>
-            )}
-
-            {/* ASCII Fragment */}
-            {asciiSlice.map((row, idx) => (
-              <div key={idx} className="whitespace-pre">
-                {row}
-              </div>
-            ))}
-
-            {/* If last slot, show bottom mythic base */}
-            {safeSlot === teamSize - 1 && (
-              <div className="text-[#c4a45a] text-[10px] tracking-normal mt-1 opacity-70">
-                {MYTHIC_DECORATIVE_BORDERS.bottomBase.map((l, i) => (
-                  <div key={i}>{l}</div>
-                ))}
-              </div>
-            )}
-          </div>
+          {renderVectorTotem(canvasWidth, blockHeight, true)}
         </div>
       </div>
     );
   }
 
-  // Normal Card View (With Codeword Submission & Fullscreen Launch)
+  // --------------------------------------------------------------------------
+  // RENDER: NORMAL CARD VIEW
+  // --------------------------------------------------------------------------
   return (
     <div className="space-y-4">
       {/* Flagship Round Intro Banner */}
-      <div className="bg-[#10121a] border border-[#2a2e3d] rounded-2xl p-5 shadow-xl relative overflow-hidden">
+      <div className="bg-[#10121a] border border-[#2a2e3d] rounded-2xl p-5 shadow-xl relative overflow-hidden space-y-4">
         <div className="flex items-start justify-between">
           <div className="space-y-1">
             <div className="flex items-center space-x-2">
@@ -320,61 +524,55 @@ export const AsciiSplitterRound: React.FC = () => {
               <span
                 className="text-[10px] font-mono px-2 py-0.5 rounded-full font-bold"
                 style={{
-                  backgroundColor: `${role?.color || '#c4a45a'}25`,
-                  color: role?.color || '#c4a45a',
-                  border: `1px solid ${role?.color || '#c4a45a'}50`,
+                  backgroundColor: `${currentSlotRole?.color || '#c4a45a'}25`,
+                  color: currentSlotRole?.color || '#c4a45a',
+                  border: `1px solid ${currentSlotRole?.color || '#c4a45a'}50`,
                 }}
               >
-                Slot #{safeSlot + 1} of {teamSize}
+                Slot #{activeSlot + 1} of {teamSize}
               </span>
             </div>
             <h3 className="text-lg font-serif font-black text-[#f4f0e8]">
               Assemble the Severed Codeword
             </h3>
             <p className="text-xs text-[#8e95a5] leading-relaxed">
-              Every letter of the secret word is sliced horizontally across all {teamSize} phones. Place your phones edge-to-edge on the pub table to read it!
+              The secret code is sliced and split across your phones. Can you discover the word in time, open the ancient doors and escape?
             </p>
           </div>
         </div>
 
-        {/* ASCII Slice Preview Box */}
-        <div className="mt-4 bg-[#08090c] border border-[#2a2e3d] rounded-xl p-3 overflow-x-auto relative">
+        {/* ASCII Slice Preview Box with Vector Edge-to-Edge Totem */}
+        <div className="bg-[#08090c] border border-[#2a2e3d] rounded-xl p-3 overflow-hidden relative shadow-inner space-y-2">
           <div className="flex items-center justify-between pb-2 border-b border-[#2a2e3d]/80 text-[10px] font-mono text-[#8e95a5]">
-            <span>YOUR PHONE'S FRAGMENT</span>
-            <span style={{ color: role?.color || '#c4a45a' }}>{role?.name}'s Sector</span>
+            <span className="font-bold text-[#f4f0e8]">YOUR FRAGMENT</span>
+            <span style={{ color: currentSlotRole?.color || '#c4a45a' }}>
+              Sector: {currentSlotRole?.name}
+            </span>
           </div>
 
-          <div
-            className="ascii-totem text-center py-3 font-mono font-bold leading-none select-none tracking-tighter"
-            style={{
-              fontSize: '11px',
-              color: role?.color || '#f4f0e8',
-            }}
-          >
-            {asciiSlice.map((row, idx) => (
-              <div key={idx} className="whitespace-pre">
-                {row}
-              </div>
-            ))}
+          {/* Crisp Vector Edge-to-Edge Totem */}
+          <div className="py-2">
+            {renderVectorTotem(380, 75, false)}
+          </div>
+
+          <div className="flex items-center justify-between pt-1 border-t border-[#2a2e3d]/40 text-[10px] font-mono text-[#8e95a5]">
+            <span>Full vector blocks • 100% edge-to-edge fit</span>
           </div>
         </div>
 
-        {/* Enter Faux-Fullscreen Alignment Button */}
-        <div className="mt-4">
+        {/* Enter Fullscreen Table Alignment Button */}
+        <div>
           <button
             onClick={toggleFullscreen}
-            className="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-[#161922] via-[#202533] to-[#161922] hover:border-[#c4a45a] border border-[#2a2e3d] text-[#f4f0e8] font-mono font-bold text-xs flex items-center justify-center space-x-2 transition-all shadow-md group"
+            className="w-full py-3.5 px-4 rounded-xl bg-gradient-to-r from-[#161922] via-[#242b3b] to-[#161922] hover:border-[#c4a45a] border border-[#2a2e3d] text-[#f4f0e8] font-mono font-bold text-xs flex items-center justify-center space-x-2.5 transition-all shadow-md group"
           >
             <Maximize2 className="w-4 h-4 text-[#c4a45a] group-hover:scale-110 transition-transform" />
-            <span>Launch Fullscreen Alignment Mode</span>
+            <span className="tracking-wide">Launch Fullscreen To Aid Alignment</span>
           </button>
-          <p className="text-[10px] text-[#8e95a5]/70 text-center mt-1.5 font-mono">
-            Hides address bar, requests screen wake-lock & provides edge-snapping controls
-          </p>
         </div>
       </div>
 
-      {/* Codeword Submission Card */}
+      {/* CODEWORD SUBMISSION & DYNAMIC ESCALATING SCORING CARD (PLACED FIRST FOR FAST ACCESS) */}
       <div className="bg-[#10121a] border border-[#2a2e3d] rounded-2xl p-5 shadow-xl space-y-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-2">
@@ -418,11 +616,10 @@ export const AsciiSplitterRound: React.FC = () => {
 
             {submitResult && (
               <div
-                className={`p-3 rounded-xl border text-xs flex items-center space-x-2 ${
-                  submitResult.success
-                    ? 'bg-emerald-950/60 border-emerald-500/60 text-emerald-200'
-                    : 'bg-red-950/60 border-red-500/60 text-red-200'
-                }`}
+                className={`p-3 rounded-xl border text-xs flex items-center space-x-2 ${submitResult.success
+                  ? 'bg-emerald-950/60 border-emerald-500/60 text-emerald-200'
+                  : 'bg-red-950/60 border-red-500/60 text-red-200'
+                  }`}
               >
                 {submitResult.success ? (
                   <CheckCircle2 className="w-4 h-4 flex-shrink-0 text-emerald-400" />
@@ -441,6 +638,113 @@ export const AsciiSplitterRound: React.FC = () => {
               {submitting ? 'Verifying Codeword...' : 'Submit Deciphered Word'}
             </button>
           </form>
+        )}
+      </div>
+
+      {/* TACTICAL HINTS & ORACLE WHISPERS CARD (SINGLE DYNAMIC BUTTON) */}
+      <div className="bg-[#10121a] border border-[#2a2e3d] rounded-2xl p-5 shadow-xl space-y-4">
+        <div className="flex items-center justify-between border-b border-[#2a2e3d] pb-3">
+          <div className="flex items-center space-x-2">
+            <Lightbulb className="w-4 h-4 text-amber-400" />
+            <h4 className="text-sm font-serif font-bold text-[#f4f0e8]">
+              Oracle Whispers & Position Hints
+            </h4>
+          </div>
+          <span className="text-[10px] font-mono text-amber-400">
+            -30 PTS penalty per hint
+          </span>
+        </div>
+
+        <p className="text-xs text-[#8e95a5] leading-relaxed">
+          Are you stuck? You can get hints at certain time intervals.
+        </p>
+
+        {hintError && (
+          <div className="p-2.5 rounded-xl bg-red-950/60 border border-red-500/50 text-red-200 text-xs font-mono">
+            {hintError}
+          </div>
+        )}
+
+        {/* Single Dynamic Hint Button */}
+        <div>
+          {(() => {
+            const totalHints = ROUND1_HINTS.length;
+            const allHintsTaken = hintsTaken.length >= totalHints;
+            const nextHintIndex = hintsTaken.length + 1;
+            const nextHint = ROUND1_HINTS.find((h) => h.hintIndex === nextHintIndex);
+            const isAvailable = nextHint ? elapsedSeconds >= nextHint.availableAfterSeconds : false;
+            const secondsLeft = nextHint ? Math.max(0, nextHint.availableAfterSeconds - elapsedSeconds) : 0;
+            const mins = Math.floor(secondsLeft / 60);
+            const secs = secondsLeft % 60;
+
+            if (allHintsTaken) {
+              return (
+                <button
+                  disabled
+                  className="w-full py-3.5 px-4 rounded-xl bg-[#161922] border border-[#2a2e3d] text-[#8e95a5] font-mono text-xs font-bold flex items-center justify-center space-x-2 cursor-not-allowed opacity-80"
+                >
+                  <Check className="w-4 h-4 text-emerald-400" />
+                  <span>All Hints Revealed [3/3]</span>
+                </button>
+              );
+            }
+
+            if (isAvailable && nextHint) {
+              return (
+                <button
+                  onClick={() => handleRequestHint(nextHint.hintIndex)}
+                  disabled={requestingHintIndex === nextHint.hintIndex}
+                  className="w-full py-3.5 px-4 bg-gradient-to-r from-[#c4a45a] via-[#e5cb87] to-[#c4a45a] hover:from-[#d8b86e] hover:to-[#f0d89e] text-[#08090c] font-mono font-bold text-xs rounded-xl shadow-gold-glow flex items-center justify-center space-x-2 transition-all disabled:opacity-50 active:scale-[0.99]"
+                >
+                  <Lightbulb className="w-4 h-4 text-[#08090c]" />
+                  <span>
+                    {requestingHintIndex === nextHint.hintIndex
+                      ? `Unlocking Hint [${nextHint.hintIndex}/${totalHints}]...`
+                      : `Request Hint [${nextHint.hintIndex}/${totalHints}] (-30 PTS)`}
+                  </span>
+                </button>
+              );
+            }
+
+            return (
+              <button
+                disabled
+                className="w-full py-3.5 px-4 rounded-xl bg-[#161922]/80 border border-[#2a2e3d] text-[#8e95a5] font-mono text-xs flex items-center justify-center space-x-2 cursor-not-allowed"
+              >
+                <Clock className="w-4 h-4 text-[#c4a45a]" />
+                <span>
+                  Hint [{nextHintIndex}/${totalHints}] Unlocks in {mins}m {secs < 10 ? '0' : ''}{secs}s
+                </span>
+              </button>
+            );
+          })()}
+        </div>
+
+        {/* Revealed Hints List */}
+        {hintsTaken.length > 0 && (
+          <div className="space-y-2.5 pt-1">
+            {hintsTaken.map((idx) => {
+              const hint = ROUND1_HINTS.find((h) => h.hintIndex === idx);
+              const hintText = generateHintText(idx, teamSize, slotMembers);
+              return (
+                <div
+                  key={idx}
+                  className="p-3.5 rounded-xl bg-gradient-to-r from-emerald-950/40 via-[#10121a] to-emerald-950/40 border border-emerald-500/50 space-y-1.5"
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-mono font-bold text-emerald-400 flex items-center space-x-1">
+                      <Check className="w-3.5 h-3.5" />
+                      <span>HINT [{idx}/3] REVEALED: {hint?.title}</span>
+                    </span>
+                    <span className="text-[9px] font-mono text-rose-400/90 font-bold">-30 PTS APPLIED</span>
+                  </div>
+                  <p className="text-xs font-mono text-[#f4f0e8] leading-relaxed select-all">
+                    {hintText}
+                  </p>
+                </div>
+              );
+            })}
+          </div>
         )}
       </div>
     </div>

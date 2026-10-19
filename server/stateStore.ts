@@ -1,5 +1,29 @@
-import { GameConfig, GameState, Player, Team, SyncPayload } from '../src/types';
-import { DEFAULT_CONFIG } from '../src/lib/defaultConfig';
+import {
+  GameConfig,
+  GameState,
+  Player,
+  Team,
+  SyncPayload,
+  Round2Match,
+  Round2ClashData,
+  Round2Config,
+  Round2Phase,
+  Round2ScoringTier,
+  Round2Vote,
+} from '../src/types';
+import { DEFAULT_CONFIG, DEFAULT_ROUND2_CONFIG } from '../src/lib/defaultConfig';
+import {
+  generateBattleCode,
+  calculateTeamStance,
+  calculateClashPoints,
+  calculateNemesis,
+  sanitizeMatchForPlayer,
+} from '../src/lib/round2Engine';
+import {
+  calculateRound1Score,
+  generateHintText,
+  ROUND1_HINTS,
+} from '../src/lib/round1Engine';
 import fs from 'fs';
 import path from 'path';
 
@@ -26,11 +50,13 @@ export class UnderworldStateStore {
   state: GameState = 'LOBBY_TEAM_FORMATION';
   current_round_index: number = 0;
   round_ends_at: number | null = null;
+  round_started_at: number | null = null;
   round_is_paused: boolean = false;
   paused_time_left_seconds: number | null = null;
   
   players: Map<string, Player> = new Map();
   teams: Map<string, Team> = new Map();
+  round2_matches: Map<string, Round2Match> = new Map();
 
   constructor() {
     this.loadFromDisk();
@@ -43,10 +69,12 @@ export class UnderworldStateStore {
         state: this.state,
         current_round_index: this.current_round_index,
         round_ends_at: this.round_ends_at,
+        round_started_at: this.round_started_at,
         round_is_paused: this.round_is_paused,
         paused_time_left_seconds: this.paused_time_left_seconds,
         players: Array.from(this.players.entries()),
         teams: Array.from(this.teams.entries()),
+        round2_matches: Array.from(this.round2_matches.entries()),
       };
       fs.writeFileSync(STORAGE_FILE, JSON.stringify(data, null, 2), 'utf-8');
     } catch (e) {
@@ -63,9 +91,11 @@ export class UnderworldStateStore {
         if (data.state) this.state = data.state;
         if (typeof data.current_round_index === 'number') this.current_round_index = data.current_round_index;
         if (data.round_ends_at) this.round_ends_at = data.round_ends_at;
+        if (data.round_started_at) this.round_started_at = data.round_started_at;
         if (data.players) this.players = new Map(data.players);
         if (data.teams) this.teams = new Map(data.teams);
-        console.log(`Loaded ${this.players.size} players and ${this.teams.size} teams from disk.`);
+        if (data.round2_matches) this.round2_matches = new Map(data.round2_matches);
+        console.log(`Loaded ${this.players.size} players, ${this.teams.size} teams, ${this.round2_matches.size} matches from disk.`);
       }
     } catch (e) {
       console.warn('Could not load existing state, starting fresh:', e);
@@ -75,6 +105,7 @@ export class UnderworldStateStore {
   resetAll() {
     this.players.clear();
     this.teams.clear();
+    this.round2_matches.clear();
     this.state = 'LOBBY_TEAM_FORMATION';
     this.current_round_index = 0;
     this.round_ends_at = null;
@@ -305,6 +336,18 @@ export class UnderworldStateStore {
     return true;
   }
 
+  deleteTeam(teamId: string): boolean {
+    const team = this.teams.get(teamId);
+    if (!team) return false;
+    for (const pid of team.player_ids) {
+      const p = this.players.get(pid);
+      if (p) p.teamId = null;
+    }
+    this.teams.delete(teamId);
+    this.saveToDisk();
+    return true;
+  }
+
   movePlayerToTeam(playerId: string, targetTeamId: string | null): boolean {
     const player = this.players.get(playerId);
     if (!player) return false;
@@ -376,8 +419,6 @@ export class UnderworldStateStore {
 
     if (round.type === 'ASCII_SPLITTER') {
       const expected = (team.assignedCodeword || 'ORACLE').toUpperCase();
-      basePoints = (round.data as any).pointsBase ?? 100;
-      speedBonusMax = (round.data as any).pointsSpeedBonusMax ?? 100;
       isCorrect = cleanInput === expected;
     } else if (round.type === 'ASYMMETRIC_TEXT_PUZZLE') {
       const expected = (round.data as any).answerCodeword?.toUpperCase() || 'CERBERUS';
@@ -393,16 +434,26 @@ export class UnderworldStateStore {
       return { success: false, message: 'Incorrect codeword! Consult your crew mates and inspect your clues again.' };
     }
 
-    // Calculate speed bonus
-    let speedPoints = 0;
     const now = Date.now();
-    if (this.round_ends_at && this.round_ends_at > now) {
-      const remainingSecs = Math.max(0, (this.round_ends_at - now) / 1000);
-      const frac = Math.min(1, remainingSecs / round.durationSeconds);
-      speedPoints = Math.round(frac * speedBonusMax);
+    let totalAwarded = 100;
+    const hintsCount = team.hints_taken?.length || 0;
+    let solveTimeSeconds = 0;
+
+    if (round.type === 'ASCII_SPLITTER') {
+      const roundStartedAt = this.round_started_at || (this.round_ends_at ? Math.max(0, this.round_ends_at - round.durationSeconds * 1000) : now - 60000);
+      solveTimeSeconds = Math.max(0, Math.floor((now - roundStartedAt) / 1000));
+      const breakdown = calculateRound1Score(solveTimeSeconds, hintsCount);
+      totalAwarded = breakdown.finalPoints;
+    } else {
+      let speedPoints = 0;
+      if (this.round_ends_at && this.round_ends_at > now) {
+        const remainingSecs = Math.max(0, (this.round_ends_at - now) / 1000);
+        const frac = Math.min(1, remainingSecs / round.durationSeconds);
+        speedPoints = Math.round(frac * speedBonusMax);
+      }
+      totalAwarded = basePoints + speedPoints;
     }
 
-    const totalAwarded = basePoints + speedPoints;
     team.score += totalAwarded;
     team.round_submissions[roundId] = {
       completed: true,
@@ -410,10 +461,57 @@ export class UnderworldStateStore {
       answerSubmitted: cleanInput,
       pointsAwarded: totalAwarded,
       isCorrect: true,
+      hintsCount,
+      solveTimeSeconds,
     };
 
     this.saveToDisk();
     return { success: true, message: `Codeword Accepted! +${totalAwarded} points awarded to ${team.name}!`, points: totalAwarded, isCorrect: true };
+  }
+
+  requestRoundHint(teamId: string, hintIndex: number): { success: boolean; hint?: string; hintsTaken?: number[]; error?: string } {
+    const team = this.teams.get(teamId);
+    if (!team) return { success: false, error: 'Crew not found' };
+
+    const currentRound = this.config.rounds[this.current_round_index];
+    const now = Date.now();
+    const roundStartedAt = this.round_started_at || (this.round_ends_at ? Math.max(0, this.round_ends_at - (currentRound?.durationSeconds || 300) * 1000) : now - 120000);
+    const elapsedSeconds = Math.max(0, Math.floor((now - roundStartedAt) / 1000));
+
+    const hintCfg = ROUND1_HINTS.find(h => h.hintIndex === hintIndex);
+    if (!hintCfg) return { success: false, error: 'Invalid hint number' };
+
+    if (elapsedSeconds < hintCfg.availableAfterSeconds) {
+      const remaining = hintCfg.availableAfterSeconds - elapsedSeconds;
+      return {
+        success: false,
+        error: `Hint #${hintIndex} is locked. Unlocks in ${Math.floor(remaining / 60)}m ${remaining % 60}s.`,
+      };
+    }
+
+    const existingHints = new Set(team.hints_taken || []);
+    existingHints.add(hintIndex);
+    team.hints_taken = Array.from(existingHints).sort((a, b) => a - b);
+
+    const slotMembers = team.player_ids.map((pid, idx) => {
+      const p = this.players.get(pid);
+      const role = this.config.roles.find(r => r.id === p?.roleId);
+      return {
+        slotIndex: idx,
+        playerName: p?.name || `Shade #${idx + 1}`,
+        roleName: role?.name || 'Shade',
+        roleColor: role?.color || '#c4a45a',
+      };
+    });
+
+    const hintText = generateHintText(hintIndex, team.player_ids.length || this.config.team_size || 5, slotMembers);
+    this.saveToDisk();
+
+    return {
+      success: true,
+      hint: hintText,
+      hintsTaken: team.hints_taken,
+    };
   }
 
   // Timer & state controls
@@ -427,6 +525,7 @@ export class UnderworldStateStore {
       const round = this.config.rounds[this.current_round_index];
       const duration = round ? round.durationSeconds : 300;
       this.round_ends_at = Date.now() + duration * 1000;
+      this.round_started_at = Date.now();
       this.round_is_paused = false;
       this.paused_time_left_seconds = null;
 
@@ -521,6 +620,37 @@ export class UnderworldStateStore {
     const player = forPlayerId ? this.players.get(forPlayerId) || null : null;
     const team = player?.teamId ? this.teams.get(player.teamId) || null : null;
 
+    // Ensure all teams have a battle_code
+    const existingBattleCodes = new Set<string>();
+    for (const t of this.teams.values()) {
+      if (t.battle_code) existingBattleCodes.add(t.battle_code);
+    }
+    for (const t of this.teams.values()) {
+      if (!t.battle_code) {
+        t.battle_code = generateBattleCode(existingBattleCodes);
+        existingBattleCodes.add(t.battle_code);
+      }
+    }
+
+    // Process active matches whose timers have expired
+    const allMatches = Array.from(this.round2_matches.values());
+    for (const m of allMatches) {
+      if (!m.completed && m.phase_ends_at && now >= m.phase_ends_at) {
+        this.round2AdvancePhase(m.id);
+      }
+    }
+
+    // Find player's match
+    let playerMatch: Round2Match | null = null;
+    if (team) {
+      const teamMatches = Array.from(this.round2_matches.values()).filter(
+        m => m.team_a_id === team.id || m.team_b_id === team.id
+      );
+      playerMatch = teamMatches.find(m => !m.completed) || teamMatches[teamMatches.length - 1] || null;
+    }
+
+    const sanitizedPlayerMatch = playerMatch ? sanitizeMatchForPlayer(playerMatch, player?.id, team?.id) : null;
+
     // Leaderboard sorted by score desc
     const teamsList = Array.from(this.teams.values())
       .map(t => {
@@ -528,6 +658,7 @@ export class UnderworldStateStore {
           const p = this.players.get(pid);
           const role = this.config.roles.find(r => r.id === p?.roleId);
           return {
+            id: pid,
             name: p?.name || 'Unknown Shade',
             roleName: role?.name || 'Wanderer',
             roleColor: role?.color || '#c4a45a',
@@ -543,6 +674,8 @@ export class UnderworldStateStore {
           name: t.name,
           score: t.score,
           player_count: t.player_ids.length,
+          battle_code: t.battle_code,
+          nemesis_team_id: t.nemesis_team_id,
           members,
           roundCompleted,
           recentDelta,
@@ -577,9 +710,346 @@ export class UnderworldStateStore {
       team,
       all_players_count: this.players.size,
       formed_teams_count: this.teams.size,
+      round2_match: sanitizedPlayerMatch,
+      round2_all_matches: Array.from(this.round2_matches.values()),
       teams_leaderboard: teamsList,
       unassigned_players: unassigned,
     };
+  }
+
+  // Round 2 methods
+  round2PairByCode(myTeamId: string, opponentBattleCode: string): { success: boolean; match?: Round2Match; error?: string } {
+    const cleanCode = opponentBattleCode.trim().toUpperCase();
+    if (cleanCode.length !== 2) {
+      return { success: false, error: 'Battle code must be a 2-digit number (e.g. 49)' };
+    }
+
+    const opponent = Array.from(this.teams.values()).find(t => t.battle_code === cleanCode);
+    if (!opponent) {
+      return { success: false, error: `No crew found with Battle Code [ ${cleanCode} ]` };
+    }
+    if (opponent.id === myTeamId) {
+      return { success: false, error: 'Cannot pair with your own crew!' };
+    }
+
+    const existing = Array.from(this.round2_matches.values()).find(
+      m => !m.completed && (m.team_a_id === myTeamId || m.team_b_id === myTeamId || m.team_a_id === opponent.id || m.team_b_id === opponent.id)
+    );
+
+    if (existing) {
+      if (
+        (existing.team_a_id === myTeamId && existing.team_b_id === opponent.id) ||
+        (existing.team_a_id === opponent.id && existing.team_b_id === myTeamId)
+      ) {
+        return { success: true, match: existing };
+      }
+      return { success: false, error: 'One of the crews is already engaged in an active clash!' };
+    }
+
+    const config = this.config;
+    const huddleSecs = config.round2?.phase_durations_seconds?.HUDDLE || DEFAULT_ROUND2_CONFIG.phase_durations_seconds.HUDDLE;
+    const now = Date.now();
+
+    const matchId = `r2m_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+    const match: Round2Match = {
+      id: matchId,
+      session_id: 'main',
+      team_a_id: myTeamId,
+      team_b_id: opponent.id,
+      current_clash: 1,
+      current_phase: 'HUDDLE',
+      phase_ends_at: now + huddleSecs * 1000,
+      clash_data: [],
+      completed: false,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+
+    this.round2_matches.set(matchId, match);
+    this.saveToDisk();
+    return { success: true, match };
+  }
+
+  round2CastVote(matchId: string, playerId: string, teamId: string, vote: 'TRUCE' | 'AMBUSH'): { success: boolean; error?: string } {
+    const match = this.round2_matches.get(matchId);
+    if (!match) return { success: false, error: 'Match not found' };
+    if (match.current_phase !== 'VOTE') {
+      return { success: false, error: 'Voting is only allowed during the VOTE phase.' };
+    }
+
+    let curClash = match.clash_data.find(c => c.clash === match.current_clash);
+    if (!curClash) {
+      curClash = {
+        clash: match.current_clash,
+        team_a_votes: {},
+        team_b_votes: {},
+        team_a_stance: 'TRUCE',
+        team_b_stance: 'TRUCE',
+        team_a_pts: 0,
+        team_b_pts: 0,
+      };
+      match.clash_data.push(curClash);
+    }
+
+    const isTeamA = match.team_a_id === teamId;
+    const isTeamB = match.team_b_id === teamId;
+    if (!isTeamA && !isTeamB) return { success: false, error: 'Your crew is not in this clash' };
+
+    if (isTeamA) {
+      if (curClash.team_a_votes[playerId]) return { success: false, error: 'Choice already recorded.' };
+      curClash.team_a_votes[playerId] = vote;
+    } else {
+      if (curClash.team_b_votes[playerId]) return { success: false, error: 'Choice already recorded.' };
+      curClash.team_b_votes[playerId] = vote;
+    }
+
+    match.updated_at = new Date().toISOString();
+
+    const teamA = this.teams.get(match.team_a_id);
+    const teamB = this.teams.get(match.team_b_id);
+    const teamAMembers = teamA?.player_ids || [];
+    const teamBMembers = teamB?.player_ids || [];
+
+    const allAVoted = teamAMembers.length > 0 && teamAMembers.every(id => curClash!.team_a_votes[id]);
+    const allBVoted = teamBMembers.length > 0 && teamBMembers.every(id => curClash!.team_b_votes[id]);
+
+    if (allAVoted && allBVoted) {
+      this.round2AdvancePhase(matchId, true);
+    } else {
+      this.saveToDisk();
+    }
+
+    return { success: true };
+  }
+
+  round2AdvancePhase(matchId: string, forceSkip: boolean = false): Round2Match | null {
+    const match = this.round2_matches.get(matchId);
+    if (!match) return null;
+    const now = Date.now();
+    if (!forceSkip && (!match.phase_ends_at || now < match.phase_ends_at || match.completed)) {
+      return match;
+    }
+
+    const r2Config: Round2Config = this.config.round2 || DEFAULT_ROUND2_CONFIG;
+    const durations = r2Config.phase_durations_seconds || DEFAULT_ROUND2_CONFIG.phase_durations_seconds;
+    const numClashes = r2Config.num_clashes || 3;
+
+    const teamA = this.teams.get(match.team_a_id);
+    const teamB = this.teams.get(match.team_b_id);
+    const teamAMembers = teamA?.player_ids || [];
+    const teamBMembers = teamB?.player_ids || [];
+
+    if (match.current_phase === 'HUDDLE') {
+      match.current_phase = 'PARLEY';
+      match.phase_ends_at = now + (durations.PARLEY || 40) * 1000;
+    } else if (match.current_phase === 'PARLEY') {
+      match.current_phase = 'VOTE';
+      match.phase_ends_at = now + (durations.VOTE || 25) * 1000;
+      let curClash = match.clash_data.find(c => c.clash === match.current_clash);
+      if (!curClash) {
+        match.clash_data.push({
+          clash: match.current_clash,
+          team_a_votes: {},
+          team_b_votes: {},
+          team_a_stance: 'TRUCE',
+          team_b_stance: 'TRUCE',
+          team_a_pts: 0,
+          team_b_pts: 0,
+        });
+      }
+    } else if (match.current_phase === 'VOTE') {
+      match.current_phase = 'DEBRIEF';
+      match.phase_ends_at = now + (durations.DEBRIEF || 40) * 1000;
+
+      let curClash = match.clash_data.find(c => c.clash === match.current_clash);
+      if (!curClash) {
+        curClash = {
+          clash: match.current_clash,
+          team_a_votes: {},
+          team_b_votes: {},
+          team_a_stance: 'TRUCE',
+          team_b_stance: 'TRUCE',
+          team_a_pts: 0,
+          team_b_pts: 0,
+        };
+        match.clash_data.push(curClash);
+      }
+
+      for (const pid of teamAMembers) {
+        if (!curClash.team_a_votes[pid]) curClash.team_a_votes[pid] = 'ABSTAIN';
+      }
+      for (const pid of teamBMembers) {
+        if (!curClash.team_b_votes[pid]) curClash.team_b_votes[pid] = 'ABSTAIN';
+      }
+
+      const stanceA = calculateTeamStance(curClash.team_a_votes, teamAMembers, this.players);
+      const stanceB = calculateTeamStance(curClash.team_b_votes, teamBMembers, this.players);
+      curClash.team_a_stance = stanceA;
+      curClash.team_b_stance = stanceB;
+
+      const { team_a_pts, team_b_pts } = calculateClashPoints(stanceA, stanceB, match.current_clash, r2Config.scoring_matrix);
+      curClash.team_a_pts = team_a_pts;
+      curClash.team_b_pts = team_b_pts;
+
+      if (teamA) teamA.score += team_a_pts;
+      if (teamB) teamB.score += team_b_pts;
+    } else if (match.current_phase === 'DEBRIEF') {
+      if (match.current_clash < numClashes) {
+        match.current_clash += 1;
+        match.current_phase = 'HUDDLE';
+        match.phase_ends_at = now + (durations.HUDDLE || 50) * 1000;
+      } else {
+        match.completed = true;
+        match.phase_ends_at = now;
+
+        const nemesisResult = calculateNemesis(match.clash_data, match.team_a_id, match.team_b_id);
+        if (nemesisResult.teamANemesis && teamA) teamA.nemesis_team_id = nemesisResult.teamANemesis;
+        if (nemesisResult.teamBNemesis && teamB) teamB.nemesis_team_id = nemesisResult.teamBNemesis;
+
+        const ptsA = match.clash_data.reduce((acc, c) => acc + (c.team_a_pts || 0), 0);
+        const ptsB = match.clash_data.reduce((acc, c) => acc + (c.team_b_pts || 0), 0);
+        if (teamA) {
+          teamA.round_submissions['round-2'] = {
+            completed: true,
+            completedAt: now,
+            answerSubmitted: 'Round 2 Complete',
+            pointsAwarded: ptsA,
+            isCorrect: true,
+          };
+        }
+        if (teamB) {
+          teamB.round_submissions['round-2'] = {
+            completed: true,
+            completedAt: now,
+            answerSubmitted: 'Round 2 Complete',
+            pointsAwarded: ptsB,
+            isCorrect: true,
+          };
+        }
+      }
+    }
+
+    match.updated_at = new Date().toISOString();
+    this.saveToDisk();
+    return match;
+  }
+
+  adminRound2AutoPair(): { success: boolean; pairedCount: number; error?: string } {
+    const teams = Array.from(this.teams.values());
+    if (teams.length < 2) return { success: false, pairedCount: 0, error: 'Need at least 2 formed crews to pair.' };
+
+    const activeMatchedIds = new Set<string>();
+    for (const m of this.round2_matches.values()) {
+      if (!m.completed) {
+        activeMatchedIds.add(m.team_a_id);
+        activeMatchedIds.add(m.team_b_id);
+      }
+    }
+
+    const unlinked = teams.filter(t => !activeMatchedIds.has(t.id));
+    if (unlinked.length < 2) return { success: false, pairedCount: 0, error: 'Fewer than 2 unlinked crews available to pair.' };
+
+    const config = this.config;
+    const huddleSecs = config.round2?.phase_durations_seconds?.HUDDLE || DEFAULT_ROUND2_CONFIG.phase_durations_seconds.HUDDLE;
+    const now = Date.now();
+    let pairedCount = 0;
+
+    for (let i = 0; i + 1 < unlinked.length; i += 2) {
+      const matchId = `r2m_${Date.now()}_${i}`;
+      this.round2_matches.set(matchId, {
+        id: matchId,
+        session_id: 'main',
+        team_a_id: unlinked[i].id,
+        team_b_id: unlinked[i + 1].id,
+        current_clash: 1,
+        current_phase: 'HUDDLE',
+        phase_ends_at: now + huddleSecs * 1000,
+        clash_data: [],
+        completed: false,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      });
+      pairedCount++;
+    }
+
+    this.saveToDisk();
+    return { success: true, pairedCount };
+  }
+
+  adminRound2ManualPair(teamAId: string, teamBId: string): { success: boolean; error?: string } {
+    if (teamAId === teamBId) return { success: false, error: 'Cannot pair crew with itself.' };
+    const config = this.config;
+    const huddleSecs = config.round2?.phase_durations_seconds?.HUDDLE || DEFAULT_ROUND2_CONFIG.phase_durations_seconds.HUDDLE;
+    const now = Date.now();
+    const matchId = `r2m_${Date.now()}_manual`;
+    this.round2_matches.set(matchId, {
+      id: matchId,
+      session_id: 'main',
+      team_a_id: teamAId,
+      team_b_id: teamBId,
+      current_clash: 1,
+      current_phase: 'HUDDLE',
+      phase_ends_at: now + huddleSecs * 1000,
+      clash_data: [],
+      completed: false,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    });
+    this.saveToDisk();
+    return { success: true };
+  }
+
+  adminRound2AdjustTimer(deltaSeconds: number): { success: boolean } {
+    const now = Date.now();
+    for (const m of this.round2_matches.values()) {
+      if (!m.completed) {
+        const curEndsAt = m.phase_ends_at || now;
+        const base = curEndsAt < now ? now : curEndsAt;
+        m.phase_ends_at = base + deltaSeconds * 1000;
+        m.updated_at = new Date().toISOString();
+      }
+    }
+    this.saveToDisk();
+    return { success: true };
+  }
+
+  adminRound2SkipPhase(matchId?: string): { success: boolean } {
+    if (matchId) {
+      this.round2AdvancePhase(matchId, true);
+    } else {
+      for (const m of this.round2_matches.values()) {
+        if (!m.completed) {
+          this.round2AdvancePhase(m.id, true);
+        }
+      }
+    }
+    return { success: true };
+  }
+
+  adminRound2ResetMatches(): { success: boolean } {
+    this.round2_matches.clear();
+    for (const t of this.teams.values()) {
+      t.nemesis_team_id = null;
+      if (t.round_submissions['round-2']) {
+        delete t.round_submissions['round-2'];
+      }
+    }
+    this.saveToDisk();
+    return { success: true };
+  }
+
+  adminRound2SaveDurations(durations: { HUDDLE: number; PARLEY: number; VOTE: number; DEBRIEF: number }): { success: boolean } {
+    if (!this.config.round2) this.config.round2 = JSON.parse(JSON.stringify(DEFAULT_ROUND2_CONFIG));
+    this.config.round2.phase_durations_seconds = durations;
+    this.saveToDisk();
+    return { success: true };
+  }
+
+  adminRound2SaveScoring(matrix: Record<string, Round2ScoringTier>): { success: boolean } {
+    if (!this.config.round2) this.config.round2 = JSON.parse(JSON.stringify(DEFAULT_ROUND2_CONFIG));
+    this.config.round2.scoring_matrix = matrix;
+    this.saveToDisk();
+    return { success: true };
   }
 }
 

@@ -16,10 +16,23 @@ import {
   supabaseAdminAdjustTeamScore,
   supabaseAdminUpdateConfig,
   supabaseAdminResetGame,
+  supabaseAdminDeleteTeam,
   supabaseAdminAutoGroup,
   supabaseAdminSpawnDemoCrew,
+  supabaseVerifyAdminPasscode,
+  supabaseRound2PairByCode,
+  supabaseRound2CastVote,
+  supabaseRound2AdvancePhase,
+  supabaseAdminRound2AutoPair,
+  supabaseAdminRound2ManualPair,
+  supabaseAdminRound2AdjustTimer,
+  supabaseAdminRound2SkipPhase,
+  supabaseAdminRound2ResetMatches,
+  supabaseAdminRound2SaveDurations,
+  supabaseAdminRound2SaveScoring,
+  supabaseRequestRoundHint,
 } from './supabaseService';
-import type { GameState, GameConfig } from '../types';
+import type { GameState, GameConfig, Round2ScoringTier } from '../types';
 
 const API_BASE = '/api';
 
@@ -128,6 +141,18 @@ export async function submitRoundAnswerApi(playerId: string, roundId: string, an
   return res.json();
 }
 
+export async function requestRoundHintApi(teamId: string, hintIndex: number) {
+  if (isSupabaseConfigured) {
+    return supabaseRequestRoundHint(teamId, hintIndex);
+  }
+  const res = await fetch(`${API_BASE}/round/hint`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ teamId, hintIndex }),
+  });
+  return res.json();
+}
+
 export async function pollSyncApi(playerId?: string) {
   if (isSupabaseConfigured) {
     return fetchFullSyncPayloadFromSupabase(playerId);
@@ -141,7 +166,7 @@ export async function pollSyncApi(playerId?: string) {
 // Admin API
 export async function verifyAdminPasscode(passcode: string) {
   if (isSupabaseConfigured) {
-    return passcode === 'underworld';
+    return supabaseVerifyAdminPasscode(passcode);
   }
   const res = await fetch(`${API_BASE}/admin/verify`, {
     method: 'POST',
@@ -311,10 +336,24 @@ export async function adminUpdateConfig(passcode: string, config: GameConfig) {
   return res.json();
 }
 
+export async function adminDeleteTeam(passcode: string, teamId: string) {
+  if (isSupabaseConfigured) {
+    return supabaseAdminDeleteTeam(teamId);
+  }
+  const res = await fetch(`${API_BASE}/admin/team/delete`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-admin-passcode': passcode,
+    },
+    body: JSON.stringify({ teamId }),
+  });
+  return res.json();
+}
+
 export async function adminResetGame(passcode: string) {
   if (isSupabaseConfigured) {
-    await supabaseAdminResetGame();
-    return { success: true };
+    return supabaseAdminResetGame();
   }
   const res = await fetch(`${API_BASE}/admin/reset`, {
     method: 'POST',
@@ -326,3 +365,157 @@ export async function adminResetGame(passcode: string) {
   });
   return res.json();
 }
+
+// ==========================================
+// ROUND 2: SHADES IN THE MIST
+// ==========================================
+
+export async function round2PairByCodeApi(myTeamId: string, opponentBattleCode: string) {
+  if (isSupabaseConfigured) {
+    return supabaseRound2PairByCode(myTeamId, opponentBattleCode);
+  }
+  const res = await fetch(`${API_BASE}/round2/pair`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ myTeamId, opponentBattleCode }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || 'Failed to link squads');
+  return data;
+}
+
+export async function round2CastVoteApi(matchId: string, playerId: string, teamId: string, vote: 'TRUCE' | 'AMBUSH') {
+  if (isSupabaseConfigured) {
+    return supabaseRound2CastVote(matchId, playerId, teamId, vote);
+  }
+  const res = await fetch(`${API_BASE}/round2/vote`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ matchId, playerId, teamId, vote }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || 'Failed to record ballot');
+  return data;
+}
+
+export async function round2AdvancePhaseApi(matchId: string) {
+  if (isSupabaseConfigured) {
+    return supabaseRound2AdvancePhase(matchId);
+  }
+  const res = await fetch(`${API_BASE}/round2/advance`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ matchId }),
+  });
+  return res.json();
+}
+
+export async function adminRound2AutoPair(passcode: string) {
+  if (isSupabaseConfigured) {
+    return supabaseAdminRound2AutoPair();
+  }
+  const res = await fetch(`${API_BASE}/admin/round2/auto-pair`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-admin-passcode': passcode,
+    },
+  });
+  return res.json();
+}
+
+export async function adminRound2ManualPair(passcode: string, teamAId: string, teamBId: string) {
+  if (isSupabaseConfigured) {
+    return supabaseAdminRound2ManualPair(teamAId, teamBId);
+  }
+  const res = await fetch(`${API_BASE}/admin/round2/pair`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-admin-passcode': passcode,
+    },
+    body: JSON.stringify({ teamAId, teamBId }),
+  });
+  return res.json();
+}
+
+export async function adminRound2AdjustTimer(passcode: string, deltaSeconds: number) {
+  if (isSupabaseConfigured) {
+    return supabaseAdminRound2AdjustTimer(deltaSeconds);
+  }
+  const res = await fetch(`${API_BASE}/admin/round2/timer`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-admin-passcode': passcode,
+    },
+    body: JSON.stringify({ deltaSeconds }),
+  });
+  return res.json();
+}
+
+export async function adminRound2SkipPhase(passcode: string, matchId?: string) {
+  if (isSupabaseConfigured) {
+    return supabaseAdminRound2SkipPhase(matchId);
+  }
+  const res = await fetch(`${API_BASE}/admin/round2/skip-phase`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-admin-passcode': passcode,
+    },
+    body: JSON.stringify({ matchId }),
+  });
+  return res.json();
+}
+
+export async function adminRound2ResetMatches(passcode: string) {
+  if (isSupabaseConfigured) {
+    return supabaseAdminRound2ResetMatches();
+  }
+  const res = await fetch(`${API_BASE}/admin/round2/reset`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-admin-passcode': passcode,
+    },
+  });
+  return res.json();
+}
+
+export async function adminRound2SaveDurations(
+  passcode: string,
+  durations: { HUDDLE: number; PARLEY: number; VOTE: number; DEBRIEF: number }
+) {
+  if (isSupabaseConfigured) {
+    return supabaseAdminRound2SaveDurations(durations);
+  }
+  const res = await fetch(`${API_BASE}/admin/round2/durations`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-admin-passcode': passcode,
+    },
+    body: JSON.stringify({ durations }),
+  });
+  return res.json();
+}
+
+export async function adminRound2SaveScoring(
+  passcode: string,
+  scoringMatrix: Record<string, Round2ScoringTier>
+) {
+  if (isSupabaseConfigured) {
+    return supabaseAdminRound2SaveScoring(scoringMatrix);
+  }
+  const res = await fetch(`${API_BASE}/admin/round2/scoring`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-admin-passcode': passcode,
+    },
+    body: JSON.stringify({ scoringMatrix }),
+  });
+  return res.json();
+}
+

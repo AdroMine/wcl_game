@@ -182,6 +182,20 @@ app.post('/api/round/submit', (req: Request, res: Response) => {
   res.json(result);
 });
 
+// Request Round Hint
+app.post('/api/round/hint', (req: Request, res: Response) => {
+  const { teamId, hintIndex } = req.body;
+  if (!teamId || !hintIndex) {
+    return res.status(400).json({ success: false, error: 'Missing teamId or hintIndex' });
+  }
+
+  const result = stateStore.requestRoundHint(teamId, Number(hintIndex));
+  if (result.success) {
+    broadcastSync();
+  }
+  res.json(result);
+});
+
 // Admin Authentication Middleware
 function checkAdminPasscode(req: Request, res: Response, next: () => void) {
   const provided = req.headers['x-admin-passcode'] || req.body?.admin_passcode;
@@ -248,6 +262,13 @@ app.post('/api/admin/player/remove', checkAdminPasscode, (req: Request, res: Res
   res.json({ success });
 });
 
+app.post('/api/admin/team/delete', checkAdminPasscode, (req: Request, res: Response) => {
+  const { teamId } = req.body;
+  const success = stateStore.deleteTeam(teamId);
+  broadcastSync();
+  res.json({ success });
+});
+
 app.post('/api/admin/auto-group', checkAdminPasscode, (_req: Request, res: Response) => {
   const count = stateStore.autoGroupRemainingPlayers();
   broadcastSync();
@@ -292,6 +313,91 @@ app.post('/api/admin/reset', checkAdminPasscode, (_req: Request, res: Response) 
   stateStore.resetAll();
   broadcastSync();
   res.json({ success: true });
+});
+
+// Round 2 Routes
+app.post('/api/round2/pair', (req: Request, res: Response) => {
+  const { myTeamId, opponentBattleCode } = req.body;
+  if (!myTeamId || !opponentBattleCode) {
+    return res.status(400).json({ success: false, error: 'Team ID and battle code required.' });
+  }
+  const result = stateStore.round2PairByCode(myTeamId, opponentBattleCode);
+  if (result.success) {
+    broadcastSync();
+    res.json(result);
+  } else {
+    res.status(400).json(result);
+  }
+});
+
+app.post('/api/round2/vote', (req: Request, res: Response) => {
+  const { matchId, playerId, teamId, vote } = req.body;
+  if (!matchId || !playerId || !teamId || !vote) {
+    return res.status(400).json({ success: false, error: 'Missing vote parameters.' });
+  }
+  const result = stateStore.round2CastVote(matchId, playerId, teamId, vote);
+  if (result.success) {
+    broadcastSync();
+    res.json(result);
+  } else {
+    res.status(400).json(result);
+  }
+});
+
+app.post('/api/round2/advance', (req: Request, res: Response) => {
+  const { matchId } = req.body;
+  if (!matchId) return res.status(400).json({ success: false, error: 'Match ID required.' });
+  const updated = stateStore.round2AdvancePhase(matchId, true);
+  broadcastSync();
+  res.json({ success: true, match: updated });
+});
+
+// Round 2 Admin Routes
+app.post('/api/admin/round2/auto-pair', checkAdminPasscode, (_req: Request, res: Response) => {
+  const result = stateStore.adminRound2AutoPair();
+  broadcastSync();
+  res.json(result);
+});
+
+app.post('/api/admin/round2/pair', checkAdminPasscode, (req: Request, res: Response) => {
+  const { teamAId, teamBId } = req.body;
+  const result = stateStore.adminRound2ManualPair(teamAId, teamBId);
+  broadcastSync();
+  res.json(result);
+});
+
+app.post('/api/admin/round2/timer', checkAdminPasscode, (req: Request, res: Response) => {
+  const { deltaSeconds } = req.body;
+  const result = stateStore.adminRound2AdjustTimer(Number(deltaSeconds) || 0);
+  broadcastSync();
+  res.json(result);
+});
+
+app.post('/api/admin/round2/skip-phase', checkAdminPasscode, (req: Request, res: Response) => {
+  const { matchId } = req.body;
+  const result = stateStore.adminRound2SkipPhase(matchId);
+  broadcastSync();
+  res.json(result);
+});
+
+app.post('/api/admin/round2/reset', checkAdminPasscode, (_req: Request, res: Response) => {
+  const result = stateStore.adminRound2ResetMatches();
+  broadcastSync();
+  res.json(result);
+});
+
+app.post('/api/admin/round2/durations', checkAdminPasscode, (req: Request, res: Response) => {
+  const { durations } = req.body;
+  const result = stateStore.adminRound2SaveDurations(durations);
+  broadcastSync();
+  res.json(result);
+});
+
+app.post('/api/admin/round2/scoring', checkAdminPasscode, (req: Request, res: Response) => {
+  const { scoringMatrix } = req.body;
+  const result = stateStore.adminRound2SaveScoring(scoringMatrix);
+  broadcastSync();
+  res.json(result);
 });
 
 // Start Server

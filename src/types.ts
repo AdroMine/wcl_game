@@ -1,6 +1,52 @@
 export type GameState = 'LOBBY_TEAM_FORMATION' | 'ROUND_ACTIVE' | 'ROUND_LEADERBOARD';
 
-export type RoundType = 'ASCII_SPLITTER' | 'ASYMMETRIC_TEXT_PUZZLE' | 'OFFLINE_TASK_TIMER';
+export type RoundType = 'ASCII_SPLITTER' | 'ASYMMETRIC_TEXT_PUZZLE' | 'OFFLINE_TASK_TIMER' | 'PRISONERS_DILEMMA';
+
+export type Round2Phase = 'HUDDLE' | 'PARLEY' | 'VOTE' | 'DEBRIEF';
+export type Round2Vote = 'TRUCE' | 'AMBUSH' | 'ABSTAIN' | 'LOCKED';
+export type Round2Stance = 'TRUCE' | 'AMBUSH';
+
+export interface Round2ScoringTier {
+  both_truce: number;
+  ambush_win: number;
+  truce_loss: number;
+  both_ambush: number;
+}
+
+export interface Round2Config {
+  num_clashes: number;
+  phase_durations_seconds: {
+    HUDDLE: number;
+    PARLEY: number;
+    VOTE: number;
+    DEBRIEF: number;
+  };
+  scoring_matrix: Record<string, Round2ScoringTier>;
+}
+
+export interface Round2ClashData {
+  clash: number; // 1, 2, or 3
+  team_a_votes: Record<string, Round2Vote>;
+  team_b_votes: Record<string, Round2Vote>;
+  team_a_stance: Round2Stance;
+  team_b_stance: Round2Stance;
+  team_a_pts: number;
+  team_b_pts: number;
+}
+
+export interface Round2Match {
+  id: string;
+  session_id: string;
+  team_a_id: string;
+  team_b_id: string;
+  current_clash: number;
+  current_phase: Round2Phase;
+  phase_ends_at: number; // epoch ms
+  clash_data: Round2ClashData[];
+  completed: boolean;
+  created_at?: string;
+  updated_at?: string;
+}
 
 export interface RoleConfig {
   id: string;
@@ -45,7 +91,7 @@ export interface RoundConfig {
   title: string;
   subtitle: string;
   durationSeconds: number;
-  data: AsciiSplitterData | AsymmetricPuzzleData | OfflineTaskData;
+  data: AsciiSplitterData | AsymmetricPuzzleData | OfflineTaskData | Record<string, any>;
 }
 
 export interface GameTheme {
@@ -62,6 +108,7 @@ export interface GameConfig {
   admin_passcode: string;
   roles: RoleConfig[];
   rounds: RoundConfig[];
+  round2?: Round2Config;
 }
 
 export interface Player {
@@ -81,6 +128,8 @@ export interface RoundSubmission {
   answerSubmitted: string;
   pointsAwarded: number;
   isCorrect: boolean;
+  hintsCount?: number;
+  solveTimeSeconds?: number;
 }
 
 export interface Team {
@@ -90,12 +139,16 @@ export interface Team {
   score: number;
   assignedCodeword?: string; // specific word assigned for ASCII splitter
   round_submissions: Record<string, RoundSubmission>;
+  battle_code?: string; // 2-digit battle code (e.g. "49")
+  nemesis_team_id?: string | null;
+  hints_taken?: number[]; // indices of hints taken [1, 2, 3]
 }
 
 export interface SyncPayload {
   state: GameState;
   current_round_index: number;
   round_ends_at: number | null;
+  round_started_at?: number | null;
   round_is_paused: boolean;
   server_now: number;
   config: GameConfig;
@@ -103,14 +156,19 @@ export interface SyncPayload {
   team: Team | null;
   all_players_count: number;
   formed_teams_count: number;
+  round2_match?: Round2Match | null;
+  round2_all_matches?: Round2Match[];
   teams_leaderboard: {
     id: string;
     name: string;
     score: number;
     player_count: number;
-    members: { name: string; roleName: string; roleColor: string }[];
+    battle_code?: string;
+    nemesis_team_id?: string | null;
+    members: { id?: string; name: string; roleName: string; roleColor: string }[];
     recentDelta?: number;
     roundCompleted?: boolean;
+    assignedCodeword?: string;
   }[];
   unassigned_players?: {
     id: string;

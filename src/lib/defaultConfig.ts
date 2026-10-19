@@ -1,4 +1,34 @@
-import type { GameConfig } from '../types';
+import type { GameConfig, Round2Config } from '../types';
+
+export const DEFAULT_ROUND2_CONFIG: Round2Config = {
+  num_clashes: 3,
+  phase_durations_seconds: {
+    HUDDLE: 50,
+    PARLEY: 40,
+    VOTE: 25,
+    DEBRIEF: 40,
+  },
+  scoring_matrix: {
+    "1": {
+      both_truce: 75,
+      ambush_win: 150,
+      truce_loss: 0,
+      both_ambush: 15,
+    },
+    "2": {
+      both_truce: 150,
+      ambush_win: 300,
+      truce_loss: 0,
+      both_ambush: 30,
+    },
+    "3": {
+      both_truce: 225,
+      ambush_win: 450,
+      truce_loss: 0,
+      both_ambush: 45,
+    },
+  },
+};
 
 export const DEFAULT_CONFIG: GameConfig = {
   theme: {
@@ -10,6 +40,7 @@ export const DEFAULT_CONFIG: GameConfig = {
   },
   team_size: 5,
   admin_passcode: "underworld",
+  round2: DEFAULT_ROUND2_CONFIG,
   roles: [
     {
       id: "navigator",
@@ -63,48 +94,11 @@ export const DEFAULT_CONFIG: GameConfig = {
     },
     {
       id: "round-2",
-      type: "ASYMMETRIC_TEXT_PUZZLE",
-      title: "Round 2: The Gates of Tartarus",
-      subtitle: "Each crew member holds an isolated fragment of the Stygian incantation. Speak aloud to combine your clues.",
-      durationSeconds: 360,
-      data: {
-        themeTitle: "The Whispers of Tartarus Gate",
-        narrative: "The iron gate demands a sacred beast's name. Each role holds a different constraint whispered across the river Styx.",
-        answerCodeword: "CERBERUS",
-        points: 200,
-        roleClues: [
-          {
-            roleId: "navigator",
-            title: "Astral Inscription",
-            clue: "The word has 8 letters. The 1st letter is C, and the 5th letter is E.",
-            detail: "Visible in the celestial cavern zenith."
-          },
-          {
-            roleId: "oracle",
-            title: "Spectral Riddle",
-            clue: "A three-headed sentinel beast who guards the subterranean gates so no soul escapes.",
-            detail: "Echoes from the depths of Erebus."
-          },
-          {
-            roleId: "scholar",
-            title: "Linguistic Cipher",
-            clue: "Letter 2 is E, Letter 3 is R, and Letter 4 is B. (Spells C-E-R-B...)",
-            detail: "Ancient Greek tablet translation."
-          },
-          {
-            roleId: "torchbearer",
-            title: "Flame Reflections",
-            clue: "The 6th letter matches Letter 3 ('R'). The 7th letter is 'U'.",
-            detail: "Illuminated in the altar fire."
-          },
-          {
-            roleId: "negotiator",
-            title: "Ferryman's Clause",
-            clue: "The final 8th letter is 'S'. Complete word is the guardian hound of Hades.",
-            detail: "Agreed in blood with Charon."
-          }
-        ]
-      }
+      type: "PRISONERS_DILEMMA",
+      title: "Round 2: Shades in the Mist",
+      subtitle: "3-Clash Prisoner's Dilemma. Face your rivals, negotiate in the mist, and choose between honor or betrayal.",
+      durationSeconds: 465,
+      data: {}
     },
     {
       id: "round-3",

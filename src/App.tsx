@@ -5,6 +5,7 @@ import { JoinModal } from './components/JoinModal';
 import { LobbyTeamFormation } from './components/LobbyTeamFormation';
 import { RoundContainer } from './components/RoundContainer';
 import { LeaderboardDrawer } from './components/LeaderboardDrawer';
+import { preloadAllRounds } from './lib/roundPreloader';
 
 const AdminControlPanel = React.lazy(() =>
   import('./components/AdminControlPanel').then(m => ({ default: m.AdminControlPanel }))
@@ -21,6 +22,11 @@ const MainGameContent: React.FC = () => {
   const [isSoloTesterView, setIsSoloTesterView] = useState(() => {
     return window.location.pathname.includes('/solotester') || window.location.hash.includes('solotester');
   });
+
+  // Preload all round chunks into memory during browser idle time
+  useEffect(() => {
+    preloadAllRounds();
+  }, []);
 
   // Listen to popstate or hash changes
   useEffect(() => {

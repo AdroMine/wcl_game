@@ -10,6 +10,7 @@ import {
   TABLET_CONFIG,
   getSlotPositionLabel,
   DEFAULT_ROUND1_CODEWORDS,
+  getTabletTextMetrics,
 } from '../lib/tabletEngine';
 import {
   adminSetState,
@@ -93,17 +94,21 @@ export const SoloTesterWorkbench: React.FC = () => {
   const hintsTaken = team?.hints_taken || [];
   const scoreBreakdown = calculateRound1Score(elapsedSeconds, hintsTaken.length);
 
-  // Build slot info
+  const [spawnNotice, setSpawnNotice] = useState<string | null>(null);
+
+  // Build slot info (falls back to newest registered team if tester is not logged in)
+  const effectiveTeam = team;
+  const leaderTeam = payload?.teams_leaderboard?.[0];
   const slotMembers: PlayerSlotInfo[] = Array.from({ length: teamSize }).map((_, idx) => {
-    const memberObj = team?.player_ids?.[idx]
-      ? payload?.teams_leaderboard?.flatMap(t => t.members).find(m => m.id === team.player_ids[idx])
-      : undefined;
+    const memberObj = effectiveTeam?.player_ids?.[idx]
+      ? payload?.teams_leaderboard?.flatMap(t => t.members).find(m => m.id === effectiveTeam.player_ids[idx])
+      : leaderTeam?.members?.[idx];
     const roleCfg = payload?.config?.roles?.[idx];
     return {
       slotIndex: idx,
       playerName: memberObj?.name || `Test Player #${idx + 1}`,
-      roleName: roleCfg?.name || `Role #${idx + 1}`,
-      roleColor: roleCfg?.color || '#c4a45a',
+      roleName: memberObj?.roleName || roleCfg?.name || `Role #${idx + 1}`,
+      roleColor: memberObj?.roleColor || roleCfg?.color || '#c4a45a',
     };
   });
 
@@ -111,8 +116,23 @@ export const SoloTesterWorkbench: React.FC = () => {
   const handleSpawnDemoCrew = async () => {
     try {
       setIsSpawning(true);
-      await adminSpawnDemoCrew(adminPass);
+      const res = await adminSpawnDemoCrew(adminPass);
+      if (res?.success && res.players?.[0]?.id) {
+        localStorage.setItem('underworld_player_id', res.players[0].id);
+        if (res.team?.assignedCodeword) {
+          setSelectedWord(res.team.assignedCodeword);
+        }
+        setSpawnNotice(`✓ Spawned "${res.team?.name || 'Demo Crew'}" with 5 shades!`);
+      } else if (res?.error) {
+        setSpawnNotice(`⚠️ ${res.error}`);
+      } else {
+        setSpawnNotice(`✓ 5-shade demo crew summoned!`);
+      }
+      setTimeout(() => setSpawnNotice(null), 4000);
       await refresh();
+    } catch (e: any) {
+      setSpawnNotice(`⚠️ Spawn failed: ${e?.message || e}`);
+      setTimeout(() => setSpawnNotice(null), 4000);
     } finally {
       setIsSpawning(false);
     }
@@ -199,6 +219,8 @@ export const SoloTesterWorkbench: React.FC = () => {
     const viewBoxX = slotIdx * slotWidth;
     const roleCfg = payload?.config?.roles?.[slotIdx] || { color: '#c4a45a' };
     const zoom = (slotZooms[slotIdx] || 1.0) * globalZoom;
+    const line1Metrics = getTabletTextMetrics(line1);
+    const line2Metrics = getTabletTextMetrics(line2);
 
     const seamPositions: number[] = [];
     for (let i = 1; i < teamSize; i++) {
@@ -254,10 +276,11 @@ export const SoloTesterWorkbench: React.FC = () => {
             x={totalWidth / 2}
             y={line1Y}
             textAnchor="middle"
+            textLength={line1Metrics.textLength}
+            lengthAdjust="spacing"
             fontFamily="Cinzel, Georgia, serif"
             fontWeight="900"
-            fontSize="110"
-            letterSpacing="18"
+            fontSize={line1Metrics.fontSize}
             fill={`url(#goldGrad-${slotIdx})`}
             stroke="#08090c"
             strokeWidth="4"
@@ -289,10 +312,11 @@ export const SoloTesterWorkbench: React.FC = () => {
             x={totalWidth / 2}
             y={line2Y}
             textAnchor="middle"
+            textLength={line2Metrics.textLength}
+            lengthAdjust="spacing"
             fontFamily="Cinzel, Georgia, serif"
             fontWeight="900"
-            fontSize="110"
-            letterSpacing="18"
+            fontSize={line2Metrics.fontSize}
             fill={`url(#goldGrad-${slotIdx})`}
             stroke="#08090c"
             strokeWidth="4"
@@ -364,6 +388,13 @@ export const SoloTesterWorkbench: React.FC = () => {
             </button>
           </div>
         </div>
+
+        {spawnNotice && (
+          <div className="p-2.5 rounded-xl bg-amber-950/60 border border-[#c4a45a]/50 text-[#f4f0e8] text-xs font-mono flex items-center justify-between animate-fade-in">
+            <span>{spawnNotice}</span>
+            <button onClick={() => setSpawnNotice(null)} className="text-[#8e95a5] hover:text-[#f4f0e8] text-xs">✕</button>
+          </div>
+        )}
 
         <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-2">
           {/* Spawn Crew */}

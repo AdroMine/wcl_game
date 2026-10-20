@@ -48,7 +48,7 @@ import {
   Sparkles,
   X,
 } from 'lucide-react';
-import { parseTabletCodeword, TABLET_CONFIG, getSlotPositionLabel } from '../lib/tabletEngine';
+import { parseTabletCodeword, TABLET_CONFIG, getSlotPositionLabel, getTabletTextMetrics } from '../lib/tabletEngine';
 
 interface AdminProps {
   payload: SyncPayload | null;
@@ -238,11 +238,23 @@ export const AdminControlPanel: React.FC<AdminProps> = ({ payload, onClose }) =>
   };
 
   const [isSpawningDemo, setIsSpawningDemo] = useState(false);
+  const [demoNotice, setDemoNotice] = useState<string | null>(null);
   const handleSpawnDemoCrew = async () => {
     try {
       setIsSpawningDemo(true);
-      await adminSpawnDemoCrew(passcode);
+      const res = await adminSpawnDemoCrew(passcode);
+      if (res?.success) {
+        setDemoNotice(`✓ Summoned ${res.team?.name || 'new 5-shade crew'}!`);
+      } else if (res?.error) {
+        setDemoNotice(`⚠️ ${res.error}`);
+      } else {
+        setDemoNotice('✓ 5-shade crew created!');
+      }
+      setTimeout(() => setDemoNotice(null), 4000);
       await refresh();
+    } catch (e: any) {
+      setDemoNotice(`⚠️ Spawn failed: ${e?.message || e}`);
+      setTimeout(() => setDemoNotice(null), 4000);
     } finally {
       setIsSpawningDemo(false);
     }
@@ -1059,20 +1071,28 @@ export const AdminControlPanel: React.FC<AdminProps> = ({ payload, onClose }) =>
       {activeTab === 'roster' && (
         <div className="space-y-4">
           {/* Instant Demo Crew Spawn (For Solo Testing) */}
-          <div className="bg-gradient-to-r from-[#161922] via-[#202533] to-[#161922] border border-[#c4a45a]/60 rounded-2xl p-4 shadow-xl flex items-center justify-between">
-            <div>
-              <h4 className="text-xs font-serif font-bold text-[#f4f0e8]">Solo Testing Simulator</h4>
-              <p className="text-[10px] text-[#8e95a5]">Spawn 5 test shades with all roles & form a ready crew instantly</p>
+          <div className="bg-gradient-to-r from-[#161922] via-[#202533] to-[#161922] border border-[#c4a45a]/60 rounded-2xl p-4 shadow-xl space-y-2.5">
+            <div className="flex items-center justify-between">
+              <div>
+                <h4 className="text-xs font-serif font-bold text-[#f4f0e8]">Solo Testing Simulator</h4>
+                <p className="text-[10px] text-[#8e95a5]">Spawn 5 test shades with all roles & form a ready crew instantly</p>
+              </div>
+              <button
+                onClick={handleSpawnDemoCrew}
+                disabled={isSpawningDemo}
+                className={`px-3 py-2 bg-[#c4a45a] hover:bg-[#d8b86e] text-[#08090c] rounded-xl text-xs font-bold font-serif shadow-gold-glow flex items-center space-x-1.5 transition-all ${
+                  isSpawningDemo ? 'opacity-50 cursor-not-allowed' : ''
+                }`}
+              >
+                <span>{isSpawningDemo ? '⚡ Summoning...' : '⚡ Spawn 5-Shade Crew'}</span>
+              </button>
             </div>
-            <button
-              onClick={handleSpawnDemoCrew}
-              disabled={isSpawningDemo}
-              className={`px-3 py-2 bg-[#c4a45a] hover:bg-[#d8b86e] text-[#08090c] rounded-xl text-xs font-bold font-serif shadow-gold-glow flex items-center space-x-1.5 transition-all ${
-                isSpawningDemo ? 'opacity-50 cursor-not-allowed' : ''
-              }`}
-            >
-              <span>{isSpawningDemo ? '⚡ Summoning...' : '⚡ Spawn 5-Shade Crew'}</span>
-            </button>
+            {demoNotice && (
+              <div className="p-2 rounded-lg bg-[#08090c] border border-[#c4a45a]/40 text-[#f4f0e8] text-[11px] font-mono flex items-center justify-between">
+                <span>{demoNotice}</span>
+                <button onClick={() => setDemoNotice(null)} className="text-[#8e95a5] hover:text-[#f4f0e8]">✕</button>
+              </div>
+            )}
           </div>
 
           {/* Add Offline Player Form */}
@@ -1506,6 +1526,8 @@ export const AdminControlPanel: React.FC<AdminProps> = ({ payload, onClose }) =>
                         const vX = idx * slotW;
                         const roleColors = ['#e5cb87', '#38bdf8', '#fb7185', '#34d399', '#c084fc'];
                         const roleCol = roleColors[idx % roleColors.length];
+                        const line1Metrics = getTabletTextMetrics(line1);
+                        const line2Metrics = getTabletTextMetrics(line2);
 
                         return (
                           <div key={idx} className="bg-black border border-[#2a2e3d] rounded-xl overflow-hidden p-1 flex flex-col items-center">
@@ -1519,7 +1541,7 @@ export const AdminControlPanel: React.FC<AdminProps> = ({ payload, onClose }) =>
                                 <text x={totalWidth / 2} y="48" textAnchor="middle" fontFamily="monospace" fontSize="18" fontWeight="bold" fill="#c4a45a" letterSpacing="8">
                                   ▲ CREST (TOP) ▲
                                 </text>
-                                <text x={totalWidth / 2} y={line1Y} textAnchor="middle" fontFamily="Cinzel, Georgia, serif" fontWeight="900" fontSize="110" letterSpacing="18" fill="#e5cb87" stroke="#08090c" strokeWidth="4">
+                                <text x={totalWidth / 2} y={line1Y} textAnchor="middle" textLength={line1Metrics.textLength} lengthAdjust="spacing" fontFamily="Cinzel, Georgia, serif" fontWeight="900" fontSize={line1Metrics.fontSize} fill="#e5cb87" stroke="#08090c" strokeWidth="4">
                                   {line1}
                                 </text>
                                 <line x1="0" y1={horizonY} x2={totalWidth} y2={horizonY} stroke="#c4a45a" strokeWidth="6" opacity="0.8" />
@@ -1529,7 +1551,7 @@ export const AdminControlPanel: React.FC<AdminProps> = ({ payload, onClose }) =>
                                     <polygon key={sIdx} points={`${sX},${horizonY - 24} ${sX + 16},${horizonY} ${sX},${horizonY + 24} ${sX - 16},${horizonY}`} fill="#c4a45a" />
                                   );
                                 })}
-                                <text x={totalWidth / 2} y={line2Y} textAnchor="middle" fontFamily="Cinzel, Georgia, serif" fontWeight="900" fontSize="110" letterSpacing="18" fill="#e5cb87" stroke="#08090c" strokeWidth="4">
+                                <text x={totalWidth / 2} y={line2Y} textAnchor="middle" textLength={line2Metrics.textLength} lengthAdjust="spacing" fontFamily="Cinzel, Georgia, serif" fontWeight="900" fontSize={line2Metrics.fontSize} fill="#e5cb87" stroke="#08090c" strokeWidth="4">
                                   {line2}
                                 </text>
                                 <text x={totalWidth / 2} y="564" textAnchor="middle" fontFamily="monospace" fontSize="18" fontWeight="bold" fill="#c4a45a" letterSpacing="8">

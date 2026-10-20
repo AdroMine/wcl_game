@@ -9,6 +9,7 @@ import {
   parseTabletCodeword,
   TABLET_CONFIG,
   getSlotPositionLabel,
+  getTabletTextMetrics,
 } from '../../lib/tabletEngine';
 import {
   Maximize2,
@@ -288,6 +289,8 @@ export const AsciiSplitterRound: React.FC = () => {
   const { totalWidth, totalHeight, line1Y, horizonY, line2Y } = TABLET_CONFIG;
   const slotWidth = totalWidth / Math.max(1, teamSize);
   const viewBoxX = activeSlot * slotWidth;
+  const line1Metrics = getTabletTextMetrics(line1);
+  const line2Metrics = getTabletTextMetrics(line2);
 
   // Interlocking Notch Seam Positions (between all slots)
   const seamPositions: number[] = [];
@@ -375,10 +378,11 @@ export const AsciiSplitterRound: React.FC = () => {
             x={totalWidth / 2}
             y={line1Y}
             textAnchor="middle"
+            textLength={line1Metrics.textLength}
+            lengthAdjust="spacing"
             fontFamily="Cinzel, Georgia, serif"
             fontWeight="900"
-            fontSize="110"
-            letterSpacing="18"
+            fontSize={line1Metrics.fontSize}
             fill="url(#goldGradient)"
             stroke="#08090c"
             strokeWidth="4"
@@ -443,10 +447,11 @@ export const AsciiSplitterRound: React.FC = () => {
             x={totalWidth / 2}
             y={line2Y}
             textAnchor="middle"
+            textLength={line2Metrics.textLength}
+            lengthAdjust="spacing"
             fontFamily="Cinzel, Georgia, serif"
             fontWeight="900"
-            fontSize="110"
-            letterSpacing="18"
+            fontSize={line2Metrics.fontSize}
             fill="url(#goldGradient)"
             stroke="#08090c"
             strokeWidth="4"

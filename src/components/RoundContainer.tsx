@@ -1,10 +1,19 @@
-import React from 'react';
+import React, { Suspense, lazy } from 'react';
 import { useGameSession } from '../context/GameContext';
-import { AsciiSplitterRound } from './rounds/AsciiSplitterRound';
-import { ShadesInTheMistRound } from './rounds/ShadesInTheMistRound';
-import { AsymmetricTextPuzzleRound } from './rounds/AsymmetricTextPuzzleRound';
-import { OfflineTaskTimerRound } from './rounds/OfflineTaskTimerRound';
-import { Clock, PauseCircle } from 'lucide-react';
+import { Clock, PauseCircle, Loader2 } from 'lucide-react';
+
+const AsciiSplitterRound = lazy(() =>
+  import('./rounds/AsciiSplitterRound').then(m => ({ default: m.AsciiSplitterRound }))
+);
+const ShadesInTheMistRound = lazy(() =>
+  import('./rounds/ShadesInTheMistRound').then(m => ({ default: m.ShadesInTheMistRound }))
+);
+const AsymmetricTextPuzzleRound = lazy(() =>
+  import('./rounds/AsymmetricTextPuzzleRound').then(m => ({ default: m.AsymmetricTextPuzzleRound }))
+);
+const OfflineTaskTimerRound = lazy(() =>
+  import('./rounds/OfflineTaskTimerRound').then(m => ({ default: m.OfflineTaskTimerRound }))
+);
 
 export const RoundContainer: React.FC = () => {
   const { currentRound, timeRemainingSeconds, payload } = useGameSession();
@@ -67,10 +76,19 @@ export const RoundContainer: React.FC = () => {
 
 
       {/* Dynamic Pluggable Round Component */}
-      {currentRound.type === 'ASCII_SPLITTER' && <AsciiSplitterRound />}
-      {currentRound.type === 'PRISONERS_DILEMMA' && <ShadesInTheMistRound />}
-      {currentRound.type === 'ASYMMETRIC_TEXT_PUZZLE' && <AsymmetricTextPuzzleRound />}
-      {currentRound.type === 'OFFLINE_TASK_TIMER' && <OfflineTaskTimerRound />}
+      <Suspense
+        fallback={
+          <div className="bg-[#10121a] border border-[#2a2e3d] rounded-2xl p-8 flex flex-col items-center justify-center space-y-3">
+            <Loader2 className="w-6 h-6 text-[#c4a45a] animate-spin" />
+            <p className="text-xs font-mono text-[#8e95a5]">Loading descent chamber...</p>
+          </div>
+        }
+      >
+        {currentRound.type === 'ASCII_SPLITTER' && <AsciiSplitterRound />}
+        {currentRound.type === 'PRISONERS_DILEMMA' && <ShadesInTheMistRound />}
+        {currentRound.type === 'ASYMMETRIC_TEXT_PUZZLE' && <AsymmetricTextPuzzleRound />}
+        {currentRound.type === 'OFFLINE_TASK_TIMER' && <OfflineTaskTimerRound />}
+      </Suspense>
     </div>
   );
 };

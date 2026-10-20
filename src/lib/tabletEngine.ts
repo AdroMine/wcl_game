@@ -42,6 +42,24 @@ export const DEFAULT_ROUND1_CODEWORDS = [
 ];
 
 /**
+ * Calculate dynamic SVG textLength and fontSize so words distribute equally
+ * across all 5 phone screens from far left (Slot 0) to far right (Slot 4),
+ * ensuring the outer phones never end up blank.
+ */
+export function getTabletTextMetrics(word: string): { fontSize: number; textLength: number } {
+  const len = (word || '').trim().length;
+  if (len <= 4) {
+    return { fontSize: 115, textLength: 760 };
+  } else if (len <= 6) {
+    return { fontSize: 108, textLength: 820 };
+  } else if (len <= 7) {
+    return { fontSize: 100, textLength: 850 };
+  } else {
+    return { fontSize: 90, textLength: 880 };
+  }
+}
+
+/**
  * Split a codeword into Line 1 (Word 1) and Line 2 (Word 2).
  */
 export function parseTabletCodeword(codeword: string): { line1: string; line2: string } {

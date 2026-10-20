@@ -25,6 +25,7 @@ import {
   generateHintText,
   ROUND1_HINTS,
 } from './round1Engine';
+import { DEFAULT_ROUND1_CODEWORDS } from './tabletEngine';
 
 const JOIN_CODE_CHARS = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
 
@@ -449,6 +450,18 @@ export async function fetchFullSyncPayloadFromSupabase(forPlayerId?: string, for
       const roundCompleted = curRound ? !!t.round_submissions[curRound.id]?.completed : false;
       const recentDelta = curRound ? t.round_submissions[curRound.id]?.pointsAwarded : undefined;
 
+      // Migrate any legacy 1-word codewords to 2-word ancient phrases
+      let teamCodeword = t.assignedCodeword;
+      if (!teamCodeword || !teamCodeword.trim().includes(' ')) {
+        const round1Data = config.rounds?.[0]?.data as any;
+        const words = (round1Data?.codewords && round1Data.codewords.length > 0)
+          ? round1Data.codewords
+          : DEFAULT_ROUND1_CODEWORDS;
+        teamCodeword = words[Math.floor(Math.random() * words.length)] || 'CRIMSON SHADOW';
+        t.assignedCodeword = teamCodeword;
+        supabase?.from('teams').update({ assigned_codeword: teamCodeword }).eq('id', t.id).then();
+      }
+
       return {
         id: t.id,
         name: t.name,
@@ -459,7 +472,7 @@ export async function fetchFullSyncPayloadFromSupabase(forPlayerId?: string, for
         members,
         roundCompleted,
         recentDelta,
-        assignedCodeword: t.assignedCodeword,
+        assignedCodeword: teamCodeword,
       };
     })
     .sort((a, b) => b.score - a.score);
@@ -622,8 +635,11 @@ export async function supabaseFormTeam(
   const teamId = `team_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
   const teamName = customName?.trim() || `Crew #${teamNum} • Tartarus Navigators`;
 
-  const words = ['ORACLE', 'SIRENS', 'PORTAL', 'CHARON', 'VOYAGE'];
-  const assignedCodeword = words[Math.floor(Math.random() * words.length)];
+  const round1Data = config.rounds?.[0]?.data as any;
+  const words = (round1Data?.codewords && round1Data.codewords.length > 0)
+    ? round1Data.codewords
+    : DEFAULT_ROUND1_CODEWORDS;
+  const assignedCodeword = words[Math.floor(Math.random() * words.length)] || 'CRIMSON SHADOW';
 
   const { data: allTeamsForCode } = await supabase.from('teams').select('battle_code');
   const existingBattleCodes = new Set<string>((allTeamsForCode || []).map(t => t.battle_code).filter(Boolean));
@@ -675,11 +691,17 @@ export async function supabaseSubmitRoundAnswer(
     team = null!;
   }
 
+  const { row: stateData } = await getGameStateRow();
+  const config = (stateData?.config && Object.keys(stateData.config).length > 0) ? stateData.config : DEFAULT_CONFIG;
+
   if (!team) {
     // Create solo team
     const teamId = `team_solo_${player.id}`;
-    const words = ['ORACLE', 'SIRENS', 'PORTAL', 'CHARON', 'VOYAGE'];
-    const assignedCodeword = words[Math.floor(Math.random() * words.length)];
+    const round1Data = config.rounds?.[0]?.data as any;
+    const words = (round1Data?.codewords && round1Data.codewords.length > 0)
+      ? round1Data.codewords
+      : DEFAULT_ROUND1_CODEWORDS;
+    const assignedCodeword = words[Math.floor(Math.random() * words.length)] || 'CRIMSON SHADOW';
     const { data: allTeamsForCode } = await supabase.from('teams').select('battle_code');
     const existingBattleCodes = new Set<string>((allTeamsForCode || []).map(t => t.battle_code).filter(Boolean));
     const battleCode = generateBattleCode(existingBattleCodes);
@@ -698,8 +720,6 @@ export async function supabaseSubmitRoundAnswer(
     team = mapDbTeam(newTeamRow);
   }
 
-  const { row: stateData } = await getGameStateRow();
-  const config = (stateData?.config && Object.keys(stateData.config).length > 0) ? stateData.config : DEFAULT_CONFIG;
   const round = config.rounds.find((r: any) => r.id === roundId);
   if (!round) return { success: false, message: 'Invalid round' };
 
@@ -865,10 +885,14 @@ export async function supabaseAdminSetState(state: GameState, roundIndex?: numbe
 
     // Assign codewords for Round 1 to any teams that don't have one
     const { data: teamsData } = await supabase.from('teams').select('*');
-    const words = (round?.data as any)?.codewords || ['ORACLE', 'SIRENS', 'PORTAL', 'CHARON', 'VOYAGE'];
+    const round1Data = round?.data as any;
+    const words = (round1Data?.codewords && round1Data.codewords.length > 0)
+      ? round1Data.codewords
+      : DEFAULT_ROUND1_CODEWORDS;
     for (const t of (teamsData || [])) {
-      if (!t.assigned_codeword) {
-        const word = words[Math.floor(Math.random() * words.length)];
+      const isMissingOrOld1Word = !t.assigned_codeword || !t.assigned_codeword.trim().includes(' ');
+      if (isMissingOrOld1Word) {
+        const word = words[Math.floor(Math.random() * words.length)] || 'CRIMSON SHADOW';
         await supabase.from('teams').update({ assigned_codeword: word }).eq('id', t.id);
       }
     }
@@ -1102,40 +1126,89 @@ const DEMO_NAMES_BY_ROLE: Record<string, string[]> = {
   negotiator: ['Damon', 'Hermes', 'Odysseus', 'Atalanta', 'Nestor', 'Menelaus', 'Penelope'],
 };
 
-export async function supabaseAdminSpawnDemoCrew(): Promise<void> {
-  if (!supabase) return;
+export async function supabaseAdminSpawnDemoCrew(): Promise<{ success: boolean; team?: Team; players?: Player[]; error?: string }> {
+  if (!supabase) return { success: false, error: 'Database not connected' };
 
-  const [{ data: existingPlayers }, { data: existingTeams }] = await Promise.all([
-    supabase.from('players').select('name'),
-    supabase.from('teams').select('name'),
-  ]);
+  try {
+    const [{ data: existingPlayers }, { data: existingTeams }] = await Promise.all([
+      supabase.from('players').select('name, join_code'),
+      supabase.from('teams').select('name, battle_code'),
+    ]);
 
-  const usedPlayerNames = new Set((existingPlayers || []).map(p => p.name.toLowerCase()));
-  const teamCount = (existingTeams || []).length;
+    const usedPlayerNames = new Set((existingPlayers || []).map(p => p.name.toLowerCase()));
+    const existingCodes = new Set<string>((existingPlayers || []).map(p => p.join_code).filter(Boolean));
+    const existingBattleCodes = new Set<string>((existingTeams || []).map(t => t.battle_code).filter(Boolean));
+    const teamCount = (existingTeams || []).length;
 
-  const roles = ['navigator', 'oracle', 'scholar', 'torchbearer', 'negotiator'];
-  const createdPlayers: Player[] = [];
+    const roles = ['navigator', 'oracle', 'scholar', 'torchbearer', 'negotiator'];
+    const now = Date.now();
+    const teamId = `team_${now}_${Math.random().toString(36).substring(2, 6)}`;
+    const battleCode = generateBattleCode(existingBattleCodes);
+    const theme = DEMO_CREW_NAME_THEMES[teamCount % DEMO_CREW_NAME_THEMES.length];
+    const crewTitle = `Crew #${teamCount + 1} • ${theme}`;
+    const assignedCodeword = DEFAULT_ROUND1_CODEWORDS[Math.floor(Math.random() * DEFAULT_ROUND1_CODEWORDS.length)] || 'CRIMSON SHADOW';
 
-  for (const roleId of roles) {
-    const pool = DEMO_NAMES_BY_ROLE[roleId] || ['Shade'];
-    let chosenName = pool.find(n => !usedPlayerNames.has(n.toLowerCase()));
-    if (!chosenName) {
-      chosenName = `${pool[Math.floor(Math.random() * pool.length)]} ${teamCount + 1}`;
+    const rawPlayersToInsert: any[] = [];
+    const playerIds: string[] = [];
+    const playerObjects: Player[] = [];
+
+    for (const roleId of roles) {
+      const pool = DEMO_NAMES_BY_ROLE[roleId] || ['Shade'];
+      let chosenName = pool.find(n => !usedPlayerNames.has(n.toLowerCase()));
+      if (!chosenName) {
+        chosenName = `${pool[Math.floor(Math.random() * pool.length)]} ${teamCount + 1}`;
+      }
+      usedPlayerNames.add(chosenName.toLowerCase());
+
+      let jCode = '';
+      do {
+        jCode = '';
+        for (let c = 0; c < 3; c++) {
+          jCode += JOIN_CODE_CHARS[Math.floor(Math.random() * JOIN_CODE_CHARS.length)];
+        }
+      } while (existingCodes.has(jCode));
+      existingCodes.add(jCode);
+
+      const pid = `p_${now}_${Math.random().toString(36).substring(2, 8)}`;
+      playerIds.push(pid);
+
+      const pRow = {
+        id: pid,
+        name: chosenName,
+        role_id: roleId,
+        team_id: teamId,
+        join_code: jCode,
+        joined_at: now,
+        last_seen_at: now,
+        is_online: true,
+      };
+      rawPlayersToInsert.push(pRow);
+      playerObjects.push(mapDbPlayer(pRow));
     }
-    usedPlayerNames.add(chosenName.toLowerCase());
 
-    const p = await supabaseAdminAddPlayer(chosenName, roleId);
-    createdPlayers.push(p);
+    // 1. Insert team first so players can reference team_id foreign key
+    const teamRow = {
+      id: teamId,
+      name: crewTitle,
+      score: 0,
+      assigned_codeword: assignedCodeword,
+      player_ids: playerIds,
+      round_submissions: {},
+      battle_code: battleCode,
+    };
+    const { data: insertedTeam, error: tErr } = await supabase.from('teams').insert(teamRow).select().single();
+    if (tErr) throw new Error(`Failed to create demo crew: ${tErr.message}`);
+
+    // 2. Bulk insert all 5 players referencing the newly created teamId in one query
+    const { error: pErr } = await supabase.from('players').insert(rawPlayersToInsert);
+    if (pErr) throw new Error(`Failed to create demo shades: ${pErr.message}`);
+
+    const createdTeam = mapDbTeam(insertedTeam || teamRow);
+    return { success: true, team: createdTeam, players: playerObjects };
+  } catch (err: any) {
+    console.error('Error in supabaseAdminSpawnDemoCrew:', err);
+    return { success: false, error: err?.message || 'Failed to spawn demo crew' };
   }
-
-  const theme = DEMO_CREW_NAME_THEMES[teamCount % DEMO_CREW_NAME_THEMES.length];
-  const crewTitle = `Crew #${teamCount + 1} • ${theme}`;
-
-  await supabaseFormTeam(
-    createdPlayers[0].id,
-    createdPlayers.slice(1).map(p => p.join_code),
-    crewTitle
-  );
 }
 
 // ==========================================

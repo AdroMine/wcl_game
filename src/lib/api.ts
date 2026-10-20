@@ -1,5 +1,4 @@
 import { isSupabaseConfigured } from './supabase';
-import QRCode from 'qrcode';
 import {
   fetchFullSyncPayloadFromSupabase,
   supabaseJoinPlayer,
@@ -32,7 +31,7 @@ import {
   supabaseAdminRound2SaveScoring,
   supabaseRequestRoundHint,
 } from './supabaseService';
-import type { GameState, GameConfig, Round2ScoringTier } from '../types';
+import type { GameState, GameConfig, Round2ScoringTier, Player, Team } from '../types';
 
 const API_BASE = '/api';
 
@@ -40,6 +39,7 @@ export async function fetchServerInfo() {
   if (isSupabaseConfigured) {
     const origin = typeof window !== 'undefined' ? window.location.origin : 'https://wcl-game.pages.dev';
     try {
+      const QRCode = (await import('qrcode')).default;
       const qrDataUrl = await QRCode.toDataURL(origin, {
         margin: 1,
         width: 320,
@@ -272,10 +272,9 @@ export async function adminAutoGroup(passcode: string) {
   return res.json();
 }
 
-export async function adminSpawnDemoCrew(passcode: string) {
+export async function adminSpawnDemoCrew(passcode: string): Promise<{ success: boolean; team?: Team; players?: Player[]; error?: string }> {
   if (isSupabaseConfigured) {
-    await supabaseAdminSpawnDemoCrew();
-    return { success: true };
+    return supabaseAdminSpawnDemoCrew();
   }
   const res = await fetch(`${API_BASE}/admin/spawn-demo-crew`, {
     method: 'POST',

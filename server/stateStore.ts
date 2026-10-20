@@ -24,6 +24,7 @@ import {
   generateHintText,
   ROUND1_HINTS,
 } from '../src/lib/round1Engine';
+import { DEFAULT_ROUND1_CODEWORDS } from '../src/lib/tabletEngine';
 import fs from 'fs';
 import path from 'path';
 
@@ -253,7 +254,7 @@ export class UnderworldStateStore {
 
     // Pick codeword for Round 1
     const round1 = this.config.rounds[0];
-    let assignedCodeword = "ORACLE";
+    let assignedCodeword = DEFAULT_ROUND1_CODEWORDS[Math.floor(Math.random() * DEFAULT_ROUND1_CODEWORDS.length)];
     if (round1 && round1.data && 'codewords' in round1.data && round1.data.codewords.length > 0) {
       const words = round1.data.codewords;
       assignedCodeword = words[Math.floor(Math.random() * words.length)];
@@ -288,10 +289,11 @@ export class UnderworldStateStore {
       { name: 'Damon', roleId: 'negotiator' },
     ];
 
+    const teamCount = this.teams.size + 1;
     const teamId = `team_demo_${Date.now()}`;
     const round1 = this.config.rounds[0];
-    const words = (round1?.data as any)?.codewords || ['ORACLE', 'SIRENS', 'PORTAL', 'CHARON', 'VOYAGE'];
-    const assignedCodeword = words[Math.floor(Math.random() * words.length)] || 'ORACLE';
+    const words = (round1?.data as any)?.codewords || DEFAULT_ROUND1_CODEWORDS;
+    const assignedCodeword = words[Math.floor(Math.random() * words.length)] || 'CRIMSON SHADOW';
 
     const createdPlayers: Player[] = [];
     const existingCodes = new Set(Array.from(this.players.values()).map(p => p.join_code));
@@ -299,7 +301,7 @@ export class UnderworldStateStore {
     for (const item of names) {
       const code = generateJoinCode(existingCodes);
       existingCodes.add(code);
-      const pid = `p_demo_${item.name.toLowerCase()}`;
+      const pid = `p_demo_${Date.now()}_${item.name.toLowerCase()}`;
       const p: Player = {
         id: pid,
         name: item.name,
@@ -314,13 +316,17 @@ export class UnderworldStateStore {
       createdPlayers.push(p);
     }
 
+    const existingBattleCodes = new Set(Array.from(this.teams.values()).map(t => t.battle_code).filter(Boolean) as string[]);
+    const battleCode = generateBattleCode(existingBattleCodes);
+
     const team: Team = {
       id: teamId,
-      name: 'The Stygian Rowers (Demo Crew)',
+      name: `Crew #${teamCount} • The Stygian Rowers`,
       player_ids: createdPlayers.map(p => p.id),
       score: 0,
       assignedCodeword,
       round_submissions: {},
+      battle_code: battleCode,
     };
 
     this.teams.set(teamId, team);
@@ -389,13 +395,13 @@ export class UnderworldStateStore {
       // Auto-create solo crew so solo testing or late players can submit seamlessly
       const teamId = `team_solo_${player.id}`;
       const round1 = this.config.rounds[0];
-      const words = (round1?.data as any)?.codewords || ['ORACLE', 'SIRENS', 'PORTAL', 'CHARON', 'VOYAGE'];
+      const words = (round1?.data as any)?.codewords || DEFAULT_ROUND1_CODEWORDS;
       team = {
         id: teamId,
         name: `Solo Shade • ${player.name}`,
         player_ids: [player.id],
         score: 0,
-        assignedCodeword: words[Math.floor(Math.random() * words.length)],
+        assignedCodeword: words[Math.floor(Math.random() * words.length)] || 'CRIMSON SHADOW',
         round_submissions: {},
       };
       this.teams.set(teamId, team);
@@ -418,7 +424,7 @@ export class UnderworldStateStore {
     let speedBonusMax = 100;
 
     if (round.type === 'ASCII_SPLITTER') {
-      const expected = (team.assignedCodeword || 'ORACLE').toUpperCase();
+      const expected = (team.assignedCodeword || 'CRIMSON SHADOW').toUpperCase();
       isCorrect = cleanInput.replace(/\s+/g, '') === expected.replace(/\s+/g, '');
     } else if (round.type === 'ASYMMETRIC_TEXT_PUZZLE') {
       const expected = (round.data as any).answerCodeword?.toUpperCase() || 'CERBERUS';
@@ -531,10 +537,11 @@ export class UnderworldStateStore {
 
       // Assign codewords for Round 1 if not already
       if (round?.type === 'ASCII_SPLITTER') {
-        const words = (round.data as any).codewords || ['ORACLE', 'SIRENS', 'PORTAL', 'CHARON', 'VOYAGE'];
+        const words = (round.data as any).codewords || DEFAULT_ROUND1_CODEWORDS;
         for (const team of this.teams.values()) {
-          if (!team.assignedCodeword) {
-            team.assignedCodeword = words[Math.floor(Math.random() * words.length)];
+          const isMissingOrOld1Word = !team.assignedCodeword || !team.assignedCodeword.trim().includes(' ');
+          if (isMissingOrOld1Word) {
+            team.assignedCodeword = words[Math.floor(Math.random() * words.length)] || 'CRIMSON SHADOW';
           }
         }
       }
@@ -592,14 +599,14 @@ export class UnderworldStateStore {
       const teamNum = this.teams.size + 1;
       const teamId = `team_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
       const round1 = this.config.rounds[0];
-      const words = (round1?.data as any)?.codewords || ['ORACLE', 'SIRENS', 'PORTAL', 'CHARON', 'VOYAGE'];
+      const words = (round1?.data as any)?.codewords || DEFAULT_ROUND1_CODEWORDS;
 
       const team: Team = {
         id: teamId,
         name: `Crew #${teamNum} • Tartarus Navigators`,
         player_ids: chunk.map(p => p.id),
         score: 0,
-        assignedCodeword: words[Math.floor(Math.random() * words.length)],
+        assignedCodeword: words[Math.floor(Math.random() * words.length)] || 'CRIMSON SHADOW',
         round_submissions: {},
       };
 

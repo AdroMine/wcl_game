@@ -117,12 +117,18 @@ export class UnderworldStateStore {
   }
 
   // Balanced bucket role assignment
-  assignBalancedRole(): string {
+  assignBalancedRole(excludeRoleId?: string, joinCodeSeed?: string): string {
     const roles = this.config.roles;
     if (roles.length === 0) return 'wanderer';
 
+    const eligibleRoles = excludeRoleId
+      ? roles.filter(r => r.id !== excludeRoleId)
+      : roles;
+
+    if (eligibleRoles.length === 0) return roles[0].id;
+
     const roleCounts: Record<string, number> = {};
-    for (const r of roles) {
+    for (const r of eligibleRoles) {
       roleCounts[r.id] = 0;
     }
 
@@ -132,19 +138,55 @@ export class UnderworldStateStore {
       }
     }
 
-    // Find role with minimum count
-    let minRole = roles[0].id;
-    let minCount = roleCounts[minRole] ?? 0;
+    // Find lowest count among eligible roles
+    const counts = eligibleRoles.map(r => roleCounts[r.id] ?? 0);
+    const minCount = Math.min(...counts);
 
-    for (const r of roles) {
-      const count = roleCounts[r.id] ?? 0;
-      if (count < minCount) {
-        minCount = count;
-        minRole = r.id;
+    // Pick randomly among tied minimum roles (diversified by joinCodeSeed)
+    const candidateRoles = eligibleRoles.filter(r => (roleCounts[r.id] ?? 0) === minCount);
+    if (joinCodeSeed && joinCodeSeed.length >= 3) {
+      const seedVal = joinCodeSeed.charCodeAt(0) * 37 + joinCodeSeed.charCodeAt(1) * 13 + joinCodeSeed.charCodeAt(2) * 7;
+      const chosen = candidateRoles[seedVal % candidateRoles.length];
+      return chosen ? chosen.id : candidateRoles[0].id;
+    }
+
+    const chosen = candidateRoles[Math.floor(Math.random() * candidateRoles.length)];
+    return chosen ? chosen.id : eligibleRoles[0].id;
+  }
+
+  rerollPlayerRole(playerId: string): { success: boolean; player?: Player; error?: string } {
+    const player = this.players.get(playerId);
+    if (!player) return { success: false, error: 'Player not found' };
+
+    if (player.teamId) {
+      return { success: false, error: 'Cannot reroll role once locked into a crew.' };
+    }
+
+    const newRole = this.assignBalancedRole(player.roleId);
+    player.roleId = newRole;
+    this.saveToDisk();
+    return { success: true, player };
+  }
+
+  adminRebalanceUnassignedRoles(): { success: boolean; count: number } {
+    const unassigned = Array.from(this.players.values()).filter(p => !p.teamId);
+    if (unassigned.length === 0) return { success: true, count: 0 };
+
+    const roles = this.config.roles;
+    if (roles.length === 0) return { success: true, count: 0 };
+
+    const shuffledRoles = [...roles].sort(() => Math.random() - 0.5);
+    let count = 0;
+    for (let i = 0; i < unassigned.length; i++) {
+      const targetRole = shuffledRoles[i % shuffledRoles.length].id;
+      if (unassigned[i].roleId !== targetRole) {
+        unassigned[i].roleId = targetRole;
+        count++;
       }
     }
 
-    return minRole;
+    this.saveToDisk();
+    return { success: true, count };
   }
 
   // Join or reconnect immortal session
@@ -163,9 +205,9 @@ export class UnderworldStateStore {
 
     // Create new player
     const id = playerId || `p_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
-    const roleId = this.assignBalancedRole();
     const existingCodes = new Set(Array.from(this.players.values()).map(p => p.join_code));
     const join_code = generateJoinCode(existingCodes);
+    const roleId = this.assignBalancedRole(undefined, join_code);
 
     const player: Player = {
       id,

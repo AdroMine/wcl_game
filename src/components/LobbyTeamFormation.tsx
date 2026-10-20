@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useGameSession } from '../context/GameContext';
-import { Copy, Check, Users, Sparkles, Compass, Eye, Book, Flame, Shield, Plus, Edit2, AlertCircle } from 'lucide-react';
+import { Copy, Check, Users, Sparkles, Compass, Eye, Book, Flame, Shield, Plus, Edit2, AlertCircle, Dices } from 'lucide-react';
 
 const ROLE_ICONS: Record<string, React.ReactNode> = {
   compass: <Compass className="w-5 h-5" />,
@@ -11,13 +11,33 @@ const ROLE_ICONS: Record<string, React.ReactNode> = {
 };
 
 export const LobbyTeamFormation: React.FC = () => {
-  const { player, role, team, payload, formTeam, renameTeam, switchPlayer } = useGameSession();
+  const { player, role, team, payload, formTeam, renameTeam, switchPlayer, rerollRole } = useGameSession();
   const [copied, setCopied] = useState(false);
   const [showAssembleModal, setShowAssembleModal] = useState(false);
   const [joinCodeInputs, setJoinCodeInputs] = useState<string[]>(['', '', '', '']);
   const [customCrewName, setCustomCrewName] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+
+  // Reroll fate state
+  const [isRerolling, setIsRerolling] = useState(false);
+  const [rerollMsg, setRerollMsg] = useState<string | null>(null);
+
+  const handleRerollRole = async () => {
+    try {
+      setIsRerolling(true);
+      setRerollMsg(null);
+      const res = await rerollRole();
+      if (!res.success) {
+        setRerollMsg(res.error || 'Failed to reroll role');
+      } else {
+        setRerollMsg('🎲 Fate re-cast! A new role was assigned.');
+      }
+      setTimeout(() => setRerollMsg(null), 3500);
+    } finally {
+      setIsRerolling(false);
+    }
+  };
 
   // Rename team state
   const [isEditingName, setIsEditingName] = useState(false);
@@ -258,6 +278,22 @@ export const LobbyTeamFormation: React.FC = () => {
               <p className="text-xs text-[#8e95a5] mt-0.5 leading-snug">
                 {role.description}
               </p>
+              {/* Re-roll Fate Action (Random Role Assignment) */}
+              <div className="pt-2">
+                <button
+                  type="button"
+                  onClick={handleRerollRole}
+                  disabled={isRerolling}
+                  className="px-2.5 py-1 rounded-lg bg-[#08090c] hover:bg-[#161922] border border-[#2a2e3d] hover:border-[#c4a45a]/60 text-[11px] font-mono text-[#8e95a5] hover:text-[#c4a45a] flex items-center space-x-1.5 transition-all shadow-sm disabled:opacity-50"
+                  title="Roll for another under-represented role if multiple people at your table have duplicates"
+                >
+                  <Dices className={`w-3.5 h-3.5 ${isRerolling ? 'animate-spin' : ''}`} />
+                  <span>{isRerolling ? 'Consulting the Oracle...' : '🎲 Re-roll Fate (Random Role)'}</span>
+                </button>
+                {rerollMsg && (
+                  <p className="text-[10px] font-mono text-[#c4a45a] mt-1 animate-fade-in">{rerollMsg}</p>
+                )}
+              </div>
             </div>
           </div>
 

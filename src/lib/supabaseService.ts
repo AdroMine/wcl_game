@@ -42,12 +42,19 @@ function generateJoinCode(existingCodes: Set<string>): string {
   return Math.random().toString(36).substring(2, 5).toUpperCase();
 }
 
-function assignBalancedRole(players: Player[], config: GameConfig): string {
-  const roles = config.roles;
-  if (!roles || roles.length === 0) return 'wanderer';
+function assignBalancedRole(players: Player[], config: GameConfig, excludeRoleId?: string, joinCodeSeed?: string): string {
+  const roles = config.roles || [];
+  if (roles.length === 0) return 'wanderer';
+
+  // Filter out excluded role if rerolling
+  const eligibleRoles = excludeRoleId
+    ? roles.filter(r => r.id !== excludeRoleId)
+    : roles;
+
+  if (eligibleRoles.length === 0) return roles[0].id;
 
   const roleCounts: Record<string, number> = {};
-  for (const r of roles) {
+  for (const r of eligibleRoles) {
     roleCounts[r.id] = 0;
   }
 
@@ -57,18 +64,23 @@ function assignBalancedRole(players: Player[], config: GameConfig): string {
     }
   }
 
-  let minRole = roles[0].id;
-  let minCount = roleCounts[minRole] ?? 0;
+  // Find minimum count among eligible roles
+  const counts = eligibleRoles.map(r => roleCounts[r.id] ?? 0);
+  const minCount = Math.min(...counts);
 
-  for (const r of roles) {
-    const count = roleCounts[r.id] ?? 0;
-    if (count < minCount) {
-      minCount = count;
-      minRole = r.id;
-    }
+  // Find all roles tied at minimum count
+  const candidateRoles = eligibleRoles.filter(r => (roleCounts[r.id] ?? 0) === minCount);
+
+  // If a join code seed is provided, use it to diversify concurrent joins
+  if (joinCodeSeed && joinCodeSeed.length >= 3) {
+    const seedVal = joinCodeSeed.charCodeAt(0) * 37 + joinCodeSeed.charCodeAt(1) * 13 + joinCodeSeed.charCodeAt(2) * 7;
+    const chosen = candidateRoles[seedVal % candidateRoles.length];
+    return chosen ? chosen.id : candidateRoles[0].id;
   }
 
-  return minRole;
+  // Pick uniformly at random among tied minimum candidates
+  const chosen = candidateRoles[Math.floor(Math.random() * candidateRoles.length)];
+  return chosen ? chosen.id : eligibleRoles[0].id;
 }
 
 function parseTimestamp(val: any): number {
@@ -537,7 +549,8 @@ export async function supabaseJoinPlayer(name: string, playerId?: string): Promi
     }
   }
 
-  // Create new player
+  // Create new player with micro-jitter (15ms-75ms) to prevent simultaneous write collisions
+  await new Promise(r => setTimeout(r, Math.floor(Math.random() * 60) + 15));
   const { data: allPlayers } = await supabase.from('players').select('join_code, role_id');
   const existingCodes = new Set<string>((allPlayers || []).map(p => p.join_code));
   const existingPlayersList: Player[] = (allPlayers || []).map(p => ({ roleId: p.role_id } as Player));
@@ -546,7 +559,7 @@ export async function supabaseJoinPlayer(name: string, playerId?: string): Promi
   const config = (stateData?.config && Object.keys(stateData.config).length > 0) ? stateData.config : DEFAULT_CONFIG;
 
   const join_code = generateJoinCode(existingCodes);
-  const roleId = assignBalancedRole(existingPlayersList, config);
+  const roleId = assignBalancedRole(existingPlayersList, config, undefined, join_code);
   const id = playerId || `p_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
 
   const newPlayerRow = {
@@ -592,6 +605,37 @@ export async function supabaseLeavePlayer(playerId: string): Promise<{ success: 
 
   await supabase.from('players').delete().eq('id', playerId);
   return { success: true };
+}
+
+export async function supabaseRerollPlayerRole(playerId: string): Promise<{ success: boolean; player?: Player; error?: string }> {
+  if (!supabase) return { success: false, error: 'Database not connected' };
+
+  const { data: playerRow } = await supabase.from('players').select('*').eq('id', playerId).maybeSingle();
+  if (!playerRow) return { success: false, error: 'Player record not found' };
+
+  if (playerRow.team_id) {
+    return { success: false, error: 'Cannot reroll role once locked into a crew.' };
+  }
+
+  const { data: allPlayers } = await supabase.from('players').select('role_id');
+  const existingPlayersList: Player[] = (allPlayers || []).map(p => ({ roleId: p.role_id } as Player));
+
+  const { row: stateData } = await getGameStateRow();
+  const config = (stateData?.config && Object.keys(stateData.config).length > 0) ? stateData.config : DEFAULT_CONFIG;
+
+  const newRoleId = assignBalancedRole(existingPlayersList, config, playerRow.role_id);
+  const { data: updated, error } = await supabase
+    .from('players')
+    .update({ role_id: newRoleId })
+    .eq('id', playerId)
+    .select()
+    .single();
+
+  if (error || !updated) {
+    return { success: false, error: error?.message || 'Failed to update role' };
+  }
+
+  return { success: true, player: mapDbPlayer(updated) };
 }
 
 export async function supabaseFormTeam(
@@ -1209,6 +1253,31 @@ export async function supabaseAdminSpawnDemoCrew(): Promise<{ success: boolean; 
     console.error('Error in supabaseAdminSpawnDemoCrew:', err);
     return { success: false, error: err?.message || 'Failed to spawn demo crew' };
   }
+}
+
+export async function supabaseAdminRebalanceUnassignedRoles(): Promise<{ success: boolean; count: number; error?: string }> {
+  if (!supabase) return { success: false, count: 0, error: 'Database disconnected' };
+
+  const { data: unassigned } = await supabase.from('players').select('*').is('team_id', null);
+  if (!unassigned || unassigned.length === 0) return { success: true, count: 0 };
+
+  const { row: stateData } = await getGameStateRow();
+  const config = (stateData?.config && Object.keys(stateData.config).length > 0) ? stateData.config : DEFAULT_CONFIG;
+  const roles = config.roles || [];
+  if (roles.length === 0) return { success: true, count: 0 };
+
+  const shuffledRoles = [...roles].sort(() => Math.random() - 0.5);
+  let updatedCount = 0;
+
+  for (let i = 0; i < unassigned.length; i++) {
+    const targetRoleId = shuffledRoles[i % shuffledRoles.length].id;
+    if (unassigned[i].role_id !== targetRoleId) {
+      await supabase.from('players').update({ role_id: targetRoleId }).eq('id', unassigned[i].id);
+      updatedCount++;
+    }
+  }
+
+  return { success: true, count: updatedCount };
 }
 
 // ==========================================

@@ -140,6 +140,21 @@ app.post('/api/player/leave', (req: Request, res: Response) => {
   res.json({ success: removed });
 });
 
+// Player Reroll Fate (Random Role)
+app.post('/api/player/reroll', (req: Request, res: Response) => {
+  const { playerId } = req.body;
+  if (!playerId) {
+    return res.status(400).json({ success: false, error: 'Player ID required' });
+  }
+  const result = stateStore.rerollPlayerRole(playerId);
+  if (result.success) {
+    broadcastSync();
+    res.json(result);
+  } else {
+    res.status(400).json(result);
+  }
+});
+
 // Team Formation via 3-char Join Codes
 app.post('/api/team/form', (req: Request, res: Response) => {
   const { leaderPlayerId, joinCodes, customName } = req.body;
@@ -273,6 +288,12 @@ app.post('/api/admin/auto-group', checkAdminPasscode, (_req: Request, res: Respo
   const count = stateStore.autoGroupRemainingPlayers();
   broadcastSync();
   res.json({ success: true, count });
+});
+
+app.post('/api/admin/rebalance-unassigned', checkAdminPasscode, (_req: Request, res: Response) => {
+  const result = stateStore.adminRebalanceUnassignedRoles();
+  broadcastSync();
+  res.json(result);
 });
 
 app.post('/api/admin/spawn-demo-crew', checkAdminPasscode, (_req: Request, res: Response) => {

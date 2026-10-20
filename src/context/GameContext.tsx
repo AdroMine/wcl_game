@@ -11,6 +11,7 @@ import {
   round2CastVoteApi,
   round2AdvancePhaseApi,
   requestRoundHintApi,
+  rerollPlayerRoleApi,
 } from '../lib/api';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 
@@ -38,6 +39,7 @@ interface GameContextType {
   voteRound2: (vote: 'TRUCE' | 'AMBUSH') => Promise<{ success: boolean; error?: string }>;
   advanceRound2: (matchId?: string) => Promise<void>;
   timeRemainingSeconds: number;
+  rerollRole: () => Promise<{ success: boolean; error?: string }>;
   refresh: () => Promise<void>;
 }
 
@@ -345,6 +347,26 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  const rerollRole = async (): Promise<{ success: boolean; error?: string }> => {
+    const playerId = localStorage.getItem(PLAYER_ID_KEY);
+    if (!playerId) return { success: false, error: 'No active shade found' };
+
+    try {
+      const res = await rerollPlayerRoleApi(playerId);
+      if (res.success && res.player) {
+        setPayload(prev => prev ? {
+          ...prev,
+          player: res.player!,
+        } : prev);
+        await runPoll();
+        return { success: true };
+      }
+      return { success: false, error: res.error || 'Failed to reroll role' };
+    } catch (e: any) {
+      return { success: false, error: e?.message || 'Error rerolling role' };
+    }
+  };
+
   return (
     <GameContext.Provider
       value={{
@@ -370,6 +392,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         pairRound2,
         voteRound2,
         advanceRound2,
+        rerollRole,
         timeRemainingSeconds,
         refresh: runPoll,
       }}

@@ -30,6 +30,8 @@ import {
   supabaseAdminRound2SaveDurations,
   supabaseAdminRound2SaveScoring,
   supabaseRequestRoundHint,
+  supabaseRerollPlayerRole,
+  supabaseAdminRebalanceUnassignedRoles,
 } from './supabaseService';
 import type { GameState, GameConfig, Round2ScoringTier, Player, Team } from '../types';
 
@@ -94,6 +96,18 @@ export async function leavePlayer(playerId: string) {
     body: JSON.stringify({ playerId }),
   });
   if (!res.ok) throw new Error('Failed to leave game');
+  return res.json();
+}
+
+export async function rerollPlayerRoleApi(playerId: string): Promise<{ success: boolean; player?: Player; error?: string }> {
+  if (isSupabaseConfigured) {
+    return supabaseRerollPlayerRole(playerId);
+  }
+  const res = await fetch(`${API_BASE}/player/reroll`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ playerId }),
+  });
   return res.json();
 }
 
@@ -262,6 +276,21 @@ export async function adminAutoGroup(passcode: string) {
     return { success: true };
   }
   const res = await fetch(`${API_BASE}/admin/auto-group`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-admin-passcode': passcode,
+    },
+    body: JSON.stringify({}),
+  });
+  return res.json();
+}
+
+export async function adminRebalanceUnassignedRoles(passcode: string): Promise<{ success: boolean; count: number; error?: string }> {
+  if (isSupabaseConfigured) {
+    return supabaseAdminRebalanceUnassignedRoles();
+  }
+  const res = await fetch(`${API_BASE}/admin/rebalance-unassigned`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',

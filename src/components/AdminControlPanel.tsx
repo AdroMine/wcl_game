@@ -14,6 +14,7 @@ import {
   adminDeleteTeam,
   adminAutoGroup,
   adminSpawnDemoCrew,
+  adminRebalanceUnassignedRoles,
   fetchServerInfo,
   adminRound2AutoPair,
   adminRound2ManualPair,
@@ -257,6 +258,21 @@ export const AdminControlPanel: React.FC<AdminProps> = ({ payload, onClose }) =>
       setTimeout(() => setDemoNotice(null), 4000);
     } finally {
       setIsSpawningDemo(false);
+    }
+  };
+
+  const [isRebalancing, setIsRebalancing] = useState(false);
+  const handleRebalanceRoles = async () => {
+    try {
+      setIsRebalancing(true);
+      const res = await adminRebalanceUnassignedRoles(passcode);
+      if (res?.success) {
+        setDemoNotice(`✓ Rebalanced roles across ${res.count} unassigned shades!`);
+        setTimeout(() => setDemoNotice(null), 4000);
+      }
+      await refresh();
+    } finally {
+      setIsRebalancing(false);
     }
   };
 
@@ -1329,12 +1345,21 @@ export const AdminControlPanel: React.FC<AdminProps> = ({ payload, onClose }) =>
                 Unassigned Shades ({unassigned.length})
               </span>
               {unassigned.length > 0 && (
-                <button
-                  onClick={() => adminAutoGroup(passcode)}
-                  className="px-2.5 py-1 bg-[#c4a45a]/20 border border-[#c4a45a] hover:bg-[#c4a45a] hover:text-[#08090c] text-[#c4a45a] rounded text-[10px] font-mono font-bold transition-all"
-                >
-                  ⚡ Auto-Group Into Crews
-                </button>
+                <div className="flex items-center space-x-2">
+                  <button
+                    onClick={handleRebalanceRoles}
+                    disabled={isRebalancing}
+                    className="px-2.5 py-1 bg-[#161922] border border-[#2a2e3d] hover:border-[#c4a45a] text-[#8e95a5] hover:text-[#f4f0e8] rounded text-[10px] font-mono transition-all"
+                  >
+                    <span>{isRebalancing ? 'Balancing...' : '⚖️ Auto-Balance Roles'}</span>
+                  </button>
+                  <button
+                    onClick={() => adminAutoGroup(passcode)}
+                    className="px-2.5 py-1 bg-[#c4a45a]/20 border border-[#c4a45a] hover:bg-[#c4a45a] hover:text-[#08090c] text-[#c4a45a] rounded text-[10px] font-mono font-bold transition-all"
+                  >
+                    ⚡ Auto-Group Into Crews
+                  </button>
+                </div>
               )}
             </div>
             <div className="space-y-2">

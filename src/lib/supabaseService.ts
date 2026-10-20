@@ -529,11 +529,31 @@ export async function fetchFullSyncPayloadFromSupabase(forPlayerId?: string, for
 export async function supabaseJoinPlayer(name: string, playerId?: string): Promise<{ success: boolean; player: Player }> {
   if (!supabase) throw new Error('Supabase not configured');
 
+  const cleanName = name && name.trim() ? name.trim() : null;
+
+  // 1. Primary path: Call atomic PostgreSQL stored procedure (1 network round-trip, advisory lock serializes concurrent joins)
+  try {
+    const { data: rpcData, error: rpcError } = await supabase.rpc('join_player_atomic', {
+      p_name: cleanName,
+      p_id: playerId || null,
+    });
+
+    if (!rpcError && rpcData) {
+      return { success: true, player: mapDbPlayer(rpcData) };
+    }
+    if (rpcError) {
+      console.warn('join_player_atomic RPC failed, falling back to client-side logic:', rpcError);
+    }
+  } catch (rpcErr) {
+    console.warn('join_player_atomic RPC call threw, falling back to client-side logic:', rpcErr);
+  }
+
+  // 2. Fallback path (offline mock or direct DB access)
   const now = Date.now();
   if (playerId) {
     const { data: existing } = await supabase.from('players').select('*').eq('id', playerId).maybeSingle();
     if (existing) {
-      const updatedName = name && name.trim() ? name.trim() : existing.name;
+      const updatedName = cleanName || existing.name;
       const { data: updated } = await supabase
         .from('players')
         .update({
@@ -564,7 +584,7 @@ export async function supabaseJoinPlayer(name: string, playerId?: string): Promi
 
   const newPlayerRow = {
     id,
-    name: name && name.trim() ? name.trim() : `Shade-${join_code}`,
+    name: cleanName || `Shade-${join_code}`,
     role_id: roleId,
     join_code,
     team_id: null,
@@ -610,6 +630,23 @@ export async function supabaseLeavePlayer(playerId: string): Promise<{ success: 
 export async function supabaseRerollPlayerRole(playerId: string): Promise<{ success: boolean; player?: Player; error?: string }> {
   if (!supabase) return { success: false, error: 'Database not connected' };
 
+  // 1. Primary path: Call atomic PostgreSQL stored procedure (single round-trip, advisory-lock serialized)
+  try {
+    const { data: rpcData, error: rpcError } = await supabase.rpc('reroll_player_role_atomic', {
+      p_id: playerId,
+    });
+
+    if (!rpcError && rpcData) {
+      return { success: true, player: mapDbPlayer(rpcData) };
+    }
+    if (rpcError) {
+      console.warn('reroll_player_role_atomic RPC failed, falling back to client logic:', rpcError);
+    }
+  } catch (rpcErr) {
+    console.warn('reroll_player_role_atomic RPC call threw, falling back to client logic:', rpcErr);
+  }
+
+  // 2. Fallback path (offline mock or direct query)
   const { data: playerRow } = await supabase.from('players').select('*').eq('id', playerId).maybeSingle();
   if (!playerRow) return { success: false, error: 'Player record not found' };
 

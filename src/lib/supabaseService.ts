@@ -714,15 +714,15 @@ export async function supabaseSubmitRoundAnswer(
 
   if (round.type === 'ASCII_SPLITTER') {
     const expected = (team.assignedCodeword || 'ORACLE').toUpperCase();
-    isCorrect = cleanInput === expected;
+    isCorrect = cleanInput.replace(/\s+/g, '') === expected.replace(/\s+/g, '');
   } else if (round.type === 'ASYMMETRIC_TEXT_PUZZLE') {
     const expected = (round.data as any).answerCodeword?.toUpperCase() || 'CERBERUS';
     basePoints = (round.data as any).points ?? 200;
-    isCorrect = cleanInput === expected;
+    isCorrect = cleanInput.replace(/\s+/g, '') === expected.replace(/\s+/g, '');
   } else if (round.type === 'OFFLINE_TASK_TIMER') {
     const expected = (round.data as any).verificationCode?.toUpperCase() || 'OBOLUS';
     basePoints = (round.data as any).points ?? 250;
-    isCorrect = cleanInput === expected;
+    isCorrect = cleanInput.replace(/\s+/g, '') === expected.replace(/\s+/g, '');
   }
 
   if (!isCorrect) {

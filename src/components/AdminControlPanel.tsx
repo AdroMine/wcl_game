@@ -41,7 +41,6 @@ import {
   CheckCircle2,
   ChevronDown,
   ChevronUp,
-  Layers,
   Eye,
   Flame,
   Search,
@@ -49,7 +48,7 @@ import {
   Sparkles,
   X,
 } from 'lucide-react';
-import { getAllAsciiSlices } from '../lib/asciiEngine';
+import { parseTabletCodeword, TABLET_CONFIG, getSlotPositionLabel } from '../lib/tabletEngine';
 
 interface AdminProps {
   payload: SyncPayload | null;
@@ -114,7 +113,7 @@ export const AdminControlPanel: React.FC<AdminProps> = ({ payload, onClose }) =>
   };
 
   // Round 1 interactive previewer state
-  const [previewWord, setPreviewWord] = useState('ORACLE');
+  const [previewWord, setPreviewWord] = useState('CRIMSON SHADOW');
 
   // Universal Time Adjust (Adjusts global round timer AND active Round 2 matches simultaneously)
   const handleUniversalTimeAdjust = async (deltaSeconds: number) => {
@@ -1461,108 +1460,12 @@ export const AdminControlPanel: React.FC<AdminProps> = ({ payload, onClose }) =>
                   </div>
                 </div>
 
-                <div className="flex justify-end pt-2">
-                  <button
-                    onClick={handleSaveConfig}
-                    className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-mono font-bold flex items-center space-x-1.5 transition-all"
-                  >
-                    <Save className="w-3.5 h-3.5" />
-                    <span>{configSaved ? '✓ Saved Session Rules' : 'Save Session Rules'}</span>
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Section 2: Round 1 (ASCII Splitter) */}
-          <div className="bg-[#10121a] border border-[#2a2e3d] rounded-2xl overflow-hidden shadow-xl transition-all">
-            <button
-              type="button"
-              onClick={() => toggleSection('round1')}
-              className="w-full p-4 flex items-center justify-between bg-[#161922] hover:bg-[#1a1e29] border-b border-[#2a2e3d] text-left transition-colors"
-            >
-              <div className="flex items-center space-x-2">
-                <Layers className="w-4 h-4 text-[#c4a45a]" />
-                <span className="text-xs font-serif font-bold text-[#f4f0e8] uppercase">
-                  2. Round 1: ASCII Splitter Config
-                </span>
-              </div>
-              <div className="flex items-center space-x-2">
-                <span className="text-[10px] font-mono text-[#8e95a5]">
-                  {((editableConfig.rounds[0]?.data as any)?.codewords || []).length} Words Pool
-                </span>
-                {openSections.round1 ? (
-                  <ChevronUp className="w-4 h-4 text-[#c4a45a]" />
-                ) : (
-                  <ChevronDown className="w-4 h-4 text-[#8e95a5]" />
-                )}
-              </div>
-            </button>
-
-            {openSections.round1 && (
-              <div className="p-5 space-y-4">
-                {/* Duration */}
                 <div>
-                  <label className="block text-[11px] font-mono text-[#8e95a5] mb-1">
-                    Round 1 Duration (Seconds):
-                  </label>
-                  <div className="flex items-center space-x-2">
-                    <input
-                      type="number"
-                      min="30"
-                      max="1200"
-                      value={editableConfig.rounds[0]?.durationSeconds || 180}
-                      onChange={(e) => {
-                        const val = parseInt(e.target.value, 10) || 180;
-                        const updated = { ...editableConfig };
-                        if (updated.rounds[0]) {
-                          updated.rounds[0].durationSeconds = val;
-                          setEditableConfig(updated);
-                        }
-                      }}
-                      className="bg-[#161922] border border-[#2a2e3d] rounded-lg px-3 py-2 text-xs text-[#f4f0e8] w-32 outline-none font-mono"
-                    />
-                    <span className="text-xs font-mono text-[#8e95a5]">
-                      seconds ({Math.floor((editableConfig.rounds[0]?.durationSeconds || 180) / 60)}m {(editableConfig.rounds[0]?.durationSeconds || 180) % 60}s)
-                    </span>
-                  </div>
-                </div>
-
-                {/* Codewords Pool Text */}
-                <div>
-                  <label className="block text-[11px] font-mono text-[#8e95a5] mb-1">
-                    Codewords Pool (Comma-Separated):
-                  </label>
-                  <input
-                    type="text"
-                    defaultValue={(editableConfig.rounds[0]?.data as any)?.codewords?.join(', ') || ''}
-                    onChange={(e) => {
-                      const words = e.target.value
-                        .split(',')
-                        .map(w => w.trim().toUpperCase())
-                        .filter(Boolean);
-                      const updated = { ...editableConfig };
-                      if (updated.rounds[0]) {
-                        (updated.rounds[0].data as any).codewords = words;
-                        setEditableConfig(updated);
-                      }
-                    }}
-                    placeholder="CERBERUS, ORACLE, CHARON, HERMES, MINOTAUR, HYDRA, TARTARUS"
-                    className="bg-[#161922] border border-[#2a2e3d] rounded-lg px-3 py-2 text-xs text-[#f4f0e8] w-full outline-none font-mono"
-                  />
-                  <p className="text-[10px] text-[#8e95a5] mt-1">
-                    Full A–Z characters supported. Cleanly sliced across all 5 phones without distorting borders.
-                  </p>
-                </div>
-
-                {/* Active Codewords Chips */}
-                {((editableConfig.rounds[0]?.data as any)?.codewords || []).length > 0 && (
-                  <div>
                     <span className="text-[10px] font-mono uppercase tracking-wider text-[#8e95a5] block mb-1.5">
-                      Active Codewords in Pool (Click to inspect slices below):
+                      Active Codewords in Pool (Click to inspect tablet fragments below):
                     </span>
-                    <div className="flex flex-wrap gap-1.5">
-                      {((editableConfig.rounds[0]?.data as any)?.codewords || []).map((w: string) => (
+                    <div className="flex flex-wrap gap-1.5 mb-3">
+                      {((editableConfig.rounds[0]?.data as any)?.codewords || ['CRIMSON SHADOW', 'MIDNIGHT BELL', 'OBSIDIAN GATE', 'SILENT SPECTER']).map((w: string) => (
                         <button
                           key={w}
                           type="button"
@@ -1578,46 +1481,66 @@ export const AdminControlPanel: React.FC<AdminProps> = ({ payload, onClose }) =>
                       ))}
                     </div>
                   </div>
-                )}
 
-                {/* Interactive ASCII Inspector */}
+                  {/* Interactive Tablet Inspector */}
                 <div className="p-4 rounded-xl bg-[#08090c] border border-[#c4a45a]/40 space-y-3">
                   <div className="flex items-center space-x-2">
                     <Eye className="w-4 h-4 text-[#c4a45a]" />
                     <span className="text-xs font-mono font-bold text-[#c4a45a] uppercase">
-                      Codeword Slices Inspector: {previewWord}
+                      Shattered Tablet 5-Screen Inspector: {previewWord}
                     </span>
                   </div>
 
                   <p className="text-[10px] text-[#8e95a5]">
-                    Below is how the 15-line word is divided across all 5 phone screens (3 rows per phone) with enhanced letter kerning and distinctive vertical features.
+                    Below is how the 2-line ancient tablet is divided across all 5 phone screens placed side-by-side with interlocking glowing seam notches and orientation crests.
                   </p>
 
-                  {/* Rendered Stacked Slices */}
-                  <div className="p-3 bg-[#10121a] rounded-lg border border-[#2a2e3d] overflow-x-auto">
-                    {(() => {
-                      const slices = getAllAsciiSlices(previewWord, editableConfig.team_size || 5);
-                      const roleColors = ['#e5cb87', '#38bdf8', '#fb7185', '#34d399', '#c084fc'];
-                      const roleLabels = ['#1 Leader / Navigator', '#2 Sentry', '#3 Cryptographer', '#4 Vanguard', '#5 Chronicler'];
+                  {/* Rendered Side-by-Side Slices */}
+                  <div className="p-3 bg-[#10121a] rounded-lg border border-[#2a2e3d]">
+                    <div className="grid grid-cols-5 gap-1.5">
+                      {Array.from({ length: editableConfig.team_size || 5 }).map((_, idx) => {
+                        const { line1, line2 } = parseTabletCodeword(previewWord);
+                        const { totalWidth, totalHeight, line1Y, horizonY, line2Y } = TABLET_CONFIG;
+                        const tSize = editableConfig.team_size || 5;
+                        const slotW = totalWidth / tSize;
+                        const vX = idx * slotW;
+                        const roleColors = ['#e5cb87', '#38bdf8', '#fb7185', '#34d399', '#c084fc'];
+                        const roleCol = roleColors[idx % roleColors.length];
 
-                      return (
-                        <div className="space-y-2">
-                          {slices.map((slice, idx) => (
-                            <div key={idx} className="space-y-0.5">
-                              <span className="text-[9px] font-mono font-bold block" style={{ color: roleColors[idx % roleColors.length] }}>
-                                Slot {idx + 1} ({roleLabels[idx] || `Player ${idx + 1}`}):
-                              </span>
-                              <pre
-                                className="font-mono text-[11px] leading-tight select-all px-2 py-1 rounded bg-[#08090c] border border-[#2a2e3d]"
-                                style={{ color: roleColors[idx % roleColors.length] }}
-                              >
-                                {slice.join('\n')}
-                              </pre>
+                        return (
+                          <div key={idx} className="bg-black border border-[#2a2e3d] rounded-xl overflow-hidden p-1 flex flex-col items-center">
+                            <span className="text-[9px] font-mono font-bold mb-1 truncate max-w-full" style={{ color: roleCol }}>
+                              #{idx + 1} ({getSlotPositionLabel(idx, tSize)})
+                            </span>
+                            <div className="w-full h-32 bg-[#08090c] rounded overflow-hidden">
+                              <svg viewBox={`${vX} 0 ${slotW} ${totalHeight}`} preserveAspectRatio="none" className="w-full h-full">
+                                <rect x="0" y="0" width={totalWidth} height={totalHeight} fill="#08090c" />
+                                <rect x="6" y="6" width={totalWidth - 12} height={totalHeight - 12} rx="10" fill="#0f1118" stroke="#2a2e3d" strokeWidth="3" />
+                                <text x={totalWidth / 2} y="48" textAnchor="middle" fontFamily="monospace" fontSize="18" fontWeight="bold" fill="#c4a45a" letterSpacing="8">
+                                  ▲ CREST (TOP) ▲
+                                </text>
+                                <text x={totalWidth / 2} y={line1Y} textAnchor="middle" fontFamily="Cinzel, Georgia, serif" fontWeight="900" fontSize="110" letterSpacing="18" fill="#e5cb87" stroke="#08090c" strokeWidth="4">
+                                  {line1}
+                                </text>
+                                <line x1="0" y1={horizonY} x2={totalWidth} y2={horizonY} stroke="#c4a45a" strokeWidth="6" opacity="0.8" />
+                                {Array.from({ length: tSize - 1 }).map((_, sIdx) => {
+                                  const sX = (sIdx + 1) * slotW;
+                                  return (
+                                    <polygon key={sIdx} points={`${sX},${horizonY - 24} ${sX + 16},${horizonY} ${sX},${horizonY + 24} ${sX - 16},${horizonY}`} fill="#c4a45a" />
+                                  );
+                                })}
+                                <text x={totalWidth / 2} y={line2Y} textAnchor="middle" fontFamily="Cinzel, Georgia, serif" fontWeight="900" fontSize="110" letterSpacing="18" fill="#e5cb87" stroke="#08090c" strokeWidth="4">
+                                  {line2}
+                                </text>
+                                <text x={totalWidth / 2} y="564" textAnchor="middle" fontFamily="monospace" fontSize="18" fontWeight="bold" fill="#c4a45a" letterSpacing="8">
+                                  ▼ BASE (BOTTOM) ▼
+                                </text>
+                              </svg>
                             </div>
-                          ))}
-                        </div>
-                      );
-                    })()}
+                          </div>
+                        );
+                      })}
+                    </div>
                   </div>
                 </div>
 

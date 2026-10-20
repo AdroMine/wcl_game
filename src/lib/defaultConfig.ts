@@ -82,11 +82,11 @@ export const DEFAULT_CONFIG: GameConfig = {
     {
       id: "round-1",
       type: "ASCII_SPLITTER",
-      title: "Round 1: The Stygian Totem",
-      subtitle: "Align all phone screens side-by-side to assemble the severed mythic codeword.",
+      title: "Round 1: The Shattered Tablet",
+      subtitle: "Align all 5 phone screens side-by-side to reconstruct the broken stone tablet and unlock the ancient tomb door.",
       durationSeconds: 300,
       data: {
-        codewords: ["ORACLE", "SIRENS", "PORTAL", "CHARON", "VOYAGE"],
+        codewords: ["CRIMSON SHADOW", "MIDNIGHT BELL", "OBSIDIAN GATE", "SILENT SPECTER", "ANCIENT CURSE", "HOLLOW GRAVE", "PHANTOM WRATH", "BLOOD MOON"],
         mode: "HORIZONTAL",
         pointsBase: 100,
         pointsSpeedBonusMax: 100,

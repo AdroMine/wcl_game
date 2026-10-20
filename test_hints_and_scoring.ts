@@ -37,22 +37,22 @@ async function runTests() {
 
   const hint1Text = generateHintText(1, 5, slotMembers);
   console.log('Hint 1:', hint1Text);
-  if (!hint1Text.includes('Orpheus') || !hint1Text.includes('TOP')) {
-    throw new Error('Hint 1 must reveal Slot 0 / Orpheus as TOP');
+  if (!hint1Text.includes('Orpheus') || !hint1Text.includes('LEFT')) {
+    throw new Error('Hint 1 must reveal Slot 0 / Orpheus as LEFT');
   }
 
   const hint2Text = generateHintText(2, 5, slotMembers);
   console.log('Hint 2:', hint2Text);
-  if (!hint2Text.includes('Damon') || !hint2Text.includes('BOTTOM')) {
-    throw new Error('Hint 2 must reveal Slot 4 / Damon as BOTTOM');
+  if (!hint2Text.includes('Damon') || !hint2Text.includes('RIGHT')) {
+    throw new Error('Hint 2 must reveal Slot 4 / Damon as RIGHT');
   }
 
   const hint3Text = generateHintText(3, 5, slotMembers);
   console.log('Hint 3:', hint3Text);
-  if (!hint3Text.includes('Marcus') || !hint3Text.includes('MIDDLE')) {
-    throw new Error('Hint 3 must reveal Slot 2 / Marcus as MIDDLE');
+  if (!hint3Text.includes('Marcus') || !hint3Text.includes('CENTER')) {
+    throw new Error('Hint 3 must reveal Slot 2 / Marcus as CENTER');
   }
-  console.log('✓ All position hint texts accurately identify Top, Bottom, and Middle players!\n');
+  console.log('✓ All position hint texts accurately identify Left, Right, and Center players!\n');
 
   // 3. Verify Dynamic Scoring Formula
   console.log('3. Testing Escalating Dynamic Scoring Curve:');
@@ -126,7 +126,7 @@ async function runTests() {
   const hintReq = await supabaseRequestRoundHint(team.id, 1);
   console.log('Requested Hint 1 after 130s elapsed:', hintReq);
   if (!hintReq.success) throw new Error(`Failed to request hint: ${hintReq.error}`);
-  if (!hintReq.hint?.includes('holds the TOP slice')) throw new Error('Hint text missing expected top layer content');
+  if (!hintReq.hint?.includes('holds the FAR LEFT piece')) throw new Error('Hint text missing expected left edge content');
 
   // Submit correct codeword
   const leaderPlayerId = team.player_ids[0];

@@ -1,37 +1,33 @@
 import React, { useState, useEffect } from 'react';
 import { useGameSession } from '../context/GameContext';
 import {
-  getAllAsciiSlices,
-} from '../lib/asciiEngine';
-import {
   ROUND1_HINTS,
-  generateHintText,
   calculateRound1Score,
 } from '../lib/round1Engine';
 import type { PlayerSlotInfo } from '../lib/round1Engine';
+import {
+  parseTabletCodeword,
+  TABLET_CONFIG,
+  getSlotPositionLabel,
+  DEFAULT_ROUND1_CODEWORDS,
+} from '../lib/tabletEngine';
 import {
   adminSetState,
   adminAdjustTimer,
   adminSpawnDemoCrew,
   adminRound2AdjustTimer,
-  adminRound2SkipPhase,
   adminRound2AutoPair,
   round2CastVoteApi,
 } from '../lib/api';
 import {
   Smartphone,
   Layers,
-  RotateCw,
   ZoomIn,
   ZoomOut,
-  AlignVerticalJustifyStart,
-  AlignVerticalJustifyCenter,
-  AlignVerticalJustifyEnd,
   Play,
   Swords,
   Sparkles,
   Lightbulb,
-  Check,
   RefreshCw,
   Clock,
   CheckCircle2,
@@ -41,7 +37,6 @@ import {
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
-type AlignmentAnchor = 'top' | 'center' | 'bottom';
 
 export const SoloTesterWorkbench: React.FC = () => {
   const {
@@ -55,32 +50,16 @@ export const SoloTesterWorkbench: React.FC = () => {
     refresh,
   } = useGameSession();
 
-  // Mode: 'table' (stacked pub table) | 'rack' (5 device frames) | 'round2' (Prisoner's Dilemma tester)
+  // Mode: 'table' (side-by-side pub table) | 'rack' (5 device frames) | 'round2' (Prisoner's Dilemma tester)
   const [viewMode, setViewMode] = useState<'table' | 'rack' | 'round2'>('table');
 
-  // Word selection for testing
-  const codewordsPool = (payload?.config?.rounds?.[0]?.data as any)?.codewords || [
-    'ORACLE',
-    'CERBERUS',
-    'CHARON',
-    'HERMES',
-    'MINOTAUR',
-    'HYDRA',
-    'TARTARUS',
-  ];
-  const [selectedWord, setSelectedWord] = useState<string>('ORACLE');
+  // Word selection for testing (2-word phrases)
+  const codewordsPool = (payload?.config?.rounds?.[0]?.data as any)?.codewords || DEFAULT_ROUND1_CODEWORDS;
+  const [selectedWord, setSelectedWord] = useState<string>('CRIMSON SHADOW');
 
   // Global & Per-Slot adjustments
   const [globalZoom, setGlobalZoom] = useState<number>(1.0);
   const [slotZooms, setSlotZooms] = useState<Record<number, number>>({ 0: 1, 1: 1, 2: 1, 3: 1, 4: 1 });
-  const [slotAnchors, setSlotAnchors] = useState<Record<number, AlignmentAnchor>>({
-    0: 'center',
-    1: 'center',
-    2: 'center',
-    3: 'center',
-    4: 'center',
-  });
-  const [slotRotations, setSlotRotations] = useState<Record<number, number>>({ 0: 90, 1: 90, 2: 90, 3: 90, 4: 90 });
 
   // Codeword submission test
   const [testInput, setTestInput] = useState('');
@@ -127,10 +106,6 @@ export const SoloTesterWorkbench: React.FC = () => {
       roleColor: roleCfg?.color || '#c4a45a',
     };
   });
-
-  // Slices for selectedWord
-  const slices = getAllAsciiSlices(selectedWord, teamSize, 'HORIZONTAL');
-  const colCount = Math.max(1, slices[0]?.[0]?.length || 36);
 
   // Spawn test crew
   const handleSpawnDemoCrew = async () => {
@@ -216,52 +191,122 @@ export const SoloTesterWorkbench: React.FC = () => {
     await refresh();
   };
 
-  // Render SVG Totem Slice for a specific slot
-  const renderSlotTotem = (slotIdx: number, widthPx: number, heightPx: number) => {
-    const slice = slices[slotIdx] || [];
+  // Render SVG Vector Ancient Shattered Tablet Slice for a specific slot
+  const renderSlotTabletSlice = (slotIdx: number, widthPx: number, heightPx: number) => {
+    const { line1, line2 } = parseTabletCodeword(selectedWord);
+    const { totalWidth, totalHeight, line1Y, horizonY, line2Y } = TABLET_CONFIG;
+    const slotWidth = totalWidth / Math.max(1, teamSize);
+    const viewBoxX = slotIdx * slotWidth;
     const roleCfg = payload?.config?.roles?.[slotIdx] || { color: '#c4a45a' };
     const zoom = (slotZooms[slotIdx] || 1.0) * globalZoom;
-    const anchor = slotAnchors[slotIdx] || 'center';
 
-    const getVerticalAlign = () => {
-      if (anchor === 'top') return 'justify-start';
-      if (anchor === 'bottom') return 'justify-end';
-      return 'justify-center';
-    };
+    const seamPositions: number[] = [];
+    for (let i = 1; i < teamSize; i++) {
+      seamPositions.push(i * slotWidth);
+    }
 
     return (
       <div
-        className={`w-full h-full flex flex-col items-center overflow-hidden select-none transition-all duration-150 ${getVerticalAlign()}`}
+        className="w-full h-full flex flex-col items-center justify-center overflow-hidden select-none transition-all duration-150 relative bg-[#08090c]"
         style={{ height: `${heightPx}px` }}
       >
         <svg
-          viewBox={`0 0 ${colCount * 10} ${slice.length * 14}`}
+          viewBox={`${viewBoxX} 0 ${slotWidth} ${totalHeight}`}
           preserveAspectRatio="none"
           style={{
             width: `${Math.round(widthPx * zoom)}px`,
             maxWidth: '100%',
             height: `${heightPx}px`,
             display: 'block',
-            filter: `drop-shadow(0 0 8px ${roleCfg.color}80)`,
           }}
         >
-          {slice.map((line, rIdx) => {
-            return line.split('').map((char, cIdx) => {
-              if (char === '█') {
-                return (
-                  <rect
-                    key={`${rIdx}-${cIdx}`}
-                    x={cIdx * 10}
-                    y={rIdx * 14}
-                    width={10}
-                    height={14}
-                    fill={roleCfg.color}
-                  />
-                );
-              }
-              return null;
-            });
-          })}
+          <defs>
+            <linearGradient id={`goldGrad-${slotIdx}`} x1="0%" y1="0%" x2="0%" y2="100%">
+              <stop offset="0%" stopColor="#fff8e7" />
+              <stop offset="35%" stopColor="#e5cb87" />
+              <stop offset="70%" stopColor="#c4a45a" />
+              <stop offset="100%" stopColor="#8c6d28" />
+            </linearGradient>
+            <filter id={`glow-${slotIdx}`} x="-20%" y="-20%" width="140%" height="140%">
+              <feGaussianBlur stdDeviation="3" result="blur" />
+              <feComposite in="SourceGraphic" in2="blur" operator="over" />
+            </filter>
+            <radialGradient id={`ambient-${slotIdx}`} cx="50%" cy="50%" r="50%">
+              <stop offset="0%" stopColor={roleCfg.color || '#c4a45a'} stopOpacity="0.25" />
+              <stop offset="100%" stopColor="#08090c" stopOpacity="0" />
+            </radialGradient>
+          </defs>
+
+          {/* Slab background */}
+          <rect x="0" y="0" width={totalWidth} height={totalHeight} fill="#08090c" />
+          <rect x="0" y="0" width={totalWidth} height={totalHeight} fill={`url(#ambient-${slotIdx})`} />
+          <rect x="6" y="6" width={totalWidth - 12} height={totalHeight - 12} rx="10" fill="#0f1118" stroke="#2a2e3d" strokeWidth="3" />
+
+          {/* Top Crest */}
+          <rect x="16" y="16" width={totalWidth - 32} height="52" fill="#161924" rx="6" />
+          <line x1="20" y1="72" x2={totalWidth - 20} y2="72" stroke="#c4a45a" strokeWidth="2" opacity="0.6" />
+          <text x={totalWidth / 2} y="48" textAnchor="middle" fontFamily="monospace" fontSize="18" fontWeight="bold" fill="#c4a45a" letterSpacing="8">
+            ▲ TABLET CREST (TOP) ▲
+          </text>
+
+          {/* Line 1 (Word 1) */}
+          <text
+            x={totalWidth / 2}
+            y={line1Y}
+            textAnchor="middle"
+            fontFamily="Cinzel, Georgia, serif"
+            fontWeight="900"
+            fontSize="110"
+            letterSpacing="18"
+            fill={`url(#goldGrad-${slotIdx})`}
+            stroke="#08090c"
+            strokeWidth="4"
+            filter={`url(#glow-${slotIdx})`}
+          >
+            {line1}
+          </text>
+
+          {/* Horizon Line */}
+          <line x1="0" y1={horizonY} x2={totalWidth} y2={horizonY} stroke="#c4a45a" strokeWidth="6" opacity="0.5" filter={`url(#glow-${slotIdx})`} />
+          <line x1="0" y1={horizonY} x2={totalWidth} y2={horizonY} stroke="#ffffff" strokeWidth="2" opacity="0.9" />
+
+          {/* Interlocking Seam Notches */}
+          {seamPositions.map((seamX, idx) => (
+            <g key={idx}>
+              <polygon
+                points={`${seamX},${horizonY - 26} ${seamX + 18},${horizonY} ${seamX},${horizonY + 26} ${seamX - 18},${horizonY}`}
+                fill="#c4a45a"
+                opacity="0.9"
+                filter={`url(#glow-${slotIdx})`}
+              />
+              <polygon points={`${seamX},${horizonY - 14} ${seamX + 10},${horizonY} ${seamX},${horizonY + 14} ${seamX - 10},${horizonY}`} fill="#ffffff" />
+              <line x1={seamX} y1={horizonY - 38} x2={seamX} y2={horizonY + 38} stroke="#c4a45a" strokeWidth="1.5" strokeDasharray="4 3" />
+            </g>
+          ))}
+
+          {/* Line 2 (Word 2) */}
+          <text
+            x={totalWidth / 2}
+            y={line2Y}
+            textAnchor="middle"
+            fontFamily="Cinzel, Georgia, serif"
+            fontWeight="900"
+            fontSize="110"
+            letterSpacing="18"
+            fill={`url(#goldGrad-${slotIdx})`}
+            stroke="#08090c"
+            strokeWidth="4"
+            filter={`url(#glow-${slotIdx})`}
+          >
+            {line2}
+          </text>
+
+          {/* Bottom Base */}
+          <line x1="20" y1="528" x2={totalWidth - 20} y2="528" stroke="#c4a45a" strokeWidth="2" opacity="0.6" />
+          <rect x="16" y="532" width={totalWidth - 32} height="52" fill="#161924" rx="6" />
+          <text x={totalWidth / 2} y="564" textAnchor="middle" fontFamily="monospace" fontSize="18" fontWeight="bold" fill="#c4a45a" letterSpacing="8">
+            ▼ TABLET BASE (BOTTOM) ▼
+          </text>
         </svg>
       </div>
     );
@@ -278,14 +323,14 @@ export const SoloTesterWorkbench: React.FC = () => {
           <div>
             <div className="flex items-center space-x-2">
               <h1 className="text-base font-serif font-black text-[#f4f0e8] uppercase">
-                Solo Tester Multi-Screen Workbench
+                Solo Tester Simulation Workbench
               </h1>
-              <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-[#c4a45a]/20 text-[#c4a45a] font-bold border border-[#c4a45a]/40">
-                /solotester
+              <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-[#c4a45a]/20 text-[#c4a45a] font-bold">
+                Dev Tool
               </span>
             </div>
-            <p className="text-xs text-[#8e95a5]">
-              Simulate all 5 phone screens simultaneously • Test edge-to-edge table alignment & hints
+            <p className="text-[11px] text-[#8e95a5]">
+              Simulate 5 phone screens placed side-by-side on a pub table to reconstruct the ancient shattered tablet.
             </p>
           </div>
         </div>
@@ -340,32 +385,25 @@ export const SoloTesterWorkbench: React.FC = () => {
             <span>Start Round 1</span>
           </button>
 
-          {/* Start Round 2 */}
-          <button
-            onClick={() => handleLaunchState('ROUND_ACTIVE', 1)}
-            className="py-2 px-3 rounded-xl bg-[#161922] border border-cyan-500/40 hover:bg-cyan-950/60 text-cyan-300 font-mono font-bold text-xs flex items-center justify-center space-x-1.5 transition-all"
-          >
-            <Swords className="w-3.5 h-3.5" />
-            <span>Start Round 2</span>
-          </button>
-
-          {/* +1 Min Timer */}
+          {/* Add 1 Minute */}
           <button
             onClick={() => handleAdjustTimer(60)}
-            className="py-2 px-3 rounded-xl bg-[#161922] border border-emerald-500/40 hover:bg-emerald-950/60 text-emerald-300 font-mono font-bold text-xs flex items-center justify-center space-x-1"
+            className="py-2 px-3 rounded-xl bg-[#161922] border border-[#2a2e3d] hover:border-[#c4a45a] text-[#8e95a5] hover:text-[#f4f0e8] font-mono text-xs flex items-center justify-center space-x-1"
           >
-            <span>+1 Min Time</span>
+            <Clock className="w-3.5 h-3.5" />
+            <span>+60s</span>
           </button>
 
-          {/* -1 Min Timer */}
+          {/* Subtract 30s */}
           <button
-            onClick={() => handleAdjustTimer(-60)}
-            className="py-2 px-3 rounded-xl bg-[#161922] border border-red-500/40 hover:bg-red-950/60 text-red-300 font-mono font-bold text-xs flex items-center justify-center space-x-1"
+            onClick={() => handleAdjustTimer(-30)}
+            className="py-2 px-3 rounded-xl bg-[#161922] border border-[#2a2e3d] hover:border-red-500/50 text-[#8e95a5] hover:text-red-300 font-mono text-xs flex items-center justify-center space-x-1"
           >
-            <span>-1 Min Time</span>
+            <Clock className="w-3.5 h-3.5" />
+            <span>-30s</span>
           </button>
 
-          {/* Lobby */}
+          {/* Reset to Lobby */}
           <button
             onClick={() => handleLaunchState('LOBBY_TEAM_FORMATION')}
             className="py-2 px-3 rounded-xl bg-[#161922] border border-[#2a2e3d] hover:border-[#c4a45a] text-[#8e95a5] hover:text-[#f4f0e8] font-mono text-xs flex items-center justify-center space-x-1"
@@ -376,7 +414,7 @@ export const SoloTesterWorkbench: React.FC = () => {
 
         {/* Codeword Switcher Pills */}
         <div className="flex flex-wrap items-center gap-1.5 pt-1">
-          <span className="text-[10px] font-mono uppercase text-[#8e95a5] mr-1">Test Codeword:</span>
+          <span className="text-[10px] font-mono uppercase text-[#8e95a5] mr-1">Test 2-Word Codeword:</span>
           {codewordsPool.map((word: string) => (
             <button
               key={word}
@@ -404,7 +442,7 @@ export const SoloTesterWorkbench: React.FC = () => {
           }`}
         >
           <Layers className="w-4 h-4" />
-          <span>Pub Table Stack (5 Phones)</span>
+          <span>Side-by-Side Table View</span>
         </button>
 
         <button
@@ -433,17 +471,17 @@ export const SoloTesterWorkbench: React.FC = () => {
       </div>
 
       {/* ===================================================================== */}
-      {/* MODE 1: PUB TABLE STACKED MODE (SIMULATES 5 PHONES ON A PUB TABLE)   */}
+      {/* MODE 1: PUB TABLE SIDE-BY-SIDE MODE (5 PHONES ACROSS THE TABLE)        */}
       {/* ===================================================================== */}
       {viewMode === 'table' && (
         <div className="space-y-4">
           <div className="bg-[#10121a] border border-[#2a2e3d] rounded-2xl p-4 shadow-xl flex flex-wrap items-center justify-between gap-3">
             <div>
               <span className="text-xs font-serif font-bold text-[#f4f0e8] uppercase block">
-                Pub Table Top-Down View: Assembled Codeword "{selectedWord}"
+                Pub Table View: Shattered Tablet Reconstructed ("{selectedWord}")
               </span>
               <p className="text-[10px] text-[#8e95a5]">
-                Simulates 5 phones placed horizontally stacked on a pub table. Edge snapping aligns the fragments across the bezels!
+                Simulates 5 phones placed side-by-side across a pub table (Left to Right). The central horizon line and seam notches connect seamlessly!
               </p>
             </div>
 
@@ -471,48 +509,50 @@ export const SoloTesterWorkbench: React.FC = () => {
             </div>
           </div>
 
-          {/* The 5 Stacked Mobile Devices on the Pub Table */}
-          <div className="max-w-2xl mx-auto space-y-2 p-4 bg-[#050608] border-2 border-dashed border-[#2a2e3d] rounded-3xl shadow-2xl">
-            {Array.from({ length: teamSize }).map((_, slotIdx) => {
-              const roleCfg = payload?.config?.roles?.[slotIdx] || { name: `Role #${slotIdx + 1}`, color: '#c4a45a' };
-              const memberInfo = slotMembers[slotIdx];
+          {/* 5 Side-by-Side Mobile Devices on the Pub Table */}
+          <div className="max-w-5xl mx-auto p-4 bg-[#050608] border-2 border-dashed border-[#2a2e3d] rounded-3xl shadow-2xl">
+            <div className="grid grid-cols-5 gap-1.5 sm:gap-2">
+              {Array.from({ length: teamSize }).map((_, slotIdx) => {
+                const roleCfg = payload?.config?.roles?.[slotIdx] || { name: `Role #${slotIdx + 1}`, color: '#c4a45a' };
+                const memberInfo = slotMembers[slotIdx];
 
-              return (
-                <div
-                  key={slotIdx}
-                  className="bg-black border-2 rounded-2xl overflow-hidden shadow-xl transition-all relative"
-                  style={{ borderColor: `${roleCfg.color}60` }}
-                >
-                  {/* Phone Header / Bezel Label */}
-                  <div className="px-3 py-1 bg-[#10121a]/90 border-b border-[#2a2e3d]/60 flex items-center justify-between text-[10px] font-mono">
-                    <div className="flex items-center space-x-2">
-                      <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: roleCfg.color }} />
-                      <span className="font-bold text-[#f4f0e8]">PHONE #{slotIdx + 1}: {memberInfo.playerName}</span>
-                      <span style={{ color: roleCfg.color }}>({roleCfg.name})</span>
-                    </div>
-
-                    <div className="flex items-center space-x-1.5">
-                      <span className="text-[#8e95a5]">
-                        {slotIdx === 0 ? 'TOP LAYER' : slotIdx === teamSize - 1 ? 'BOTTOM LAYER' : `MIDDLE #${slotIdx + 1}`}
+                return (
+                  <div
+                    key={slotIdx}
+                    className="bg-black border-2 rounded-2xl overflow-hidden shadow-xl transition-all relative flex flex-col justify-between"
+                    style={{ borderColor: `${roleCfg.color}80` }}
+                  >
+                    {/* Phone Header / Bezel Label */}
+                    <div className="px-2 py-1.5 bg-[#10121a]/95 border-b border-[#2a2e3d]/80 flex flex-col text-[10px] font-mono text-center">
+                      <div className="flex items-center justify-center space-x-1">
+                        <span className="w-2 h-2 rounded-full" style={{ backgroundColor: roleCfg.color }} />
+                        <span className="font-bold text-[#f4f0e8] text-[11px]">#{slotIdx + 1}</span>
+                      </div>
+                      <span className="text-[9px] text-[#8e95a5] truncate">
+                        {getSlotPositionLabel(slotIdx, teamSize)}
                       </span>
+                      <span className="text-[9px] font-bold truncate" style={{ color: roleCfg.color }}>
+                        {memberInfo.playerName}
+                      </span>
+
                       {team?.player_ids?.[slotIdx] && (
                         <button
                           onClick={() => switchPlayer(team.player_ids[slotIdx])}
-                          className="px-1.5 py-0.5 rounded bg-[#c4a45a]/20 text-[#c4a45a] hover:bg-[#c4a45a] hover:text-[#08090c] text-[9px] font-bold"
+                          className="mt-1 px-1.5 py-0.5 rounded bg-[#c4a45a]/20 text-[#c4a45a] hover:bg-[#c4a45a] hover:text-[#08090c] text-[8px] font-bold"
                         >
                           Play as
                         </button>
                       )}
                     </div>
-                  </div>
 
-                  {/* Screen Content: Vector SVG Totem */}
-                  <div className="p-2 bg-black flex items-center justify-center">
-                    {renderSlotTotem(slotIdx, 580, 52)}
+                    {/* Screen Content: Vector SVG Tablet Slice */}
+                    <div className="p-1 bg-black flex items-center justify-center h-48 sm:h-64">
+                      {renderSlotTabletSlice(slotIdx, 180, 240)}
+                    </div>
                   </div>
-                </div>
-              );
-            })}
+                );
+              })}
+            </div>
           </div>
         </div>
       )}
@@ -528,7 +568,7 @@ export const SoloTesterWorkbench: React.FC = () => {
                 5-Phone Multi-Device Rack View
               </span>
               <p className="text-[10px] text-[#8e95a5]">
-                Adjust independent zoom, rotation, and edge snapping on each simulated phone.
+                Inspect each simulated phone fragment independently with custom per-phone zoom.
               </p>
             </div>
           </div>
@@ -537,9 +577,6 @@ export const SoloTesterWorkbench: React.FC = () => {
             {Array.from({ length: teamSize }).map((_, slotIdx) => {
               const roleCfg = payload?.config?.roles?.[slotIdx] || { name: `Role #${slotIdx + 1}`, color: '#c4a45a' };
               const memberInfo = slotMembers[slotIdx];
-              const rotation = slotRotations[slotIdx] || 90;
-              const anchor = slotAnchors[slotIdx] || 'center';
-              const zoom = slotZooms[slotIdx] || 1.0;
 
               return (
                 <div
@@ -553,7 +590,7 @@ export const SoloTesterWorkbench: React.FC = () => {
                         SLOT #{slotIdx + 1}
                       </span>
                       <span className="text-[9px] font-mono text-[#8e95a5]">
-                        {slotIdx === 0 ? 'Top' : slotIdx === teamSize - 1 ? 'Bottom' : 'Middle'}
+                        {getSlotPositionLabel(slotIdx, teamSize)}
                       </span>
                     </div>
                     <div className="text-xs font-serif font-bold text-[#f4f0e8] truncate">
@@ -565,83 +602,30 @@ export const SoloTesterWorkbench: React.FC = () => {
                   </div>
 
                   {/* Simulated Phone Screen */}
-                  <div className="w-full bg-black border border-[#2a2e3d] rounded-xl p-2 h-44 flex items-center justify-center overflow-hidden relative">
-                    <div
-                      style={{
-                        transform: `rotate(${rotation}deg)`,
-                        transformOrigin: 'center center',
-                        width: rotation === 90 || rotation === 270 ? '160px' : '100%',
-                      }}
-                    >
-                      {renderSlotTotem(slotIdx, 160, 40)}
-                    </div>
+                  <div className="w-full bg-black border border-[#2a2e3d] rounded-xl p-2 h-52 flex items-center justify-center overflow-hidden relative">
+                    {renderSlotTabletSlice(slotIdx, 160, 200)}
                   </div>
 
-                  {/* Phone Controls */}
-                  <div className="space-y-1.5 pt-1 border-t border-[#2a2e3d]/60">
-                    {/* Snap Buttons */}
+                  {/* Individual Controls */}
+                  <div className="space-y-2 pt-2 border-t border-[#2a2e3d]">
                     <div className="flex items-center justify-between text-[10px] font-mono">
-                      <span className="text-[#8e95a5]">Snap:</span>
-                      <div className="flex items-center bg-[#161922] rounded-lg p-0.5 border border-[#2a2e3d]">
-                        <button
-                          onClick={() => setSlotAnchors({ ...slotAnchors, [slotIdx]: 'top' })}
-                          className={`p-1 rounded ${anchor === 'top' ? 'bg-[#c4a45a] text-[#08090c]' : 'text-[#8e95a5]'}`}
-                          title="Flush Top"
-                        >
-                          <AlignVerticalJustifyStart className="w-3 h-3" />
-                        </button>
-                        <button
-                          onClick={() => setSlotAnchors({ ...slotAnchors, [slotIdx]: 'center' })}
-                          className={`p-1 rounded ${anchor === 'center' ? 'bg-[#c4a45a] text-[#08090c]' : 'text-[#8e95a5]'}`}
-                          title="Center"
-                        >
-                          <AlignVerticalJustifyCenter className="w-3 h-3" />
-                        </button>
-                        <button
-                          onClick={() => setSlotAnchors({ ...slotAnchors, [slotIdx]: 'bottom' })}
-                          className={`p-1 rounded ${anchor === 'bottom' ? 'bg-[#c4a45a] text-[#08090c]' : 'text-[#8e95a5]'}`}
-                          title="Flush Bottom"
-                        >
-                          <AlignVerticalJustifyEnd className="w-3 h-3" />
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* Zoom & Rotate */}
-                    <div className="flex items-center justify-between text-[10px] font-mono">
+                      <span className="text-[#8e95a5]">Zoom:</span>
                       <div className="flex items-center space-x-1">
                         <button
-                          onClick={() => setSlotZooms({ ...slotZooms, [slotIdx]: Math.max(0.6, Math.round((zoom - 0.1) * 10) / 10) })}
-                          className="px-1 py-0.5 rounded bg-[#161922] border border-[#2a2e3d] text-[#8e95a5]"
+                          onClick={() => setSlotZooms(prev => ({ ...prev, [slotIdx]: Math.max(0.6, (prev[slotIdx] || 1) - 0.1) }))}
+                          className="px-1.5 py-0.5 rounded bg-[#161922] text-[#8e95a5] hover:text-[#f4f0e8]"
                         >
                           -
                         </button>
-                        <span className="text-[#c4a45a] font-bold">{Math.round(zoom * 100)}%</span>
+                        <span className="text-[#c4a45a] font-bold px-1">{Math.round((slotZooms[slotIdx] || 1) * 100)}%</span>
                         <button
-                          onClick={() => setSlotZooms({ ...slotZooms, [slotIdx]: Math.min(2.0, Math.round((zoom + 0.1) * 10) / 10) })}
-                          className="px-1 py-0.5 rounded bg-[#161922] border border-[#2a2e3d] text-[#8e95a5]"
+                          onClick={() => setSlotZooms(prev => ({ ...prev, [slotIdx]: Math.min(2.0, (prev[slotIdx] || 1) + 0.1) }))}
+                          className="px-1.5 py-0.5 rounded bg-[#161922] text-[#8e95a5] hover:text-[#f4f0e8]"
                         >
                           +
                         </button>
                       </div>
-
-                      <button
-                        onClick={() => setSlotRotations({ ...slotRotations, [slotIdx]: ((rotation + 90) % 360) })}
-                        className="px-1.5 py-0.5 rounded bg-[#161922] border border-[#2a2e3d] text-[#c4a45a] flex items-center space-x-0.5"
-                      >
-                        <RotateCw className="w-3 h-3" />
-                        <span>{rotation}°</span>
-                      </button>
                     </div>
-
-                    {team?.player_ids?.[slotIdx] && (
-                      <button
-                        onClick={() => switchPlayer(team.player_ids[slotIdx])}
-                        className="w-full py-1 rounded bg-[#c4a45a]/10 hover:bg-[#c4a45a] text-[#c4a45a] hover:text-[#08090c] text-[10px] font-mono font-bold transition-colors"
-                      >
-                        🎮 Play as {memberInfo.playerName}
-                      </button>
-                    )}
                   </div>
                 </div>
               );
@@ -651,192 +635,177 @@ export const SoloTesterWorkbench: React.FC = () => {
       )}
 
       {/* ===================================================================== */}
-      {/* MODE 3: ROUND 2 DILEMMA ARENA TESTER                                  */}
+      {/* MODE 3: ROUND 2 PRISONER'S DILEMMA TEST ARENA                        */}
       {/* ===================================================================== */}
       {viewMode === 'round2' && (
         <div className="space-y-4">
-          <div className="bg-[#10121a] border border-[#2a2e3d] rounded-2xl p-4 shadow-xl space-y-3">
-            <div className="flex items-center justify-between">
-              <div>
-                <span className="text-xs font-serif font-bold text-[#f4f0e8] uppercase block">
-                  Round 2: Shades in the Mist Simulator
-                </span>
-                <p className="text-[10px] text-[#8e95a5]">
-                  Test 3-clash Prisoner's Dilemma voting scenarios with 1 tap.
-                </p>
+          <div className="bg-[#10121a] border border-[#2a2e3d] rounded-2xl p-4 shadow-xl flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <span className="text-xs font-serif font-bold text-[#f4f0e8] uppercase block">
+                Round 2: Shades in the Mist Simulator
+              </span>
+              <p className="text-[10px] text-[#8e95a5]">
+                Simulate face-to-face 3-clash matches, test voting stances, tie-breakers, and escalating scores.
+              </p>
+            </div>
+
+            <div className="flex items-center space-x-2">
+              <button
+                onClick={() => handleLaunchState('ROUND_ACTIVE', 1)}
+                className="py-1.5 px-3 rounded-xl bg-purple-900/60 border border-purple-500/50 hover:bg-purple-800 text-purple-200 text-xs font-mono font-bold flex items-center space-x-1"
+              >
+                <Play className="w-3.5 h-3.5" />
+                <span>Launch Round 2 Active</span>
+              </button>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+            <button
+              onClick={() => handleR2CastPresetVotes('TRUCE', 'TRUCE')}
+              className="p-3.5 rounded-2xl bg-gradient-to-r from-emerald-950/60 to-[#10121a] border border-emerald-500/50 text-left hover:border-emerald-400 transition-all space-y-1.5"
+            >
+              <div className="flex items-center space-x-2 text-emerald-400 font-bold text-xs font-serif">
+                <Handshake className="w-4 h-4" />
+                <span>Simulate: Both Truce</span>
               </div>
+              <p className="text-[10px] text-[#8e95a5] leading-relaxed">
+                Both crews cooperate honorably (+75 / +150 / +225 PTS each).
+              </p>
+            </button>
 
-              <button
-                onClick={() => adminRound2SkipPhase(adminPass)}
-                className="px-3 py-1.5 rounded-xl bg-[#c4a45a] hover:bg-[#d8b86e] text-[#08090c] text-xs font-mono font-bold shadow-gold-glow"
-              >
-                Skip Current Phase ⏭️
-              </button>
-            </div>
+            <button
+              onClick={() => handleR2CastPresetVotes('AMBUSH', 'TRUCE')}
+              className="p-3.5 rounded-2xl bg-gradient-to-r from-amber-950/60 to-[#10121a] border border-amber-500/50 text-left hover:border-amber-400 transition-all space-y-1.5"
+            >
+              <div className="flex items-center space-x-2 text-amber-400 font-bold text-xs font-serif">
+                <Crown className="w-4 h-4" />
+                <span>Simulate: Team A Ambush Wins</span>
+              </div>
+              <p className="text-[10px] text-[#8e95a5] leading-relaxed">
+                Team A backstabs (+150 / +300 / +450 PTS), Team B gets 0.
+              </p>
+            </button>
 
-            {/* Quick 1-tap Scenarios */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-2">
-              <button
-                onClick={() => handleR2CastPresetVotes('TRUCE', 'TRUCE')}
-                className="p-2.5 rounded-xl bg-[#161922] border border-emerald-500/50 hover:bg-emerald-950/40 text-emerald-300 font-mono text-xs flex flex-col items-center justify-center space-y-0.5"
-              >
-                <Handshake className="w-4 h-4 text-emerald-400" />
-                <span className="font-bold">Both Truce (+75/+75)</span>
-                <span className="text-[9px] text-[#8e95a5]">Peaceful cooperation</span>
-              </button>
+            <button
+              onClick={() => handleR2CastPresetVotes('TRUCE', 'AMBUSH')}
+              className="p-3.5 rounded-2xl bg-gradient-to-r from-rose-950/60 to-[#10121a] border border-rose-500/50 text-left hover:border-rose-400 transition-all space-y-1.5"
+            >
+              <div className="flex items-center space-x-2 text-rose-400 font-bold text-xs font-serif">
+                <AlertCircle className="w-4 h-4" />
+                <span>Simulate: Team B Ambush Wins</span>
+              </div>
+              <p className="text-[10px] text-[#8e95a5] leading-relaxed">
+                Team B backstabs (+150 / +300 / +450 PTS), Team A gets 0.
+              </p>
+            </button>
 
-              <button
-                onClick={() => handleR2CastPresetVotes('AMBUSH', 'TRUCE')}
-                className="p-2.5 rounded-xl bg-[#161922] border border-amber-500/50 hover:bg-amber-950/40 text-amber-300 font-mono text-xs flex flex-col items-center justify-center space-y-0.5"
-              >
-                <Crown className="w-4 h-4 text-amber-400" />
-                <span className="font-bold">Alpha Betrays (+150/+0)</span>
-                <span className="text-[9px] text-[#8e95a5]">Alpha steals Beta supplies</span>
-              </button>
-
-              <button
-                onClick={() => handleR2CastPresetVotes('TRUCE', 'AMBUSH')}
-                className="p-2.5 rounded-xl bg-[#161922] border border-purple-500/50 hover:bg-purple-950/40 text-purple-300 font-mono text-xs flex flex-col items-center justify-center space-y-0.5"
-              >
-                <Crown className="w-4 h-4 text-purple-400" />
-                <span className="font-bold">Beta Betrays (+0/+150)</span>
-                <span className="text-[9px] text-[#8e95a5]">Beta steals Alpha supplies</span>
-              </button>
-
-              <button
-                onClick={() => handleR2CastPresetVotes('AMBUSH', 'AMBUSH')}
-                className="p-2.5 rounded-xl bg-[#161922] border border-rose-500/50 hover:bg-rose-950/40 text-rose-300 font-mono text-xs flex flex-col items-center justify-center space-y-0.5"
-              >
-                <Swords className="w-4 h-4 text-rose-400" />
-                <span className="font-bold">Both Ambush (+15/+15)</span>
-                <span className="text-[9px] text-[#8e95a5]">Bloodied stalemate</span>
-              </button>
-            </div>
+            <button
+              onClick={() => handleR2CastPresetVotes('AMBUSH', 'AMBUSH')}
+              className="p-3.5 rounded-2xl bg-gradient-to-r from-purple-950/60 to-[#10121a] border border-purple-500/50 text-left hover:border-purple-400 transition-all space-y-1.5"
+            >
+              <div className="flex items-center space-x-2 text-purple-400 font-bold text-xs font-serif">
+                <Swords className="w-4 h-4" />
+                <span>Simulate: Mutual Betrayal</span>
+              </div>
+              <p className="text-[10px] text-[#8e95a5] leading-relaxed">
+                Both crews betray (+15 / +30 / +45 PTS each).
+              </p>
+            </button>
           </div>
         </div>
       )}
 
       {/* ===================================================================== */}
-      {/* TESTING ROUND 1 SUBMISSION & HINTS VERIFICATION PANEL                 */}
+      {/* VERIFICATION & SUBMISSION TEST PANEL                                  */}
       {/* ===================================================================== */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {/* Hints Verification Card */}
-        <div className="bg-[#10121a] border border-[#2a2e3d] rounded-2xl p-4 shadow-xl space-y-3">
-          <div className="flex items-center justify-between border-b border-[#2a2e3d] pb-2">
-            <div className="flex items-center space-x-2">
-              <Lightbulb className="w-4 h-4 text-amber-400" />
-              <span className="text-xs font-serif font-bold text-[#f4f0e8] uppercase">
-                Hints & Oracle Whispers Simulator
-              </span>
-            </div>
-            <span className="text-[10px] font-mono text-amber-400">
-              Elapsed: {Math.floor(elapsedSeconds / 60)}m {elapsedSeconds % 60}s
-            </span>
+      <div className="bg-[#10121a] border border-[#2a2e3d] rounded-2xl p-5 shadow-xl space-y-4">
+        <div className="flex items-center justify-between border-b border-[#2a2e3d] pb-3">
+          <div className="flex items-center space-x-2">
+            <Sparkles className="w-4 h-4 text-[#c4a45a]" />
+            <h3 className="text-sm font-serif font-bold text-[#f4f0e8] uppercase">
+              Codeword Verification & Escalating Scoring Test
+            </h3>
           </div>
-
-          <div className="space-y-2">
-            {ROUND1_HINTS.map((hint) => {
-              const isUnlocked = hintsTaken.includes(hint.hintIndex);
-              const hintText = generateHintText(hint.hintIndex, teamSize, slotMembers);
-
-              return (
-                <div
-                  key={hint.hintIndex}
-                  className={`p-3 rounded-xl border space-y-1.5 ${
-                    isUnlocked
-                      ? 'bg-emerald-950/30 border-emerald-500/50'
-                      : 'bg-[#161922] border-[#2a2e3d]'
-                  }`}
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-mono font-bold text-[#f4f0e8] flex items-center space-x-1">
-                      {isUnlocked ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Clock className="w-3.5 h-3.5 text-[#8e95a5]" />}
-                      <span>Hint #{hint.hintIndex}: {hint.title} (Available at {Math.floor(hint.availableAfterSeconds / 60)}m)</span>
-                    </span>
-
-                    <button
-                      onClick={() => handleForceUnlockHint(hint.hintIndex)}
-                      className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold transition-all ${
-                        isUnlocked
-                          ? 'bg-emerald-600 text-white'
-                          : 'bg-[#c4a45a] text-[#08090c] hover:bg-[#d8b86e]'
-                      }`}
-                    >
-                      {isUnlocked ? '✓ Unlocked' : 'Force Unlock'}
-                    </button>
-                  </div>
-
-                  <p className="text-[11px] font-mono text-[#8e95a5]">
-                    {hintText}
-                  </p>
-                </div>
-              );
-            })}
-          </div>
+          <button
+            onClick={() => setTestInput(selectedWord)}
+            className="text-[10px] font-mono text-[#c4a45a] hover:underline"
+          >
+            Auto-fill: {selectedWord}
+          </button>
         </div>
 
-        {/* Codeword Submission Verification Card */}
-        <div className="bg-[#10121a] border border-[#2a2e3d] rounded-2xl p-4 shadow-xl space-y-3">
-          <div className="flex items-center justify-between border-b border-[#2a2e3d] pb-2">
-            <div className="flex items-center space-x-2">
-              <Sparkles className="w-4 h-4 text-[#c4a45a]" />
-              <span className="text-xs font-serif font-bold text-[#f4f0e8] uppercase">
-                Codeword Submission & Dynamic Scoring
-              </span>
-            </div>
-            <button
-              onClick={() => setTestInput(selectedWord)}
-              className="text-[10px] font-mono text-[#c4a45a] hover:underline"
-            >
-              Auto-fill: {selectedWord}
-            </button>
-          </div>
-
-          {/* Live Score Projection */}
-          <div className="p-2.5 rounded-xl bg-[#161922] border border-[#2a2e3d] flex items-center justify-between text-xs font-mono">
-            <div>
-              <span className="text-[#8e95a5]">Potential Points:</span>
-              <span className="text-emerald-400 font-bold ml-1.5">+{scoreBreakdown.finalPoints} PTS</span>
-              <span className="text-[10px] text-[#8e95a5] block">
-                {scoreBreakdown.speedTier} (Base: {scoreBreakdown.basePoints} • Hints Penalty: -{scoreBreakdown.hintPenalty})
-              </span>
-            </div>
-          </div>
-
-          <form onSubmit={handleCodewordSubmit} className="space-y-2">
+        <form onSubmit={handleCodewordSubmit} className="space-y-3">
+          <div className="flex flex-col sm:flex-row gap-2">
             <input
               type="text"
               value={testInput}
               onChange={(e) => setTestInput(e.target.value.toUpperCase())}
-              placeholder={`ENTER CODEWORD (e.g. ${selectedWord})...`}
-              className="w-full bg-[#161922] border border-[#2a2e3d] focus:border-[#c4a45a] rounded-xl px-4 py-2.5 text-center text-sm font-mono font-bold tracking-widest text-[#f4f0e8] outline-none uppercase"
+              placeholder={`ENTER 2-WORD CODEWORD (e.g. ${selectedWord})...`}
+              className="flex-1 bg-[#161922] border border-[#2a2e3d] focus:border-[#c4a45a] rounded-xl px-4 py-2.5 text-sm font-mono tracking-widest text-[#f4f0e8] uppercase outline-none"
             />
-
-            {testResult && (
-              <div
-                className={`p-2.5 rounded-xl border text-xs flex items-center space-x-2 ${
-                  testResult.success
-                    ? 'bg-emerald-950/60 border-emerald-500/60 text-emerald-200'
-                    : 'bg-red-950/60 border-red-500/60 text-red-200'
-                }`}
-              >
-                {testResult.success ? (
-                  <CheckCircle2 className="w-4 h-4 flex-shrink-0 text-emerald-400" />
-                ) : (
-                  <AlertCircle className="w-4 h-4 flex-shrink-0 text-red-400" />
-                )}
-                <span>{testResult.message}</span>
-              </div>
-            )}
-
             <button
               type="submit"
-              disabled={submitting || !testInput.trim()}
-              className="w-full py-2.5 rounded-xl bg-gradient-to-r from-[#c4a45a] to-[#e5cb87] hover:from-[#d8b86e] text-[#08090c] font-serif font-bold text-xs tracking-wider shadow-gold-glow transition-all disabled:opacity-50"
+              disabled={submitting}
+              className="py-2.5 px-6 rounded-xl bg-gradient-to-r from-[#c4a45a] to-[#e5cb87] hover:from-[#d8b86e] hover:to-[#f0d89e] text-[#08090c] font-serif font-bold text-xs shadow-gold-glow transition-all"
             >
-              {submitting ? 'Submitting...' : `Submit Codeword to Active Crew`}
+              {submitting ? 'Verifying...' : 'Submit & Test Score'}
             </button>
-          </form>
+          </div>
+
+          {testResult && (
+            <div
+              className={`p-3 rounded-xl border text-xs flex items-center space-x-2 ${
+                testResult.success
+                  ? 'bg-emerald-950/60 border-emerald-500/60 text-emerald-200'
+                  : 'bg-red-950/60 border-red-500/60 text-red-200'
+              }`}
+            >
+              {testResult.success ? (
+                <CheckCircle2 className="w-4 h-4 flex-shrink-0 text-emerald-400" />
+              ) : (
+                <AlertCircle className="w-4 h-4 flex-shrink-0 text-red-400" />
+              )}
+              <span>{testResult.message}</span>
+            </div>
+          )}
+        </form>
+
+        {/* Dynamic Scoring Metrics Breakdown */}
+        <div className="p-3.5 rounded-xl bg-[#08090c] border border-[#2a2e3d] grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs font-mono">
+          <div>
+            <span className="text-[#8e95a5] block text-[10px]">Elapsed Time</span>
+            <span className="text-[#f4f0e8] font-bold">
+              {Math.floor(elapsedSeconds / 60)}m {elapsedSeconds % 60}s
+            </span>
+          </div>
+          <div>
+            <span className="text-[#8e95a5] block text-[10px]">Speed Tier</span>
+            <span className="text-[#c4a45a] font-bold">{scoreBreakdown.speedTier}</span>
+          </div>
+          <div>
+            <span className="text-[#8e95a5] block text-[10px]">Hints Penalty</span>
+            <span className="text-rose-400 font-bold">-{scoreBreakdown.hintPenalty} PTS ({hintsTaken.length} hints)</span>
+          </div>
+          <div>
+            <span className="text-[#8e95a5] block text-[10px]">Est. Points Awarded</span>
+            <span className="text-emerald-400 font-bold text-sm">+{scoreBreakdown.finalPoints} PTS</span>
+          </div>
+        </div>
+
+        {/* Force Hints Trigger */}
+        <div className="pt-2 border-t border-[#2a2e3d] flex flex-wrap items-center gap-2">
+          <span className="text-[10px] font-mono text-[#8e95a5]">Force Unlock Hint for testing:</span>
+          {ROUND1_HINTS.map((hint) => (
+            <button
+              key={hint.hintIndex}
+              onClick={() => handleForceUnlockHint(hint.hintIndex)}
+              className="px-2.5 py-1 rounded bg-[#161922] border border-[#2a2e3d] hover:border-amber-400 text-[11px] font-mono text-amber-300 flex items-center space-x-1"
+            >
+              <Lightbulb className="w-3 h-3 text-amber-400" />
+              <span>Hint #{hint.hintIndex} ({hint.title})</span>
+            </button>
+          ))}
         </div>
       </div>
     </div>

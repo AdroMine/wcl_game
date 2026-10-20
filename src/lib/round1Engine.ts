@@ -4,7 +4,7 @@ export interface Round1HintConfig {
   hintIndex: number; // 1, 2, or 3
   availableAfterSeconds: number; // 120 (2m), 180 (3m), 240 (4m)
   title: string;
-  positionTarget: 'TOP' | 'BOTTOM' | 'MIDDLE';
+  positionTarget: 'LEFT' | 'RIGHT' | 'CENTER';
   penaltyPoints: number; // 30 points deduction per hint
 }
 
@@ -12,22 +12,22 @@ export const ROUND1_HINTS: Round1HintConfig[] = [
   {
     hintIndex: 1,
     availableAfterSeconds: 120, // 2 minutes in
-    title: 'Top Position Reveal',
-    positionTarget: 'TOP',
+    title: 'Left Edge Fragment',
+    positionTarget: 'LEFT',
     penaltyPoints: 30,
   },
   {
     hintIndex: 2,
     availableAfterSeconds: 180, // 3 minutes in
-    title: 'Bottom Position Reveal',
-    positionTarget: 'BOTTOM',
+    title: 'Right Edge Fragment',
+    positionTarget: 'RIGHT',
     penaltyPoints: 30,
   },
   {
     hintIndex: 3,
     availableAfterSeconds: 240, // 4 minutes in
-    title: 'Middle Position Reveal',
-    positionTarget: 'MIDDLE',
+    title: 'Center Fragment',
+    positionTarget: 'CENTER',
     penaltyPoints: 30,
   },
 ];
@@ -64,11 +64,11 @@ export function generateHintText(
   const roleLabel = member ? member.roleName : `Slot #${targetSlot + 1}`;
 
   if (hintIndex === 1) {
-    return `🛡️ TOP POSITION: "${nameLabel}" (${roleLabel}) holds the TOP slice of your codeword. Place their phone at the top edge of your pub table!`;
+    return `🛡️ LEFT EDGE: "${nameLabel}" (${roleLabel}) holds the FAR LEFT piece of the ancient tablet. Place their phone on the left side of the table!`;
   } else if (hintIndex === 2) {
-    return `⚓ BOTTOM POSITION: "${nameLabel}" (${roleLabel}) holds the BOTTOM slice of your codeword. Place their phone at the bottom edge of your pub table!`;
+    return `⚓ RIGHT EDGE: "${nameLabel}" (${roleLabel}) holds the FAR RIGHT piece of the ancient tablet. Place their phone on the right side of the table!`;
   } else {
-    return `👁️ MIDDLE POSITION: "${nameLabel}" (${roleLabel}) holds the MIDDLE slice of your codeword. Place their phone in the center between top and bottom!`;
+    return `👁️ CENTER PIECE: "${nameLabel}" (${roleLabel}) holds the CENTER piece of the tablet. Place their phone in the middle between left and right!`;
   }
 }
 

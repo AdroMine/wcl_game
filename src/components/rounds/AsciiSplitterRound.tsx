@@ -1,13 +1,15 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useGameSession } from '../../context/GameContext';
 import {
-  getPlayerAsciiSlice,
-} from '../../lib/asciiEngine';
-import {
   ROUND1_HINTS,
   generateHintText,
 } from '../../lib/round1Engine';
 import type { PlayerSlotInfo } from '../../lib/round1Engine';
+import {
+  parseTabletCodeword,
+  TABLET_CONFIG,
+  getSlotPositionLabel,
+} from '../../lib/tabletEngine';
 import {
   Maximize2,
   Minimize2,
@@ -39,10 +41,10 @@ export const AsciiSplitterRound: React.FC = () => {
   const wakeLockRef = useRef<any>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // Alignment & Sizing controls
+  // Alignment & Sizing controls (Default to 0deg portrait for natural pub table placement)
   const [anchor, setAnchor] = useState<AlignmentAnchor>('center');
-  const [rotation, setRotation] = useState<0 | 90 | 180 | 270>(90); // Default to 90deg for horizontal table placement on phones
-  const [zoomLevel, setZoomLevel] = useState<number>(1.0); // 1.0 = exact 100% edge-to-edge
+  const [rotation, setRotation] = useState<0 | 90 | 180 | 270>(0);
+  const [zoomLevel, setZoomLevel] = useState<number>(1.0);
   const [showHud, setShowHud] = useState(true);
   const hudTimeoutRef = useRef<number | null>(null);
 
@@ -90,38 +92,14 @@ export const AsciiSplitterRound: React.FC = () => {
   const activeSlot = playerSlotIndex >= 0 ? playerSlotIndex : 0;
 
   // Active word assigned to team or fallback
-  const assignedWord = team?.assignedCodeword || 'ORACLE';
-  const asciiSlice = getPlayerAsciiSlice(assignedWord, activeSlot, teamSize, 'HORIZONTAL');
+  const assignedWord = team?.assignedCodeword || 'CRIMSON SHADOW';
+  const { line1, line2 } = parseTabletCodeword(assignedWord);
 
   // Role for current active slot
   const currentSlotRole = payload?.config?.roles?.[activeSlot] || role || {
     name: `Slot ${activeSlot + 1}`,
     color: '#c4a45a',
   };
-
-  const roundCompleted = currentRound && team?.round_submissions[currentRound.id]?.completed;
-  const completedSubmission = currentRound ? team?.round_submissions[currentRound.id] : undefined;
-
-  // Build slot info for generating accurate hint texts
-  const slotMembers: PlayerSlotInfo[] = teamMembers.map((pid, idx) => {
-    const leaderboardTeam = payload?.teams_leaderboard?.find(t => t.id === team?.id);
-    const memberObj = leaderboardTeam?.members?.[idx];
-    const roleCfg = payload?.config?.roles?.[idx];
-    return {
-      slotIndex: idx,
-      playerName: memberObj?.name || (pid === player?.id ? player.name : `Crew Shade #${idx + 1}`),
-      roleName: roleCfg?.name || `Role #${idx + 1}`,
-      roleColor: roleCfg?.color || '#c4a45a',
-    };
-  });
-
-  // Calculate elapsed time in seconds
-  const roundStartedAt = payload?.round_started_at
-    ? Number(payload.round_started_at)
-    : (payload?.round_ends_at ? Math.max(0, Number(payload.round_ends_at) - (currentRound?.durationSeconds || 300) * 1000) : Date.now() - 60000);
-  const elapsedSeconds = Math.max(0, Math.floor((Date.now() - roundStartedAt) / 1000));
-
-  const hintsTaken = team?.hints_taken || [];
 
   // Screen Wake Lock API for pub table placement
   const requestWakeLock = async () => {
@@ -139,116 +117,98 @@ export const AsciiSplitterRound: React.FC = () => {
       try {
         wakeLockRef.current.release();
         wakeLockRef.current = null;
-      } catch (e) {
-        // ignore
+      } catch (err) {
+        console.warn('Wake lock release error:', err);
       }
     }
   };
 
-  // Cleanly exit fullscreen and release resources
-  const exitFullscreenCleanly = async () => {
-    setIsFullscreen(false);
-    document.body.classList.remove('faux-fullscreen-active');
-    releaseWakeLock();
-    try {
-      if (document.fullscreenElement) {
-        await document.exitFullscreen();
-      }
-    } catch (e) {
-      // ignore
-    }
-    // If our history entry was pushed, pop it cleanly
-    if (window.history.state?.underworld_fullscreen) {
-      window.history.back();
-    }
-  };
-
-  // Toggle Fullscreen & Table Alignment mode
+  // Fullscreen toggle
   const toggleFullscreen = async () => {
     if (!isFullscreen) {
       setIsFullscreen(true);
-      document.body.classList.add('faux-fullscreen-active');
-      window.history.pushState({ underworld_fullscreen: true }, '');
-      await requestWakeLock();
+      setShowHud(true);
       resetHudTimeout();
+      await requestWakeLock();
 
       try {
-        if (document.documentElement.requestFullscreen && !document.fullscreenElement) {
-          await document.documentElement.requestFullscreen();
+        if (containerRef.current && containerRef.current.requestFullscreen) {
+          await containerRef.current.requestFullscreen();
+        } else if ((containerRef.current as any)?.webkitRequestFullscreen) {
+          await (containerRef.current as any).webkitRequestFullscreen();
         }
+      } catch (err) {
+        console.warn('Standard fullscreen API rejected; fallback container active:', err);
+      }
+      try {
+        window.history.pushState({ fullscreenMode: true }, '');
       } catch (e) {
-        // iOS or permission denied: faux-fullscreen fallback takes over smoothly
+        // ignore
       }
     } else {
-      await exitFullscreenCleanly();
+      exitFullscreenCleanly();
     }
   };
 
-  // Mobile Back button / Edge Back Gesture support
+  const exitFullscreenCleanly = () => {
+    setIsFullscreen(false);
+    releaseWakeLock();
+    try {
+      if (document.fullscreenElement) {
+        document.exitFullscreen().catch(() => {});
+      } else if ((document as any).webkitFullscreenElement) {
+        (document as any).webkitExitFullscreen();
+      }
+    } catch (err) {
+      // ignore
+    }
+  };
+
+  // Back button handling in fullscreen
   useEffect(() => {
     const handlePopState = () => {
       if (isFullscreen) {
         setIsFullscreen(false);
-        document.body.classList.remove('faux-fullscreen-active');
         releaseWakeLock();
-        try {
-          if (document.fullscreenElement) {
-            document.exitFullscreen();
-          }
-        } catch (e) {
-          // ignore
-        }
       }
     };
-
-    const handleFullscreenChange = () => {
-      if (!document.fullscreenElement && isFullscreen) {
-        setIsFullscreen(false);
-        document.body.classList.remove('faux-fullscreen-active');
-        releaseWakeLock();
-        if (window.history.state?.underworld_fullscreen) {
-          window.history.back();
-        }
-      }
-    };
-
     window.addEventListener('popstate', handlePopState);
-    document.addEventListener('fullscreenchange', handleFullscreenChange);
-    return () => {
-      window.removeEventListener('popstate', handlePopState);
-      document.removeEventListener('fullscreenchange', handleFullscreenChange);
-    };
+    return () => window.removeEventListener('popstate', handlePopState);
   }, [isFullscreen]);
-
-  // Auto-fading HUD controls (3.5 seconds inactivity)
-  const resetHudTimeout = () => {
-    setShowHud(true);
-    if (hudTimeoutRef.current) {
-      window.clearTimeout(hudTimeoutRef.current);
-    }
-    hudTimeoutRef.current = window.setTimeout(() => {
-      setShowHud(false);
-    }, 3500);
-  };
 
   useEffect(() => {
     return () => {
-      document.body.classList.remove('faux-fullscreen-active');
       releaseWakeLock();
-      if (hudTimeoutRef.current) window.clearTimeout(hudTimeoutRef.current);
+      if (hudTimeoutRef.current) clearTimeout(hudTimeoutRef.current);
     };
   }, []);
+
+  const resetHudTimeout = () => {
+    setShowHud(true);
+    if (hudTimeoutRef.current) clearTimeout(hudTimeoutRef.current);
+    hudTimeoutRef.current = window.setTimeout(() => {
+      setShowHud(false);
+    }, 4000);
+  };
 
   const handleRotate = (e: React.MouseEvent) => {
     e.stopPropagation();
     resetHudTimeout();
-    setRotation(prev => ((prev + 90) % 360) as any);
+    setRotation(prev => {
+      if (prev === 0) return 90;
+      if (prev === 90) return 180;
+      if (prev === 180) return 270;
+      return 0;
+    });
   };
 
   const handleZoom = (e: React.MouseEvent, delta: number) => {
     e.stopPropagation();
     resetHudTimeout();
-    setZoomLevel(prev => Math.min(2.0, Math.max(0.6, Math.round((prev + delta) * 10) / 10)));
+    setZoomLevel(prev => {
+      const next = Math.round((prev + delta) * 10) / 10;
+      return Math.min(2.0, Math.max(0.6, next));
+    });
   };
 
   const handleResetZoom = (e: React.MouseEvent) => {
@@ -275,8 +235,8 @@ export const AsciiSplitterRound: React.FC = () => {
 
       if (res.success && res.isCorrect) {
         confetti({
-          particleCount: 140,
-          spread: 90,
+          particleCount: 150,
+          spread: 100,
           origin: { y: 0.6 },
           colors: ['#c4a45a', '#f4f0e8', '#38bdf8', '#c084fc', '#34d399'],
         });
@@ -303,83 +263,213 @@ export const AsciiSplitterRound: React.FC = () => {
     }
   };
 
-  // Geometry calculation for the rotated canvas
+  // Dimensions & Geometry
   const isPortrait = windowDimensions.h > windowDimensions.w;
   const isSideways = rotation === 90 || rotation === 270;
-
-  // When rotated 90 or 270 on portrait phones, the canvas dimensions swap so it fills 100% of the screen
   const canvasWidth = isSideways && isPortrait ? windowDimensions.h : windowDimensions.w;
   const canvasHeight = isSideways && isPortrait ? windowDimensions.w : windowDimensions.h;
 
-  // Vertical alignment within the canvas respecting physical rotation
   const getVerticalAlignmentStyle = () => {
     if (anchor === 'center') return { justifyContent: 'center' };
-
-    // In 90deg clockwise rotation:
-    // Physical RIGHT corresponds to element-space flex-start (Y = 0)
-    // Physical LEFT corresponds to element-space flex-end (Y = max)
     if (rotation === 90) {
-      if (anchor === 'start') return { justifyContent: 'flex-end', paddingBottom: '0px' }; // Physical LEFT
-      if (anchor === 'end') return { justifyContent: 'flex-start', paddingTop: '0px' };   // Physical RIGHT
+      if (anchor === 'start') return { justifyContent: 'flex-end', paddingBottom: '0px' };
+      if (anchor === 'end') return { justifyContent: 'flex-start', paddingTop: '0px' };
     } else if (rotation === 270) {
-      if (anchor === 'start') return { justifyContent: 'flex-start', paddingTop: '0px' }; // Physical LEFT
-      if (anchor === 'end') return { justifyContent: 'flex-end', paddingBottom: '0px' };  // Physical RIGHT
+      if (anchor === 'start') return { justifyContent: 'flex-start', paddingTop: '0px' };
+      if (anchor === 'end') return { justifyContent: 'flex-end', paddingBottom: '0px' };
     } else {
-      // 0deg or 180deg
-      if (anchor === 'start') return { justifyContent: 'flex-start', paddingTop: '0px' }; // Physical TOP
-      if (anchor === 'end') return { justifyContent: 'flex-end', paddingBottom: '0px' };   // Physical BOTTOM
+      if (anchor === 'start') return { justifyContent: 'flex-start', paddingTop: '0px' };
+      if (anchor === 'end') return { justifyContent: 'flex-end', paddingBottom: '0px' };
     }
     return { justifyContent: 'center' };
   };
 
-  // Columns per line
-  const colCount = Math.max(1, asciiSlice[0]?.length || 36);
-  const rowCount = asciiSlice.length;
+  // Tablet Math
+  const { totalWidth, totalHeight, line1Y, horizonY, line2Y } = TABLET_CONFIG;
+  const slotWidth = totalWidth / Math.max(1, teamSize);
+  const viewBoxX = activeSlot * slotWidth;
 
-  // Height of slice: in fullscreen mode, fills 100% of canvasHeight from bezel to bezel
-  const blockHeight = isFullscreen ? canvasHeight : Math.min(canvasHeight * 0.35, ((canvasWidth / colCount) * 1.35 * rowCount));
+  // Interlocking Notch Seam Positions (between all slots)
+  const seamPositions: number[] = [];
+  for (let i = 1; i < teamSize; i++) {
+    seamPositions.push(i * slotWidth);
+  }
 
-  // Render Vector SVG Totem: reaches the exact 100% edge of the screen with zero dead margin
-  const renderVectorTotem = (widthPx: number, heightPx: number, isFullscreenMode: boolean) => {
+  // Render the SVG Vector Ancient Shattered Tablet
+  const renderTabletSlice = (isFullscreenMode: boolean) => {
     return (
       <div
-        className="w-full h-full flex items-center justify-center select-none"
+        className="w-full h-full flex items-center justify-center select-none relative overflow-hidden"
         style={{
-          width: isFullscreenMode ? `${widthPx}px` : '100%',
-          maxWidth: '100%',
+          width: isFullscreenMode ? '100%' : '100%',
+          height: isFullscreenMode ? '100%' : '180px',
         }}
       >
         <svg
-          viewBox={`0 0 ${colCount * 10} ${rowCount * 14}`}
+          viewBox={`${viewBoxX} 0 ${slotWidth} ${totalHeight}`}
           preserveAspectRatio="none"
           style={{
-            width: isFullscreenMode ? '100%' : '100%',
-            maxWidth: '100%',
-            height: isFullscreenMode ? `${Math.round(heightPx)}px` : '75px',
-            maxHeight: '100%',
+            width: '100%',
+            height: '100%',
+            display: 'block',
             transform: isFullscreenMode && zoomLevel !== 1 ? `scale(${zoomLevel})` : undefined,
             transformOrigin: 'center center',
-            display: 'block',
-            filter: `drop-shadow(0 0 10px ${currentSlotRole?.color || '#c4a45a'}70)`,
           }}
         >
-          {asciiSlice.map((line, rIdx) => {
-            return line.split('').map((char, cIdx) => {
-              if (char === '█') {
-                return (
-                  <rect
-                    key={`${rIdx}-${cIdx}`}
-                    x={cIdx * 10}
-                    y={rIdx * 14}
-                    width={10}
-                    height={14}
-                    fill={currentSlotRole?.color || '#f4f0e8'}
-                  />
-                );
-              }
-              return null;
-            });
-          })}
+          <defs>
+            {/* Gold Leaf Gradient */}
+            <linearGradient id="goldGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+              <stop offset="0%" stopColor="#fff8e7" />
+              <stop offset="35%" stopColor="#e5cb87" />
+              <stop offset="70%" stopColor="#c4a45a" />
+              <stop offset="100%" stopColor="#8c6d28" />
+            </linearGradient>
+
+            {/* Glowing Rune Horizon Filter */}
+            <filter id="goldGlow" x="-20%" y="-20%" width="140%" height="140%">
+              <feGaussianBlur stdDeviation="3" result="blur" />
+              <feComposite in="SourceGraphic" in2="blur" operator="over" />
+            </filter>
+
+            {/* Ambient Role Color Glow */}
+            <radialGradient id="roleAmbientGlow" cx="50%" cy="50%" r="50%">
+              <stop offset="0%" stopColor={currentSlotRole?.color || '#c4a45a'} stopOpacity="0.25" />
+              <stop offset="100%" stopColor="#08090c" stopOpacity="0" />
+            </radialGradient>
+          </defs>
+
+          {/* 1. Dark Chiseled Granite Slab Background */}
+          <rect x="0" y="0" width={totalWidth} height={totalHeight} fill="#08090c" />
+          <rect x="0" y="0" width={totalWidth} height={totalHeight} fill="url(#roleAmbientGlow)" />
+
+          {/* 2. Outer Tablet Chisel Frame */}
+          <rect
+            x="6"
+            y="6"
+            width={totalWidth - 12}
+            height={totalHeight - 12}
+            rx="10"
+            fill="#0f1118"
+            stroke="#2a2e3d"
+            strokeWidth="3"
+          />
+
+          {/* 3. Orientation Anchor: TOP CREST MARKER */}
+          <rect x="16" y="16" width={totalWidth - 32} height="52" fill="#161924" rx="6" />
+          <line x1="20" y1="72" x2={totalWidth - 20} y2="72" stroke="#c4a45a" strokeWidth="2" opacity="0.6" />
+          <text
+            x={totalWidth / 2}
+            y="48"
+            textAnchor="middle"
+            fontFamily="monospace"
+            fontSize="18"
+            fontWeight="bold"
+            fill="#c4a45a"
+            letterSpacing="8"
+          >
+            ▲ TABLET CREST (TOP) ▲
+          </text>
+
+          {/* 4. LINE 1: WORD 1 (CHISELED GOLD RUNE) */}
+          <text
+            x={totalWidth / 2}
+            y={line1Y}
+            textAnchor="middle"
+            fontFamily="Cinzel, Georgia, serif"
+            fontWeight="900"
+            fontSize="110"
+            letterSpacing="18"
+            fill="url(#goldGradient)"
+            stroke="#08090c"
+            strokeWidth="4"
+            filter="url(#goldGlow)"
+          >
+            {line1}
+          </text>
+
+          {/* 5. CENTRAL GLOWING HORIZON / FRACTURE SEAM */}
+          {/* Ambient Glow Horizon */}
+          <line
+            x1="0"
+            y1={horizonY}
+            x2={totalWidth}
+            y2={horizonY}
+            stroke="#c4a45a"
+            strokeWidth="6"
+            opacity="0.5"
+            filter="url(#goldGlow)"
+          />
+          {/* Core Horizon Line */}
+          <line
+            x1="0"
+            y1={horizonY}
+            x2={totalWidth}
+            y2={horizonY}
+            stroke="#ffffff"
+            strokeWidth="2"
+            opacity="0.9"
+          />
+
+          {/* 6. INTERLOCKING SEAM NOTCHES (GLOWING DIAMONDS AT SCREEN BORDERS) */}
+          {seamPositions.map((seamX, idx) => (
+            <g key={idx}>
+              {/* Outer Glow Diamond */}
+              <polygon
+                points={`${seamX},${horizonY - 26} ${seamX + 18},${horizonY} ${seamX},${horizonY + 26} ${seamX - 18},${horizonY}`}
+                fill="#c4a45a"
+                opacity="0.9"
+                filter="url(#goldGlow)"
+              />
+              {/* Inner Core Notch */}
+              <polygon
+                points={`${seamX},${horizonY - 14} ${seamX + 10},${horizonY} ${seamX},${horizonY + 14} ${seamX - 10},${horizonY}`}
+                fill="#ffffff"
+              />
+              {/* Vertical Guide Tic */}
+              <line
+                x1={seamX}
+                y1={horizonY - 38}
+                x2={seamX}
+                y2={horizonY + 38}
+                stroke="#c4a45a"
+                strokeWidth="1.5"
+                strokeDasharray="4 3"
+              />
+            </g>
+          ))}
+
+          {/* 7. LINE 2: WORD 2 (CHISELED GOLD RUNE) */}
+          <text
+            x={totalWidth / 2}
+            y={line2Y}
+            textAnchor="middle"
+            fontFamily="Cinzel, Georgia, serif"
+            fontWeight="900"
+            fontSize="110"
+            letterSpacing="18"
+            fill="url(#goldGradient)"
+            stroke="#08090c"
+            strokeWidth="4"
+            filter="url(#goldGlow)"
+          >
+            {line2}
+          </text>
+
+          {/* 8. Orientation Anchor: BOTTOM BASE MARKER */}
+          <line x1="20" y1="528" x2={totalWidth - 20} y2="528" stroke="#c4a45a" strokeWidth="2" opacity="0.6" />
+          <rect x="16" y="532" width={totalWidth - 32} height="52" fill="#161924" rx="6" />
+          <text
+            x={totalWidth / 2}
+            y="564"
+            textAnchor="middle"
+            fontFamily="monospace"
+            fontSize="18"
+            fontWeight="bold"
+            fill="#c4a45a"
+            letterSpacing="8"
+          >
+            ▼ TABLET BASE (BOTTOM) ▼
+          </text>
         </svg>
       </div>
     );
@@ -397,8 +487,9 @@ export const AsciiSplitterRound: React.FC = () => {
       >
         {/* Floating Auto-Fading HUD */}
         <div
-          className={`absolute top-0 left-0 right-0 p-2 sm:p-3 z-50 transition-opacity duration-300 flex flex-wrap items-center justify-between gap-2 pointer-events-auto ${showHud ? 'opacity-100' : 'opacity-0 pointer-events-none'
-            }`}
+          className={`absolute top-0 left-0 right-0 p-2 sm:p-3 z-50 transition-opacity duration-300 flex flex-wrap items-center justify-between gap-2 pointer-events-auto ${
+            showHud ? 'opacity-100' : 'opacity-0 pointer-events-none'
+          }`}
         >
           {/* Slot Badge */}
           <div className="bg-[#10121a]/95 backdrop-blur border border-[#c4a45a]/60 px-3 py-1.5 rounded-full flex items-center space-x-2 text-xs font-mono text-[#f4f0e8] shadow-2xl shrink-0">
@@ -407,7 +498,7 @@ export const AsciiSplitterRound: React.FC = () => {
               style={{ backgroundColor: currentSlotRole?.color || '#c4a45a' }}
             />
             <span className="font-bold">SLOT #{activeSlot + 1} OF {teamSize}</span>
-            <span className="text-[#8e95a5]">({currentSlotRole?.name})</span>
+            <span className="text-[#8e95a5]">({getSlotPositionLabel(activeSlot, teamSize)})</span>
           </div>
 
           {/* Controls Bar - Mobile Friendly Touch Targets (min 44px) */}
@@ -417,24 +508,27 @@ export const AsciiSplitterRound: React.FC = () => {
               <button
                 onClick={(e) => handleAnchorSelect(e, 'start')}
                 title={isSideways ? "Align Left (Snap to physical left edge)" : "Align Top (Snap to top edge)"}
-                className={`w-11 h-11 min-w-[44px] min-h-[44px] flex items-center justify-center rounded-full transition-colors ${anchor === 'start' ? 'bg-[#c4a45a] text-[#08090c]' : 'text-[#8e95a5] hover:text-[#f4f0e8]'
-                  }`}
+                className={`w-11 h-11 min-w-[44px] min-h-[44px] flex items-center justify-center rounded-full transition-colors ${
+                  anchor === 'start' ? 'bg-[#c4a45a] text-[#08090c]' : 'text-[#8e95a5] hover:text-[#f4f0e8]'
+                }`}
               >
                 {isSideways ? <AlignLeft className="w-5 h-5" /> : <AlignVerticalJustifyStart className="w-5 h-5" />}
               </button>
               <button
                 onClick={(e) => handleAnchorSelect(e, 'center')}
                 title="Center Alignment"
-                className={`w-11 h-11 min-w-[44px] min-h-[44px] flex items-center justify-center rounded-full transition-colors ${anchor === 'center' ? 'bg-[#c4a45a] text-[#08090c]' : 'text-[#8e95a5] hover:text-[#f4f0e8]'
-                  }`}
+                className={`w-11 h-11 min-w-[44px] min-h-[44px] flex items-center justify-center rounded-full transition-colors ${
+                  anchor === 'center' ? 'bg-[#c4a45a] text-[#08090c]' : 'text-[#8e95a5] hover:text-[#f4f0e8]'
+                }`}
               >
                 {isSideways ? <AlignCenter className="w-5 h-5" /> : <AlignVerticalJustifyCenter className="w-5 h-5" />}
               </button>
               <button
                 onClick={(e) => handleAnchorSelect(e, 'end')}
                 title={isSideways ? "Align Right (Snap to physical right edge)" : "Align Bottom (Snap to bottom edge)"}
-                className={`w-11 h-11 min-w-[44px] min-h-[44px] flex items-center justify-center rounded-full transition-colors ${anchor === 'end' ? 'bg-[#c4a45a] text-[#08090c]' : 'text-[#8e95a5] hover:text-[#f4f0e8]'
-                  }`}
+                className={`w-11 h-11 min-w-[44px] min-h-[44px] flex items-center justify-center rounded-full transition-colors ${
+                  anchor === 'end' ? 'bg-[#c4a45a] text-[#08090c]' : 'text-[#8e95a5] hover:text-[#f4f0e8]'
+                }`}
               >
                 {isSideways ? <AlignRight className="w-5 h-5" /> : <AlignVerticalJustifyEnd className="w-5 h-5" />}
               </button>
@@ -485,7 +579,7 @@ export const AsciiSplitterRound: React.FC = () => {
           </div>
         </div>
 
-        {/* Rotatable Monospace Canvas that fills exact physical viewport */}
+        {/* Canvas */}
         <div
           style={{
             width: `${canvasWidth}px`,
@@ -502,7 +596,7 @@ export const AsciiSplitterRound: React.FC = () => {
           }}
           className="bg-black select-none overflow-hidden transition-all duration-150"
         >
-          {renderVectorTotem(canvasWidth, blockHeight, true)}
+          {renderTabletSlice(true)}
         </div>
       </div>
     );
@@ -511,15 +605,32 @@ export const AsciiSplitterRound: React.FC = () => {
   // --------------------------------------------------------------------------
   // RENDER: NORMAL CARD VIEW
   // --------------------------------------------------------------------------
+  const roundCompleted = !!team?.round_submissions?.[currentRound?.id || 'round-1']?.completed;
+  const completedSubmission = team?.round_submissions?.[currentRound?.id || 'round-1'];
+  const hintsTaken = team?.hints_taken || [];
+  const roundStartedAt = payload?.round_started_at || Date.now() - 60000;
+  const elapsedSeconds = Math.max(0, Math.floor((Date.now() - roundStartedAt) / 1000));
+
+  const slotMembers: PlayerSlotInfo[] = teamMembers.map((pId, idx) => {
+    const memberObj = payload?.teams_leaderboard?.flatMap(t => t.members).find(m => m.id === pId);
+    const roleCfg = payload?.config?.roles?.[idx];
+    return {
+      slotIndex: idx,
+      playerName: memberObj?.name || `Crew Shade #${idx + 1}`,
+      roleName: roleCfg?.name || `Role #${idx + 1}`,
+      roleColor: roleCfg?.color || '#c4a45a',
+    };
+  });
+
   return (
     <div className="space-y-4">
-      {/* Flagship Round Intro Banner */}
+      {/* Ancient Tablet Intro Banner */}
       <div className="bg-[#10121a] border border-[#2a2e3d] rounded-2xl p-5 shadow-xl relative overflow-hidden space-y-4">
         <div className="flex items-start justify-between">
           <div className="space-y-1">
             <div className="flex items-center space-x-2">
               <span className="text-[10px] font-mono uppercase tracking-wider text-[#c4a45a] font-bold">
-                Multi-Phone Physical Totem
+                The Shattered Tablet • Round 1
               </span>
               <span
                 className="text-[10px] font-mono px-2 py-0.5 rounded-full font-bold"
@@ -533,30 +644,30 @@ export const AsciiSplitterRound: React.FC = () => {
               </span>
             </div>
             <h3 className="text-lg font-serif font-black text-[#f4f0e8]">
-              Assemble the Severed Codeword
+              Reconstruct the Ancient Tomb Tablet
             </h3>
             <p className="text-xs text-[#8e95a5] leading-relaxed">
-              The secret code is sliced and split across your phones. Can you discover the word in time, open the ancient doors and escape?
+              You have unearthed an ancient stone tablet engraved with the password to the forbidden tomb door. But the tablet has been shattered into pieces, scattered across your five phones! Align your screens side-by-side to assemble the broken tablet, reveal the two-word incantation, and open the ancient door.
             </p>
           </div>
         </div>
 
-        {/* ASCII Slice Preview Box with Vector Edge-to-Edge Totem */}
+        {/* Vector Slice Preview Box */}
         <div className="bg-[#08090c] border border-[#2a2e3d] rounded-xl p-3 overflow-hidden relative shadow-inner space-y-2">
           <div className="flex items-center justify-between pb-2 border-b border-[#2a2e3d]/80 text-[10px] font-mono text-[#8e95a5]">
-            <span className="font-bold text-[#f4f0e8]">YOUR FRAGMENT</span>
+            <span className="font-bold text-[#f4f0e8]">YOUR TABLET PIECE</span>
             <span style={{ color: currentSlotRole?.color || '#c4a45a' }}>
-              Sector: {currentSlotRole?.name}
+              Position: {getSlotPositionLabel(activeSlot, teamSize)}
             </span>
           </div>
 
-          {/* Crisp Vector Edge-to-Edge Totem */}
-          <div className="py-2">
-            {renderVectorTotem(380, 75, false)}
+          {/* Crisp Vector Slice */}
+          <div className="py-1">
+            {renderTabletSlice(false)}
           </div>
 
           <div className="flex items-center justify-between pt-1 border-t border-[#2a2e3d]/40 text-[10px] font-mono text-[#8e95a5]">
-            <span>Full vector blocks • 100% edge-to-edge fit</span>
+            <span>Left-to-Right tablet slice • Interlocking rune seams • 100% vector fit</span>
           </div>
         </div>
 
@@ -572,13 +683,13 @@ export const AsciiSplitterRound: React.FC = () => {
         </div>
       </div>
 
-      {/* CODEWORD SUBMISSION & DYNAMIC ESCALATING SCORING CARD (PLACED FIRST FOR FAST ACCESS) */}
+      {/* CODEWORD SUBMISSION CARD (PLACED ABOVE HINTS) */}
       <div className="bg-[#10121a] border border-[#2a2e3d] rounded-2xl p-5 shadow-xl space-y-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-2">
             <Sparkles className="w-4 h-4 text-[#c4a45a]" />
             <h4 className="text-sm font-serif font-bold text-[#f4f0e8]">
-              Submit Deciphered Codeword
+              Submit Deciphered Word
             </h4>
           </div>
           <span className="text-[10px] font-mono text-[#c4a45a]">
@@ -608,18 +719,19 @@ export const AsciiSplitterRound: React.FC = () => {
                 type="text"
                 value={codewordInput}
                 onChange={(e) => setCodewordInput(e.target.value.toUpperCase())}
-                placeholder="ENTER REVEALED CODEWORD..."
-                maxLength={12}
-                className="w-full bg-[#161922] border border-[#2a2e3d] focus:border-[#c4a45a] focus:ring-1 focus:ring-[#c4a45a] rounded-xl px-4 py-3 text-center text-base font-mono font-black tracking-widest text-[#f4f0e8] placeholder-[#8e95a5]/40 outline-none uppercase"
+                placeholder="ENTER 2-WORD CODEWORD (E.G. CRIMSON SHADOW)..."
+                maxLength={30}
+                className="w-full bg-[#161922] border border-[#2a2e3d] focus:border-[#c4a45a] focus:ring-1 focus:ring-[#c4a45a] rounded-xl px-4 py-3 text-center text-sm sm:text-base font-mono font-black tracking-widest text-[#f4f0e8] placeholder-[#8e95a5]/40 outline-none uppercase"
               />
             </div>
 
             {submitResult && (
               <div
-                className={`p-3 rounded-xl border text-xs flex items-center space-x-2 ${submitResult.success
-                  ? 'bg-emerald-950/60 border-emerald-500/60 text-emerald-200'
-                  : 'bg-red-950/60 border-red-500/60 text-red-200'
-                  }`}
+                className={`p-3 rounded-xl border text-xs flex items-center space-x-2 ${
+                  submitResult.success
+                    ? 'bg-emerald-950/60 border-emerald-500/60 text-emerald-200'
+                    : 'bg-red-950/60 border-red-500/60 text-red-200'
+                }`}
               >
                 {submitResult.success ? (
                   <CheckCircle2 className="w-4 h-4 flex-shrink-0 text-emerald-400" />

@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useGameSession } from '../context/GameContext';
 import {
-  ROUND1_HINTS,
   calculateRound1Score,
 } from '../lib/round1Engine';
 import type { PlayerSlotInfo } from '../lib/round1Engine';
@@ -28,7 +27,6 @@ import {
   Play,
   Swords,
   Sparkles,
-  Lightbulb,
   RefreshCw,
   Clock,
   CheckCircle2,
@@ -46,7 +44,6 @@ export const SoloTesterWorkbench: React.FC = () => {
     currentRound,
     round2Match,
     submitAnswer,
-    requestHint,
     switchPlayer,
     refresh,
   } = useGameSession();
@@ -91,8 +88,7 @@ export const SoloTesterWorkbench: React.FC = () => {
     ? Number(payload.round_started_at)
     : (payload?.round_ends_at ? Math.max(0, Number(payload.round_ends_at) - (currentRound?.durationSeconds || 300) * 1000) : Date.now() - 60000);
   const elapsedSeconds = Math.max(0, Math.floor((Date.now() - roundStartedAt) / 1000));
-  const hintsTaken = team?.hints_taken || [];
-  const scoreBreakdown = calculateRound1Score(elapsedSeconds, hintsTaken.length);
+  const scoreBreakdown = calculateRound1Score(elapsedSeconds);
 
   const [spawnNotice, setSpawnNotice] = useState<string | null>(null);
 
@@ -175,15 +171,6 @@ export const SoloTesterWorkbench: React.FC = () => {
     } finally {
       setSubmitting(false);
     }
-  };
-
-  // Force unlock hint (for testing)
-  const handleForceUnlockHint = async (hintIndex: number) => {
-    if (!team) {
-      await handleSpawnDemoCrew();
-    }
-    await requestHint(hintIndex);
-    await refresh();
   };
 
   // Round 2 Quick Scenario Testing
@@ -803,7 +790,7 @@ export const SoloTesterWorkbench: React.FC = () => {
         </form>
 
         {/* Dynamic Scoring Metrics Breakdown */}
-        <div className="p-3.5 rounded-xl bg-[#08090c] border border-[#2a2e3d] grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs font-mono">
+        <div className="p-3.5 rounded-xl bg-[#08090c] border border-[#2a2e3d] grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs font-mono">
           <div>
             <span className="text-[#8e95a5] block text-[10px]">Elapsed Time</span>
             <span className="text-[#f4f0e8] font-bold">
@@ -815,28 +802,9 @@ export const SoloTesterWorkbench: React.FC = () => {
             <span className="text-[#c4a45a] font-bold">{scoreBreakdown.speedTier}</span>
           </div>
           <div>
-            <span className="text-[#8e95a5] block text-[10px]">Hints Penalty</span>
-            <span className="text-rose-400 font-bold">-{scoreBreakdown.hintPenalty} PTS ({hintsTaken.length} hints)</span>
-          </div>
-          <div>
             <span className="text-[#8e95a5] block text-[10px]">Est. Points Awarded</span>
             <span className="text-emerald-400 font-bold text-sm">+{scoreBreakdown.finalPoints} PTS</span>
           </div>
-        </div>
-
-        {/* Force Hints Trigger */}
-        <div className="pt-2 border-t border-[#2a2e3d] flex flex-wrap items-center gap-2">
-          <span className="text-[10px] font-mono text-[#8e95a5]">Force Unlock Hint for testing:</span>
-          {ROUND1_HINTS.map((hint) => (
-            <button
-              key={hint.hintIndex}
-              onClick={() => handleForceUnlockHint(hint.hintIndex)}
-              className="px-2.5 py-1 rounded bg-[#161922] border border-[#2a2e3d] hover:border-amber-400 text-[11px] font-mono text-amber-300 flex items-center space-x-1"
-            >
-              <Lightbulb className="w-3 h-3 text-amber-400" />
-              <span>Hint #{hint.hintIndex} ({hint.title})</span>
-            </button>
-          ))}
         </div>
       </div>
     </div>

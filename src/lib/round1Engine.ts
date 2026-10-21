@@ -90,7 +90,7 @@ export interface Round1ScoreBreakdown {
  */
 export function calculateRound1Score(
   elapsedSeconds: number,
-  hintsTakenCount: number
+  hintsTakenCount: number = 0
 ): Round1ScoreBreakdown {
   const safeElapsed = Math.max(0, Math.floor(elapsedSeconds));
 

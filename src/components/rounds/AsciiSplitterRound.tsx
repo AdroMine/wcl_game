@@ -1,11 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useGameSession } from '../../context/GameContext';
 import {
-  ROUND1_HINTS,
-  generateHintText,
-} from '../../lib/round1Engine';
-import type { PlayerSlotInfo } from '../../lib/round1Engine';
-import {
   parseTabletCodeword,
   TABLET_CONFIG,
   getSlotPositionLabel,
@@ -26,16 +21,13 @@ import {
   AlignLeft,
   AlignCenter,
   AlignRight,
-  Lightbulb,
-  Clock,
-  Check,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
 type AlignmentAnchor = 'start' | 'center' | 'end';
 
 export const AsciiSplitterRound: React.FC = () => {
-  const { player, team, role, currentRound, submitAnswer, requestHint, payload } = useGameSession();
+  const { player, team, role, currentRound, submitAnswer, payload } = useGameSession();
 
   // Fullscreen & WakeLock states
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -74,17 +66,6 @@ export const AsciiSplitterRound: React.FC = () => {
   const [codewordInput, setCodewordInput] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [submitResult, setSubmitResult] = useState<{ success: boolean; message: string; points?: number } | null>(null);
-
-  // Hint requesting state
-  const [requestingHintIndex, setRequestingHintIndex] = useState<number | null>(null);
-  const [hintError, setHintError] = useState<string | null>(null);
-
-  // Live timer tick for calculating hints availability and points decay
-  const [, setTimerTick] = useState(0);
-  useEffect(() => {
-    const interval = setInterval(() => setTimerTick(t => t + 1), 1000);
-    return () => clearInterval(interval);
-  }, []);
 
   // Calculate player slot index
   const teamMembers = team?.player_ids || [];
@@ -246,21 +227,6 @@ export const AsciiSplitterRound: React.FC = () => {
       setSubmitResult({ success: false, message: err.message || 'Submission failed' });
     } finally {
       setSubmitting(false);
-    }
-  };
-
-  const handleRequestHint = async (hintIndex: number) => {
-    try {
-      setRequestingHintIndex(hintIndex);
-      setHintError(null);
-      const res = await requestHint(hintIndex);
-      if (!res.success) {
-        setHintError(res.error || 'Failed to unlock hint');
-      }
-    } catch (err: any) {
-      setHintError(err.message || 'Hint request failed');
-    } finally {
-      setRequestingHintIndex(null);
     }
   };
 
@@ -612,20 +578,6 @@ export const AsciiSplitterRound: React.FC = () => {
   // --------------------------------------------------------------------------
   const roundCompleted = !!team?.round_submissions?.[currentRound?.id || 'round-1']?.completed;
   const completedSubmission = team?.round_submissions?.[currentRound?.id || 'round-1'];
-  const hintsTaken = team?.hints_taken || [];
-  const roundStartedAt = payload?.round_started_at || Date.now() - 60000;
-  const elapsedSeconds = Math.max(0, Math.floor((Date.now() - roundStartedAt) / 1000));
-
-  const slotMembers: PlayerSlotInfo[] = teamMembers.map((pId, idx) => {
-    const memberObj = payload?.teams_leaderboard?.flatMap(t => t.members).find(m => m.id === pId);
-    const roleCfg = payload?.config?.roles?.[idx];
-    return {
-      slotIndex: idx,
-      playerName: memberObj?.name || `Crew Shade #${idx + 1}`,
-      roleName: roleCfg?.name || `Role #${idx + 1}`,
-      roleColor: roleCfg?.color || '#c4a45a',
-    };
-  });
 
   return (
     <div className="space-y-4">
@@ -755,113 +707,6 @@ export const AsciiSplitterRound: React.FC = () => {
               {submitting ? 'Verifying Codeword...' : 'Submit Deciphered Word'}
             </button>
           </form>
-        )}
-      </div>
-
-      {/* TACTICAL HINTS & ORACLE WHISPERS CARD (SINGLE DYNAMIC BUTTON) */}
-      <div className="bg-[#10121a] border border-[#2a2e3d] rounded-2xl p-5 shadow-xl space-y-4">
-        <div className="flex items-center justify-between border-b border-[#2a2e3d] pb-3">
-          <div className="flex items-center space-x-2">
-            <Lightbulb className="w-4 h-4 text-amber-400" />
-            <h4 className="text-sm font-serif font-bold text-[#f4f0e8]">
-              Oracle Whispers & Position Hints
-            </h4>
-          </div>
-          <span className="text-[10px] font-mono text-amber-400">
-            -30 PTS penalty per hint
-          </span>
-        </div>
-
-        <p className="text-xs text-[#8e95a5] leading-relaxed">
-          Are you stuck? You can get hints at certain time intervals.
-        </p>
-
-        {hintError && (
-          <div className="p-2.5 rounded-xl bg-red-950/60 border border-red-500/50 text-red-200 text-xs font-mono">
-            {hintError}
-          </div>
-        )}
-
-        {/* Single Dynamic Hint Button */}
-        <div>
-          {(() => {
-            const totalHints = ROUND1_HINTS.length;
-            const allHintsTaken = hintsTaken.length >= totalHints;
-            const nextHintIndex = hintsTaken.length + 1;
-            const nextHint = ROUND1_HINTS.find((h) => h.hintIndex === nextHintIndex);
-            const isAvailable = nextHint ? elapsedSeconds >= nextHint.availableAfterSeconds : false;
-            const secondsLeft = nextHint ? Math.max(0, nextHint.availableAfterSeconds - elapsedSeconds) : 0;
-            const mins = Math.floor(secondsLeft / 60);
-            const secs = secondsLeft % 60;
-
-            if (allHintsTaken) {
-              return (
-                <button
-                  disabled
-                  className="w-full py-3.5 px-4 rounded-xl bg-[#161922] border border-[#2a2e3d] text-[#8e95a5] font-mono text-xs font-bold flex items-center justify-center space-x-2 cursor-not-allowed opacity-80"
-                >
-                  <Check className="w-4 h-4 text-emerald-400" />
-                  <span>All Hints Revealed [3/3]</span>
-                </button>
-              );
-            }
-
-            if (isAvailable && nextHint) {
-              return (
-                <button
-                  onClick={() => handleRequestHint(nextHint.hintIndex)}
-                  disabled={requestingHintIndex === nextHint.hintIndex}
-                  className="w-full py-3.5 px-4 bg-gradient-to-r from-[#c4a45a] via-[#e5cb87] to-[#c4a45a] hover:from-[#d8b86e] hover:to-[#f0d89e] text-[#08090c] font-mono font-bold text-xs rounded-xl shadow-gold-glow flex items-center justify-center space-x-2 transition-all disabled:opacity-50 active:scale-[0.99]"
-                >
-                  <Lightbulb className="w-4 h-4 text-[#08090c]" />
-                  <span>
-                    {requestingHintIndex === nextHint.hintIndex
-                      ? `Unlocking Hint [${nextHint.hintIndex}/${totalHints}]...`
-                      : `Request Hint [${nextHint.hintIndex}/${totalHints}] (-30 PTS)`}
-                  </span>
-                </button>
-              );
-            }
-
-            return (
-              <button
-                disabled
-                className="w-full py-3.5 px-4 rounded-xl bg-[#161922]/80 border border-[#2a2e3d] text-[#8e95a5] font-mono text-xs flex items-center justify-center space-x-2 cursor-not-allowed"
-              >
-                <Clock className="w-4 h-4 text-[#c4a45a]" />
-                <span>
-                  Hint [{nextHintIndex}/${totalHints}] Unlocks in {mins}m {secs < 10 ? '0' : ''}{secs}s
-                </span>
-              </button>
-            );
-          })()}
-        </div>
-
-        {/* Revealed Hints List */}
-        {hintsTaken.length > 0 && (
-          <div className="space-y-2.5 pt-1">
-            {hintsTaken.map((idx) => {
-              const hint = ROUND1_HINTS.find((h) => h.hintIndex === idx);
-              const hintText = generateHintText(idx, teamSize, slotMembers);
-              return (
-                <div
-                  key={idx}
-                  className="p-3.5 rounded-xl bg-gradient-to-r from-emerald-950/40 via-[#10121a] to-emerald-950/40 border border-emerald-500/50 space-y-1.5"
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="text-[10px] font-mono font-bold text-emerald-400 flex items-center space-x-1">
-                      <Check className="w-3.5 h-3.5" />
-                      <span>HINT [{idx}/3] REVEALED: {hint?.title}</span>
-                    </span>
-                    <span className="text-[9px] font-mono text-rose-400/90 font-bold">-30 PTS APPLIED</span>
-                  </div>
-                  <p className="text-xs font-mono text-[#f4f0e8] leading-relaxed select-all">
-                    {hintText}
-                  </p>
-                </div>
-              );
-            })}
-          </div>
         )}
       </div>
     </div>

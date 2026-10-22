@@ -1,4 +1,50 @@
-import type { GameConfig, Round2Config } from '../types';
+import type { GameConfig, Round2Config, Round3Config } from '../types';
+
+export const DEFAULT_ROUND3_CONFIG: Round3Config = {
+  target_distance_meters: 1000,
+  headstart_point_divisor: 5,
+  max_headstart_meters: 200,
+  num_scheduled_waves: 4,
+  wave_phase_durations: {
+    BLUFF: 55,
+    VOTE: 20,
+    REVEAL: 25,
+  },
+  vessels: {
+    ROWBOAT: {
+      name: "The Rowboat",
+      icon: "🚣",
+      risk_label: "SAFE",
+      capacity_rule: "UNLIMITED",
+      distance_success: 150,
+      distance_fail: 150,
+      desc: "Steady oars. Never capsizes. Reliable +150m.",
+    },
+    SAILBOAT: {
+      name: "The Sailboat",
+      icon: "⛵",
+      risk_label: "BALANCED",
+      capacity_rule: "MAX_PERCENT",
+      capacity_percent: 0.30,
+      distance_success: 300,
+      distance_fail: 0,
+      desc: "Fast winds (+300m), but capsizes (0m) if >30% of active crews board!",
+    },
+    GHOST_SHIP: {
+      name: "The Ghost Ship",
+      icon: "⚡",
+      risk_label: "SOLO GAMBLE",
+      capacity_rule: "EXACTLY_ONE",
+      distance_success: 450,
+      distance_fail: -50,
+      desc: "Mythic phantom vessel (+450m). Succeeds ONLY if 1 crew boards! 2+ crews collide (-50m).",
+    },
+  },
+  vengeance: {
+    cerberus_penalty_meters: -150,
+    cerberus_bonus_meters: 150,
+  },
+};
 
 export const DEFAULT_ROUND2_CONFIG: Round2Config = {
   num_clashes: 3,
@@ -41,6 +87,7 @@ export const DEFAULT_CONFIG: GameConfig = {
   team_size: 5,
   admin_passcode: "underworld",
   round2: DEFAULT_ROUND2_CONFIG,
+  round3: DEFAULT_ROUND3_CONFIG,
   roles: [
     {
       id: "navigator",
@@ -102,20 +149,11 @@ export const DEFAULT_CONFIG: GameConfig = {
     },
     {
       id: "round-3",
-      type: "OFFLINE_TASK_TIMER",
-      title: "Round 3: Charon's Physical Trial",
-      subtitle: "An in-person physical challenge at the pub table. Complete it before the sands of time empty!",
-      durationSeconds: 240,
-      data: {
-        prompt: "Stack 5 beer coasters / drink mats vertically on the pub table, or place all phones in a circle touching corners while singing a 10-second sea shanty to summon Charon!",
-        rules: [
-          "Every member of the crew must participate physically.",
-          "Once completed, show the bartender/Admin or enter the secret Pub Rune Code below.",
-          "Verification Code is announced live in the pub by the Game Master."
-        ],
-        verificationCode: "OBOLUS",
-        points: 250
-      }
+      type: "ODYSSEY_ESCAPE_ROYALE",
+      title: "Round 3: Escape from Tartarus (The Final Round)",
+      subtitle: "Simultaneous room-wide Battle Royale & Minority Congestion Game. Coordinate your crew, bluff your rivals, and cross the 1,000m London Portal before the Underworld seals!",
+      durationSeconds: 400,
+      data: {}
     }
   ]
 };

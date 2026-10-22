@@ -1,5 +1,5 @@
 import { supabase } from './supabase';
-import { DEFAULT_CONFIG, DEFAULT_ROUND2_CONFIG } from './defaultConfig';
+import { DEFAULT_CONFIG, DEFAULT_ROUND2_CONFIG, DEFAULT_ROUND3_CONFIG } from './defaultConfig';
 import type {
   Player,
   Team,
@@ -12,6 +12,13 @@ import type {
   Round2Config,
   Round2ScoringTier,
   Round2Phase,
+  Round3Session,
+  Round3Phase,
+  Round3Vessel,
+  Round3SuddenDeathAction,
+  Round3Config,
+  Round3TeamState,
+  Round3SuddenDeathState,
 } from '../types';
 import {
   generateBattleCode,
@@ -25,6 +32,12 @@ import {
   generateHintText,
   ROUND1_HINTS,
 } from './round1Engine';
+import {
+  calculateHeadstartMeters,
+  resolveTeamVesselChoice,
+  evaluateWaveCongestion,
+  resolveSuddenDeath,
+} from './round3Engine';
 import { DEFAULT_ROUND1_CODEWORDS } from './tabletEngine';
 
 const JOIN_CODE_CHARS = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
@@ -355,11 +368,12 @@ export async function processMatchPhaseAdvance(
 export async function fetchFullSyncPayloadFromSupabase(forPlayerId?: string, forTeamId?: string): Promise<SyncPayload> {
   if (!supabase) throw new Error('Supabase is not configured');
 
-  const [gameStateRes, teamsRes, playersRes, matchesRes] = await Promise.all([
+  const [gameStateRes, teamsRes, playersRes, matchesRes, round3SessionRes] = await Promise.all([
     supabase.from('game_state').select('*').limit(1).maybeSingle(),
     supabase.from('teams').select('*'),
     supabase.from('players').select('*'),
     supabase.from('round2_matches').select('*'),
+    supabase.from('round3_session').select('*').limit(1).maybeSingle(),
   ]);
 
   const stateRow = gameStateRes.data || {
@@ -387,6 +401,22 @@ export async function fetchFullSyncPayloadFromSupabase(forPlayerId?: string, for
       scoring_matrix: {
         ...DEFAULT_ROUND2_CONFIG.scoring_matrix,
         ...(rawConfig.round2?.scoring_matrix || {}),
+      },
+    },
+    round3: {
+      ...DEFAULT_ROUND3_CONFIG,
+      ...(rawConfig.round3 || {}),
+      wave_phase_durations: {
+        ...DEFAULT_ROUND3_CONFIG.wave_phase_durations,
+        ...(rawConfig.round3?.wave_phase_durations || {}),
+      },
+      vessels: {
+        ...DEFAULT_ROUND3_CONFIG.vessels,
+        ...(rawConfig.round3?.vessels || {}),
+      },
+      vengeance: {
+        ...DEFAULT_ROUND3_CONFIG.vengeance,
+        ...(rawConfig.round3?.vengeance || {}),
       },
     },
   };
@@ -444,6 +474,28 @@ export async function fetchFullSyncPayloadFromSupabase(forPlayerId?: string, for
   }
 
   const sanitizedPlayerMatch = playerMatch ? sanitizeMatchForPlayer(playerMatch, player?.id, team?.id) : null;
+
+  // Process Round 3 Session
+  let round3Session: Round3Session | null = round3SessionRes.data ? mapDbRound3Session(round3SessionRes.data) : null;
+  if (curRound?.type === 'ODYSSEY_ESCAPE_ROYALE') {
+    if (!round3Session || !round3Session.team_states || Object.keys(round3Session.team_states).length === 0) {
+      round3Session = await supabaseInitRound3(config, teams);
+    } else if (
+      !round3Session.is_sudden_death &&
+      round3Session.current_phase !== 'COMPLETED' &&
+      round3Session.phase_ends_at &&
+      now >= round3Session.phase_ends_at
+    ) {
+      round3Session = await processRound3WaveAdvance(round3Session, config, teamsMap, playersMap);
+    } else if (
+      round3Session.is_sudden_death &&
+      round3Session.sudden_death_state &&
+      round3Session.sudden_death_state.phase_ends_at &&
+      now >= round3Session.sudden_death_state.phase_ends_at
+    ) {
+      round3Session = await processRound3WaveAdvance(round3Session, config, teamsMap, playersMap);
+    }
+  }
 
   // Build Leaderboard
   const teamsList = teams
@@ -523,6 +575,7 @@ export async function fetchFullSyncPayloadFromSupabase(forPlayerId?: string, for
     round2_all_matches: matches,
     teams_leaderboard: teamsList,
     unassigned_players: unassigned,
+    round3_session: round3Session,
   };
 }
 
@@ -1684,6 +1737,645 @@ export async function supabaseAdminRound2ResetMatches(): Promise<{ success: bool
     if (t.round_submissions && t.round_submissions['round-2']) {
       const updated = { ...t.round_submissions };
       delete updated['round-2'];
+      await supabase.from('teams').update({ round_submissions: updated }).eq('id', t.id);
+    }
+  }
+
+  return { success: true };
+}
+
+// --------------------------------------------------------------------------
+// ROUND 3: THE ODYSSEY ESCAPE ROYALE SERVICE FUNCTIONS
+// --------------------------------------------------------------------------
+
+export function mapDbRound3Session(row: any): Round3Session {
+  return {
+    id: row.id || 'r3_main',
+    session_id: row.session_id || 'main',
+    current_wave: Number(row.current_wave || 1),
+    current_phase: (row.current_phase || 'BLUFF') as Round3Phase,
+    phase_ends_at: Number(row.phase_ends_at || 0),
+    team_states: row.team_states || {},
+    wave_votes: row.wave_votes || {},
+    wave_reports: row.wave_reports || {},
+    is_sudden_death: Boolean(row.is_sudden_death),
+    sudden_death_state: row.sudden_death_state || null,
+    podium: row.podium || {
+      gold_team_id: null,
+      silver_team_id: null,
+      bronze_team_id: null,
+    },
+    updated_at: row.updated_at,
+  };
+}
+
+export async function supabaseInitRound3(
+  config: GameConfig,
+  teams: Team[],
+  forceReset: boolean = false
+): Promise<Round3Session> {
+  if (!supabase) throw new Error('Supabase not configured');
+
+  const r3Config = config.round3 || DEFAULT_ROUND3_CONFIG;
+  const durations = r3Config.wave_phase_durations || DEFAULT_ROUND3_CONFIG.wave_phase_durations;
+  const now = Date.now();
+
+  if (!forceReset) {
+    const { data: existing } = await supabase.from('round3_session').select('*').limit(1).maybeSingle();
+    if (existing && existing.team_states && Object.keys(existing.team_states).length > 0) {
+      return mapDbRound3Session(existing);
+    }
+  }
+
+  // Calculate starting head-start for each active team
+  const teamStates: Record<string, Round3TeamState> = {};
+  for (const team of teams) {
+    const startingMeters = calculateHeadstartMeters(team.score, r3Config);
+    teamStates[team.id] = {
+      team_id: team.id,
+      current_distance_meters: startingMeters,
+      has_escaped: false,
+      escape_rank: null,
+      escaped_in_wave: null,
+      cerberus_used: false,
+    };
+
+    // Upsert into round3_team_state table
+    await supabase.from('round3_team_state').upsert({
+      team_id: team.id,
+      current_distance_meters: startingMeters,
+      has_escaped: false,
+      escape_rank: null,
+      escaped_in_wave: null,
+      cerberus_used: false,
+      updated_at: new Date().toISOString(),
+    });
+  }
+
+  const initialSession: Round3Session = {
+    id: 'r3_main',
+    session_id: 'main',
+    current_wave: 1,
+    current_phase: 'BLUFF',
+    phase_ends_at: now + (durations.BLUFF || 55) * 1000,
+    team_states: teamStates,
+    wave_votes: { 1: {} },
+    wave_reports: {},
+    is_sudden_death: false,
+    sudden_death_state: null,
+    podium: {
+      gold_team_id: null,
+      silver_team_id: null,
+      bronze_team_id: null,
+    },
+    updated_at: new Date().toISOString(),
+  };
+
+  await supabase.from('round3_session').upsert({
+    id: initialSession.id,
+    session_id: initialSession.session_id,
+    current_wave: initialSession.current_wave,
+    current_phase: initialSession.current_phase,
+    phase_ends_at: initialSession.phase_ends_at,
+    is_sudden_death: false,
+    sudden_death_teams: null,
+    sudden_death_state: null,
+    team_states: initialSession.team_states,
+    wave_votes: initialSession.wave_votes,
+    wave_reports: initialSession.wave_reports,
+    podium: initialSession.podium,
+    updated_at: initialSession.updated_at,
+  });
+
+  return initialSession;
+}
+
+function resolveSuddenDeathStance(
+  votes: Record<string, Round3SuddenDeathAction>,
+  memberIds: string[],
+  playersMap: Map<string, Player>
+): Round3SuddenDeathAction {
+  const counts: Record<Round3SuddenDeathAction, number> = {
+    SHIELDS: 0,
+    RAM: 0,
+    SAILS: 0,
+  };
+  for (const pid of memberIds) {
+    const v = votes[pid];
+    if (v && counts[v] !== undefined) counts[v]++;
+  }
+
+  const maxV = Math.max(counts.SHIELDS, counts.RAM, counts.SAILS);
+  if (maxV === 0) return 'SHIELDS';
+
+  const tied = (['SHIELDS', 'RAM', 'SAILS'] as Round3SuddenDeathAction[]).filter(a => counts[a] === maxV);
+  if (tied.length === 1) return tied[0];
+
+  const negId = memberIds.find(pid => playersMap.get(pid)?.roleId === 'negotiator');
+  if (negId && votes[negId] && tied.includes(votes[negId])) {
+    return votes[negId];
+  }
+  return tied[0];
+}
+
+export async function processRound3WaveAdvance(
+  session: Round3Session,
+  config: GameConfig,
+  teamsMap: Map<string, Team>,
+  playersMap: Map<string, Player>,
+  forceSkip: boolean = false
+): Promise<Round3Session> {
+  if (!supabase) return session;
+  const now = Date.now();
+
+  // 1. Handle Sudden Death progression if active
+  if (session.is_sudden_death && session.sudden_death_state) {
+    const sd = session.sudden_death_state;
+    if (forceSkip || (sd.phase_ends_at && now >= sd.phase_ends_at)) {
+      if (sd.phase === 'PARLEY') {
+        sd.phase = 'VOTE';
+        sd.phase_ends_at = now + 20 * 1000;
+      } else if (sd.phase === 'VOTE') {
+        sd.phase = 'REVEAL';
+        sd.phase_ends_at = now + 30 * 1000;
+
+        const [teamAId, teamBId] = sd.teams;
+        const teamA = teamsMap.get(teamAId);
+        const teamB = teamsMap.get(teamBId);
+
+        const stanceA = resolveSuddenDeathStance(sd.player_votes.team_a || {}, teamA?.player_ids || [], playersMap);
+        const stanceB = resolveSuddenDeathStance(sd.player_votes.team_b || {}, teamB?.player_ids || [], playersMap);
+        sd.stances.team_a = stanceA;
+        sd.stances.team_b = stanceB;
+
+        const outcome = resolveSuddenDeath(stanceA, stanceB);
+        sd.resolution_text = outcome.description;
+        if (outcome.winner === 'team_a') {
+          sd.winner_team_id = teamAId;
+        } else if (outcome.winner === 'team_b') {
+          sd.winner_team_id = teamBId;
+        } else {
+          sd.winner_team_id = null;
+        }
+      }
+
+      await supabase.from('round3_session').update({
+        sudden_death_state: sd,
+        updated_at: new Date().toISOString(),
+      }).eq('id', session.id);
+    }
+    return session;
+  }
+
+  // 2. Normal wave progression
+  if (session.current_phase === 'COMPLETED') {
+    return session;
+  }
+
+  if (!forceSkip && (!session.phase_ends_at || now < session.phase_ends_at)) {
+    return session;
+  }
+
+  const r3Config = config.round3 || DEFAULT_ROUND3_CONFIG;
+  const durations = r3Config.wave_phase_durations || DEFAULT_ROUND3_CONFIG.wave_phase_durations;
+  const currentWave = session.current_wave;
+
+  if (session.current_phase === 'BLUFF') {
+    session.current_phase = 'VOTE';
+    session.phase_ends_at = now + (durations.VOTE || 20) * 1000;
+
+    if (!session.wave_votes[currentWave]) {
+      session.wave_votes[currentWave] = {};
+    }
+  } else if (session.current_phase === 'VOTE') {
+    session.current_phase = 'REVEAL';
+    session.phase_ends_at = now + (durations.REVEAL || 25) * 1000;
+
+    const currentWaveVotes = session.wave_votes[currentWave] || {};
+    const participatingTeams: Team[] = [];
+
+    for (const [tid, team] of teamsMap.entries()) {
+      if (!session.team_states[tid]?.has_escaped) {
+        participatingTeams.push(team);
+        let tVote = currentWaveVotes[tid];
+        if (!tVote) {
+          tVote = {
+            team_id: tid,
+            player_votes: {},
+            resolved_vessel: 'ROWBOAT',
+            meters_gained: 0,
+            created_at: new Date().toISOString(),
+          };
+          currentWaveVotes[tid] = tVote;
+        } else if (!tVote.resolved_vessel) {
+          tVote.resolved_vessel = resolveTeamVesselChoice(
+            tVote.player_votes || {},
+            team.player_ids || [],
+            playersMap
+          );
+        }
+      }
+    }
+    session.wave_votes[currentWave] = currentWaveVotes;
+
+    // Evaluate wave congestion & distance surge
+    const waveReport = evaluateWaveCongestion({
+      activeTeams: participatingTeams,
+      teamVotes: currentWaveVotes,
+      currentTeamStates: session.team_states,
+      config: r3Config,
+      waveNumber: currentWave,
+      existingPodium: session.podium,
+      teamsMap,
+    });
+
+    session.wave_reports[currentWave] = waveReport;
+
+    // Apply distance updates to team states and database
+    for (const tid in waveReport.team_outcomes) {
+      const outcome = waveReport.team_outcomes[tid];
+      const curState = session.team_states[tid] || {
+        team_id: tid,
+        current_distance_meters: 0,
+        has_escaped: false,
+        escape_rank: null,
+        escaped_in_wave: null,
+        cerberus_used: false,
+      };
+
+      curState.current_distance_meters = outcome.new_total_distance;
+      if (outcome.just_escaped) {
+        curState.has_escaped = true;
+        curState.escaped_in_wave = currentWave;
+        curState.escape_rank = outcome.escape_rank || null;
+
+        // Assign podium spot
+        if (outcome.escape_rank === 1 && !session.podium.gold_team_id) {
+          session.podium.gold_team_id = tid;
+        } else if (outcome.escape_rank === 2 && !session.podium.silver_team_id) {
+          session.podium.silver_team_id = tid;
+        } else if (outcome.escape_rank === 3 && !session.podium.bronze_team_id) {
+          session.podium.bronze_team_id = tid;
+        }
+
+        // Award bonus score on teams table for escaping
+        const teamObj = teamsMap.get(tid);
+        if (teamObj) {
+          const rankBonus = outcome.escape_rank === 1 ? 500 : outcome.escape_rank === 2 ? 350 : outcome.escape_rank === 3 ? 200 : 100;
+          const updatedScore = teamObj.score + rankBonus;
+          const updatedSubmissions = {
+            ...teamObj.round_submissions,
+            'round-3': {
+              completed: true,
+              completedAt: now,
+              answerSubmitted: `ESCAPED_WAVE_${currentWave}_${outcome.vessel}`,
+              pointsAwarded: rankBonus,
+              isCorrect: true,
+              solveTimeSeconds: currentWave * 100,
+            } as RoundSubmission,
+          };
+          await supabase.from('teams').update({
+            score: updatedScore,
+            round_submissions: updatedSubmissions,
+          }).eq('id', tid);
+        }
+      }
+
+      // Check Cerberus used
+      const vote = currentWaveVotes[tid];
+      if (vote?.cerberus_target_team_id) {
+        curState.cerberus_used = true;
+      }
+
+      session.team_states[tid] = curState;
+
+      // Update round3_team_state table in DB
+      await supabase.from('round3_team_state').upsert({
+        team_id: tid,
+        current_distance_meters: curState.current_distance_meters,
+        has_escaped: curState.has_escaped,
+        escape_rank: curState.escape_rank,
+        escaped_in_wave: curState.escaped_in_wave,
+        cerberus_used: curState.cerberus_used,
+        updated_at: new Date().toISOString(),
+      });
+    }
+
+    // Persist wave vote details to round3_wave_votes table for relational logs
+    for (const tid in currentWaveVotes) {
+      const vote = currentWaveVotes[tid];
+      const outcome = waveReport.team_outcomes[tid];
+      await supabase.from('round3_wave_votes').insert({
+        id: `vote_w${currentWave}_${tid}_${now}`,
+        wave_number: currentWave,
+        team_id: tid,
+        player_votes: vote.player_votes,
+        resolved_vessel: vote.resolved_vessel,
+        cerberus_target_team_id: vote.cerberus_target_team_id || null,
+        cerberus_guessed_vessel: vote.cerberus_guessed_vessel || null,
+        meters_gained: outcome?.total_meters_gained || 0,
+        created_at: new Date().toISOString(),
+      });
+    }
+  } else if (session.current_phase === 'REVEAL') {
+    // Check if 3 teams have escaped (or all active participating teams escaped)
+    const escapedCount = Object.values(session.team_states).filter(s => s.has_escaped).length;
+    const totalTeams = teamsMap.size;
+
+    if (escapedCount >= 3 || (totalTeams > 0 && escapedCount >= totalTeams)) {
+      session.current_phase = 'COMPLETED';
+      session.phase_ends_at = now;
+    } else {
+      // Wave continuation: Advance to next wave
+      session.current_wave = currentWave + 1;
+      session.current_phase = 'BLUFF';
+      session.phase_ends_at = now + (durations.BLUFF || 55) * 1000;
+      session.wave_votes[session.current_wave] = {};
+    }
+  }
+
+  // Persist updated session to DB
+  await supabase.from('round3_session').upsert({
+    id: session.id,
+    session_id: session.session_id,
+    current_wave: session.current_wave,
+    current_phase: session.current_phase,
+    phase_ends_at: session.phase_ends_at,
+    is_sudden_death: session.is_sudden_death,
+    sudden_death_state: session.sudden_death_state,
+    team_states: session.team_states,
+    wave_votes: session.wave_votes,
+    wave_reports: session.wave_reports,
+    podium: session.podium,
+    updated_at: new Date().toISOString(),
+  });
+
+  return session;
+}
+
+export async function supabaseRound3CastVote(
+  teamId: string,
+  playerId: string,
+  vessel: Round3Vessel,
+  cerberusTargetTeamId?: string,
+  cerberusGuessedVessel?: Round3Vessel
+): Promise<{ success: boolean; error?: string }> {
+  if (!supabase) return { success: false, error: 'Database disconnected' };
+
+  const { data: sessionRow } = await supabase.from('round3_session').select('*').limit(1).maybeSingle();
+  if (!sessionRow) return { success: false, error: 'Round 3 session not active' };
+
+  if (sessionRow.current_phase !== 'VOTE') {
+    return { success: false, error: 'Voting is only open during the VOTE phase.' };
+  }
+
+  const session = mapDbRound3Session(sessionRow);
+  const curWave = session.current_wave;
+  if (!session.wave_votes[curWave]) {
+    session.wave_votes[curWave] = {};
+  }
+  if (!session.wave_votes[curWave][teamId]) {
+    session.wave_votes[curWave][teamId] = {
+      team_id: teamId,
+      player_votes: {},
+      resolved_vessel: vessel,
+      meters_gained: 0,
+      created_at: new Date().toISOString(),
+    };
+  }
+
+  const teamVote = session.wave_votes[curWave][teamId];
+  teamVote.player_votes[playerId] = vessel;
+
+  // Cerberus guess (if eligible)
+  if (cerberusTargetTeamId && cerberusGuessedVessel && !session.team_states[teamId]?.cerberus_used) {
+    teamVote.cerberus_target_team_id = cerberusTargetTeamId;
+    teamVote.cerberus_guessed_vessel = cerberusGuessedVessel;
+  }
+
+  await supabase.from('round3_session').update({
+    wave_votes: session.wave_votes,
+    updated_at: new Date().toISOString(),
+  }).eq('id', session.id);
+
+  return { success: true };
+}
+
+export async function supabaseRound3SuddenDeathVote(
+  teamId: string,
+  playerId: string,
+  action: Round3SuddenDeathAction
+): Promise<{ success: boolean; error?: string }> {
+  if (!supabase) return { success: false, error: 'Database disconnected' };
+
+  const { data: sessionRow } = await supabase.from('round3_session').select('*').limit(1).maybeSingle();
+  if (!sessionRow || !sessionRow.sudden_death_state) {
+    return { success: false, error: 'Sudden death standoff is not active' };
+  }
+
+  const session = mapDbRound3Session(sessionRow);
+  const sd = session.sudden_death_state;
+  if (!sd || sd.phase !== 'VOTE') {
+    return { success: false, error: 'Voting is only open during Sudden Death VOTE phase' };
+  }
+
+  if (sd.teams[0] === teamId) {
+    if (!sd.player_votes.team_a) sd.player_votes.team_a = {};
+    sd.player_votes.team_a[playerId] = action;
+  } else if (sd.teams[1] === teamId) {
+    if (!sd.player_votes.team_b) sd.player_votes.team_b = {};
+    sd.player_votes.team_b[playerId] = action;
+  } else {
+    return { success: false, error: 'Your team is not a contender in this Sudden Death Standoff' };
+  }
+
+  await supabase.from('round3_session').update({
+    sudden_death_state: sd,
+    updated_at: new Date().toISOString(),
+  }).eq('id', session.id);
+
+  return { success: true };
+}
+
+export async function supabaseAdminRound3AdjustTimer(deltaSeconds: number): Promise<{ success: boolean }> {
+  if (!supabase) return { success: false };
+
+  const { data: sessionRow } = await supabase.from('round3_session').select('*').limit(1).maybeSingle();
+  if (!sessionRow) return { success: false };
+
+  const now = Date.now();
+  if (sessionRow.is_sudden_death && sessionRow.sudden_death_state) {
+    const curEnds = Number(sessionRow.sudden_death_state.phase_ends_at) || now;
+    const base = curEnds < now ? now : curEnds;
+    sessionRow.sudden_death_state.phase_ends_at = base + deltaSeconds * 1000;
+    await supabase.from('round3_session').update({
+      sudden_death_state: sessionRow.sudden_death_state,
+      updated_at: new Date().toISOString(),
+    }).eq('id', sessionRow.id);
+  } else {
+    const curEnds = Number(sessionRow.phase_ends_at) || now;
+    const base = curEnds < now ? now : curEnds;
+    await supabase.from('round3_session').update({
+      phase_ends_at: base + deltaSeconds * 1000,
+      updated_at: new Date().toISOString(),
+    }).eq('id', sessionRow.id);
+  }
+
+  return { success: true };
+}
+
+export async function supabaseAdminRound3NextPhase(): Promise<{ success: boolean }> {
+  if (!supabase) return { success: false };
+
+  const { data: sessionRow } = await supabase.from('round3_session').select('*').limit(1).maybeSingle();
+  if (!sessionRow) return { success: false };
+
+  const { row: stateData } = await getGameStateRow();
+  const config = (stateData?.config && Object.keys(stateData.config).length > 0) ? stateData.config : DEFAULT_CONFIG;
+  const [{ data: allTeams }, { data: allPlayers }] = await Promise.all([
+    supabase.from('teams').select('*'),
+    supabase.from('players').select('*'),
+  ]);
+  const teamsMap = new Map((allTeams || []).map(mapDbTeam).map(t => [t.id, t]));
+  const playersMap = new Map((allPlayers || []).map(mapDbPlayer).map(p => [p.id, p]));
+
+  const session = mapDbRound3Session(sessionRow);
+  await processRound3WaveAdvance(session, config, teamsMap, playersMap, true);
+  return { success: true };
+}
+
+export async function supabaseAdminRound3ForceNextWave(): Promise<{ success: boolean }> {
+  if (!supabase) return { success: false };
+
+  const { data: sessionRow } = await supabase.from('round3_session').select('*').limit(1).maybeSingle();
+  if (!sessionRow) return { success: false };
+
+  const session = mapDbRound3Session(sessionRow);
+  const now = Date.now();
+  const durations = DEFAULT_ROUND3_CONFIG.wave_phase_durations;
+
+  session.current_wave = session.current_wave + 1;
+  session.current_phase = 'BLUFF';
+  session.phase_ends_at = now + durations.BLUFF * 1000;
+  if (!session.wave_votes[session.current_wave]) {
+    session.wave_votes[session.current_wave] = {};
+  }
+
+  await supabase.from('round3_session').update({
+    current_wave: session.current_wave,
+    current_phase: session.current_phase,
+    phase_ends_at: session.phase_ends_at,
+    wave_votes: session.wave_votes,
+    updated_at: new Date().toISOString(),
+  }).eq('id', session.id);
+
+  return { success: true };
+}
+
+export async function supabaseAdminRound3AdjustDistance(teamId: string, deltaMeters: number): Promise<{ success: boolean }> {
+  if (!supabase) return { success: false };
+
+  const { data: sessionRow } = await supabase.from('round3_session').select('*').limit(1).maybeSingle();
+  if (!sessionRow) return { success: false };
+
+  const session = mapDbRound3Session(sessionRow);
+  if (!session.team_states[teamId]) {
+    session.team_states[teamId] = {
+      team_id: teamId,
+      current_distance_meters: 0,
+      has_escaped: false,
+      escape_rank: null,
+      escaped_in_wave: null,
+      cerberus_used: false,
+    };
+  }
+
+  const curState = session.team_states[teamId];
+  curState.current_distance_meters = Math.max(0, curState.current_distance_meters + deltaMeters);
+  if (curState.current_distance_meters >= 1000) {
+    curState.has_escaped = true;
+    curState.escaped_in_wave = session.current_wave;
+  }
+
+  await Promise.all([
+    supabase.from('round3_session').update({
+      team_states: session.team_states,
+      updated_at: new Date().toISOString(),
+    }).eq('id', session.id),
+    supabase.from('round3_team_state').upsert({
+      team_id: teamId,
+      current_distance_meters: curState.current_distance_meters,
+      has_escaped: curState.has_escaped,
+      escape_rank: curState.escape_rank,
+      escaped_in_wave: curState.escaped_in_wave,
+      cerberus_used: curState.cerberus_used,
+      updated_at: new Date().toISOString(),
+    }),
+  ]);
+
+  return { success: true };
+}
+
+export async function supabaseAdminRound3TriggerSuddenDeath(teamAId: string, teamBId: string): Promise<{ success: boolean; error?: string }> {
+  if (!supabase) return { success: false, error: 'Database disconnected' };
+  if (teamAId === teamBId) return { success: false, error: 'Cannot trigger sudden death with identical team' };
+
+  const { data: sessionRow } = await supabase.from('round3_session').select('*').limit(1).maybeSingle();
+  if (!sessionRow) return { success: false, error: 'Round 3 session not active' };
+
+  const now = Date.now();
+  const suddenDeathState: Round3SuddenDeathState = {
+    is_active: true,
+    phase: 'PARLEY',
+    phase_ends_at: now + 40 * 1000,
+    teams: [teamAId, teamBId],
+    player_votes: {
+      team_a: {},
+      team_b: {},
+    },
+    stances: {},
+    winner_team_id: null,
+    resolution_text: null,
+  };
+
+  await supabase.from('round3_session').update({
+    is_sudden_death: true,
+    sudden_death_teams: [teamAId, teamBId],
+    sudden_death_state: suddenDeathState,
+    updated_at: new Date().toISOString(),
+  }).eq('id', sessionRow.id);
+
+  return { success: true };
+}
+
+export async function supabaseAdminRound3SaveConfig(round3Config: Round3Config): Promise<{ success: boolean }> {
+  if (!supabase) return { success: false };
+
+  const { id: stateId, row } = await getGameStateRow();
+  const config = row?.config || DEFAULT_CONFIG;
+
+  const updatedConfig: GameConfig = {
+    ...config,
+    round3: round3Config,
+  };
+
+  await supabase.from('game_state').update({ config: updatedConfig }).eq('id', stateId);
+  return { success: true };
+}
+
+export async function supabaseAdminRound3ResetSession(): Promise<{ success: boolean }> {
+  if (!supabase) return { success: false };
+
+  await supabase.from('round3_session').delete().neq('id', 'placeholder');
+  await supabase.from('round3_team_state').delete().neq('team_id', 'placeholder');
+  await supabase.from('round3_wave_votes').delete().neq('id', 'placeholder');
+
+  // Also remove round-3 from round_submissions on teams
+  const { data: teams } = await supabase.from('teams').select('id, round_submissions');
+  for (const t of (teams || [])) {
+    if (t.round_submissions && t.round_submissions['round-3']) {
+      const updated = { ...t.round_submissions };
+      delete updated['round-3'];
       await supabase.from('teams').update({ round_submissions: updated }).eq('id', t.id);
     }
   }

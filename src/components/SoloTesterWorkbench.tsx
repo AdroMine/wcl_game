@@ -18,7 +18,16 @@ import {
   adminRound2AdjustTimer,
   adminRound2AutoPair,
   round2CastVoteApi,
+  round3CastVoteApi,
+  round3SuddenDeathVoteApi,
+  adminRound3AdjustTimer,
+  adminRound3NextPhase,
+  adminRound3ForceNextWave,
+  adminRound3AdjustDistance,
+  adminRound3TriggerSuddenDeath,
+  adminRound3ResetSession,
 } from '../lib/api';
+import type { Round3Vessel, Round3SuddenDeathAction } from '../types';
 import {
   Smartphone,
   Layers,
@@ -33,6 +42,12 @@ import {
   AlertCircle,
   Crown,
   Handshake,
+  Compass,
+  Shield,
+  Zap,
+  FastForward,
+  RotateCcw,
+  Skull,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
@@ -43,13 +58,14 @@ export const SoloTesterWorkbench: React.FC = () => {
     team,
     currentRound,
     round2Match,
+    round3Session,
     submitAnswer,
     switchPlayer,
     refresh,
   } = useGameSession();
 
-  // Mode: 'table' (side-by-side pub table) | 'rack' (5 device frames) | 'round2' (Prisoner's Dilemma tester)
-  const [viewMode, setViewMode] = useState<'table' | 'rack' | 'round2'>('table');
+  // Mode: 'table' (side-by-side pub table) | 'rack' (5 device frames) | 'round2' (Prisoner's Dilemma) | 'round3' (Escape Royale)
+  const [viewMode, setViewMode] = useState<'table' | 'rack' | 'round2' | 'round3'>('table');
 
   // Word selection for testing (2-word phrases)
   const codewordsPool = (payload?.config?.rounds?.[0]?.data as any)?.codewords || DEFAULT_ROUND1_CODEWORDS;
@@ -194,6 +210,71 @@ export const SoloTesterWorkbench: React.FC = () => {
       for (const m of teamB.members) {
         if (m.id) await round2CastVoteApi(currentM.id, m.id, teamB.id, betaVote);
       }
+    }
+    await refresh();
+  };
+
+  // Round 3 Quick Scenario Testing
+  const handleR3CastPresetVotes = async (scenario: 'balanced' | 'capsized' | 'collision' | 'safe') => {
+    const teams = payload?.teams_leaderboard || [];
+    if (teams.length === 0) return;
+
+    for (let i = 0; i < teams.length; i++) {
+      const t = teams[i];
+      let vessel: Round3Vessel = 'ROWBOAT';
+      if (scenario === 'safe') {
+        vessel = 'ROWBOAT';
+      } else if (scenario === 'capsized') {
+        vessel = 'SAILBOAT';
+      } else if (scenario === 'collision') {
+        vessel = i < 2 ? 'GHOST_SHIP' : 'ROWBOAT';
+      } else if (scenario === 'balanced') {
+        vessel = i === 0 ? 'GHOST_SHIP' : (i === 1 ? 'SAILBOAT' : 'ROWBOAT');
+      }
+
+      for (const m of t.members) {
+        if (m.id) {
+          await round3CastVoteApi(t.id, m.id, vessel);
+        }
+      }
+    }
+    await refresh();
+  };
+
+  const handleR3SimulateCerberus = async () => {
+    const teams = payload?.teams_leaderboard || [];
+    if (teams.length < 2) return;
+    const teamA = teams[0];
+    const teamB = teams[1];
+
+    // Team B picks GHOST_SHIP, Team A picks ROWBOAT and targets Team B guessing GHOST_SHIP
+    for (const m of teamB.members) {
+      if (m.id) await round3CastVoteApi(teamB.id, m.id, 'GHOST_SHIP');
+    }
+    for (const m of teamA.members) {
+      if (m.id) await round3CastVoteApi(teamA.id, m.id, 'ROWBOAT', teamB.id, 'GHOST_SHIP');
+    }
+    for (let i = 2; i < teams.length; i++) {
+      for (const m of teams[i].members) {
+        if (m.id) await round3CastVoteApi(teams[i].id, m.id, 'ROWBOAT');
+      }
+    }
+    await refresh();
+  };
+
+  const handleR3SuddenDeathScenario = async (actionA: Round3SuddenDeathAction, actionB: Round3SuddenDeathAction) => {
+    const teams = payload?.teams_leaderboard || [];
+    if (teams.length < 2) return;
+    const teamA = teams[0];
+    const teamB = teams[1];
+
+    await adminRound3TriggerSuddenDeath(adminPass, teamA.id, teamB.id);
+
+    for (const m of teamA.members) {
+      if (m.id) await round3SuddenDeathVoteApi(teamA.id, m.id, actionA);
+    }
+    for (const m of teamB.members) {
+      if (m.id) await round3SuddenDeathVoteApi(teamB.id, m.id, actionB);
     }
     await refresh();
   };
@@ -450,7 +531,7 @@ export const SoloTesterWorkbench: React.FC = () => {
       </div>
 
       {/* View Mode Tabs */}
-      <div className="grid grid-cols-3 gap-2 bg-[#10121a] border border-[#2a2e3d] p-1.5 rounded-2xl max-w-xl mx-auto">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-2 bg-[#10121a] border border-[#2a2e3d] p-1.5 rounded-2xl max-w-3xl mx-auto">
         <button
           onClick={() => setViewMode('table')}
           className={`py-2 px-3 rounded-xl text-xs font-mono font-bold flex items-center justify-center space-x-2 transition-all ${
@@ -460,7 +541,7 @@ export const SoloTesterWorkbench: React.FC = () => {
           }`}
         >
           <Layers className="w-4 h-4" />
-          <span>Side-by-Side Table View</span>
+          <span>Side-by-Side Table</span>
         </button>
 
         <button
@@ -472,7 +553,7 @@ export const SoloTesterWorkbench: React.FC = () => {
           }`}
         >
           <Smartphone className="w-4 h-4" />
-          <span>5-Phone Device Rack</span>
+          <span>5-Phone Rack</span>
         </button>
 
         <button
@@ -484,7 +565,19 @@ export const SoloTesterWorkbench: React.FC = () => {
           }`}
         >
           <Swords className="w-4 h-4" />
-          <span>Round 2 Dilemma Arena</span>
+          <span>Round 2 Dilemma</span>
+        </button>
+
+        <button
+          onClick={() => setViewMode('round3')}
+          className={`py-2 px-3 rounded-xl text-xs font-mono font-bold flex items-center justify-center space-x-2 transition-all ${
+            viewMode === 'round3'
+              ? 'bg-[#c4a45a] text-[#08090c] shadow-gold-glow'
+              : 'text-[#8e95a5] hover:text-[#f4f0e8]'
+          }`}
+        >
+          <Compass className="w-4 h-4" />
+          <span>Round 3 Escape</span>
         </button>
       </div>
 
@@ -731,6 +824,262 @@ export const SoloTesterWorkbench: React.FC = () => {
               </p>
             </button>
           </div>
+        </div>
+      )}
+
+      {/* ===================================================================== */}
+      {/* MODE 4: ROUND 3 ESCAPE ROYALE TEST ARENA                             */}
+      {/* ===================================================================== */}
+      {viewMode === 'round3' && (
+        <div className="space-y-4">
+          <div className="bg-[#10121a] border border-[#2a2e3d] rounded-2xl p-4 shadow-xl flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <div className="flex items-center space-x-2">
+                <Compass className="w-4 h-4 text-[#c4a45a]" />
+                <span className="text-xs font-serif font-bold text-[#f4f0e8] uppercase">
+                  Round 3: Escape from Tartarus (Escape Royale)
+                </span>
+                <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-[#c4a45a]/20 text-[#c4a45a] border border-[#c4a45a]/40">
+                  {round3Session?.is_sudden_death
+                    ? 'SUDDEN DEATH STANDOFF'
+                    : `WAVE ${round3Session?.current_wave || 1} • ${round3Session?.current_phase || 'NOT STARTED'}`}
+                </span>
+              </div>
+              <p className="text-[10px] text-[#8e95a5] mt-1">
+                Simulate minority game congestion, boat capsizing, Cerberus revenge strikes, and Sudden Death parleys.
+              </p>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                onClick={() => handleLaunchState('ROUND_ACTIVE', 2)}
+                className="py-1.5 px-3 rounded-xl bg-amber-900/60 border border-amber-500/50 hover:bg-amber-800 text-amber-200 text-xs font-mono font-bold flex items-center space-x-1"
+              >
+                <Play className="w-3.5 h-3.5" />
+                <span>Launch Round 3</span>
+              </button>
+              <button
+                onClick={async () => {
+                  await adminRound3NextPhase(adminPass);
+                  await refresh();
+                }}
+                className="py-1.5 px-3 rounded-xl bg-[#161922] border border-[#2a2e3d] hover:border-[#c4a45a] text-[#f4f0e8] text-xs font-mono flex items-center space-x-1"
+              >
+                <FastForward className="w-3.5 h-3.5 text-[#c4a45a]" />
+                <span>Advance Phase</span>
+              </button>
+              <button
+                onClick={async () => {
+                  await adminRound3ForceNextWave(adminPass);
+                  await refresh();
+                }}
+                className="py-1.5 px-3 rounded-xl bg-[#161922] border border-[#2a2e3d] hover:border-cyan-500/50 text-cyan-300 text-xs font-mono flex items-center space-x-1"
+              >
+                <span>Force Wave 🌊</span>
+              </button>
+              <button
+                onClick={async () => {
+                  await adminRound3AdjustTimer(adminPass, 15);
+                  await refresh();
+                }}
+                className="py-1.5 px-2.5 rounded-xl bg-[#161922] border border-[#2a2e3d] text-[#8e95a5] hover:text-[#f4f0e8] text-xs font-mono"
+              >
+                +15s
+              </button>
+              <button
+                onClick={async () => {
+                  await adminRound3ResetSession(adminPass);
+                  await refresh();
+                }}
+                className="py-1.5 px-2.5 rounded-xl bg-[#161922] border border-red-900/50 text-red-400 hover:text-red-300 text-xs font-mono flex items-center space-x-1"
+                title="Reset Round 3 session"
+              >
+                <RotateCcw className="w-3 h-3" />
+              </button>
+            </div>
+          </div>
+
+          {/* Quick Wave Simulation Presets */}
+          <div className="space-y-2">
+            <span className="text-[10px] font-mono uppercase text-[#8e95a5] tracking-widest block">
+              Simulate Wave Voting Scenarios
+            </span>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+              <button
+                onClick={() => handleR3CastPresetVotes('balanced')}
+                className="p-3.5 rounded-2xl bg-gradient-to-r from-cyan-950/60 to-[#10121a] border border-cyan-500/50 text-left hover:border-cyan-400 transition-all space-y-1.5"
+              >
+                <div className="flex items-center space-x-2 text-cyan-400 font-bold text-xs font-serif">
+                  <Zap className="w-4 h-4" />
+                  <span>Divergent: Solo Ghost Ship Surge</span>
+                </div>
+                <p className="text-[10px] text-[#8e95a5] leading-relaxed">
+                  1 crew takes Ghost Ship (+450m solo!), 1 crew Sailboat (+300m), others Rowboat (+150m).
+                </p>
+              </button>
+
+              <button
+                onClick={() => handleR3CastPresetVotes('capsized')}
+                className="p-3.5 rounded-2xl bg-gradient-to-r from-amber-950/60 to-[#10121a] border border-amber-500/50 text-left hover:border-amber-400 transition-all space-y-1.5"
+              >
+                <div className="flex items-center space-x-2 text-amber-400 font-bold text-xs font-serif">
+                  <AlertCircle className="w-4 h-4" />
+                  <span>Congestion: Sailboats Capsize</span>
+                </div>
+                <p className="text-[10px] text-[#8e95a5] leading-relaxed">
+                  All crews board Sailboat (&gt;30% cap) ➔ Overloaded! 💥 0m gained.
+                </p>
+              </button>
+
+              <button
+                onClick={() => handleR3CastPresetVotes('collision')}
+                className="p-3.5 rounded-2xl bg-gradient-to-r from-rose-950/60 to-[#10121a] border border-rose-500/50 text-left hover:border-rose-400 transition-all space-y-1.5"
+              >
+                <div className="flex items-center space-x-2 text-rose-400 font-bold text-xs font-serif">
+                  <Skull className="w-4 h-4" />
+                  <span>Greed: Ghost Ships Collide</span>
+                </div>
+                <p className="text-[10px] text-[#8e95a5] leading-relaxed">
+                  2+ crews board Ghost Ship ➔ 💥 Collide in the mist (-50m penalty!).
+                </p>
+              </button>
+
+              <button
+                onClick={() => handleR3CastPresetVotes('safe')}
+                className="p-3.5 rounded-2xl bg-gradient-to-r from-emerald-950/60 to-[#10121a] border border-emerald-500/50 text-left hover:border-emerald-400 transition-all space-y-1.5"
+              >
+                <div className="flex items-center space-x-2 text-emerald-400 font-bold text-xs font-serif">
+                  <CheckCircle2 className="w-4 h-4" />
+                  <span>Safe Armada: All Rowboats</span>
+                </div>
+                <p className="text-[10px] text-[#8e95a5] leading-relaxed">
+                  All crews take the steady oars ➔ Guaranteed +150m for every crew.
+                </p>
+              </button>
+            </div>
+          </div>
+
+          {/* Vengeance & Sudden Death Presets */}
+          <div className="space-y-2">
+            <span className="text-[10px] font-mono uppercase text-[#8e95a5] tracking-widest block">
+              Cerberus Strike & Sudden Death Showdowns
+            </span>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+              <button
+                onClick={handleR3SimulateCerberus}
+                className="p-3.5 rounded-2xl bg-gradient-to-r from-purple-950/60 to-[#10121a] border border-purple-500/50 text-left hover:border-purple-400 transition-all space-y-1.5"
+              >
+                <div className="flex items-center space-x-2 text-purple-400 font-bold text-xs font-serif">
+                  <Crown className="w-4 h-4" />
+                  <span>Sic Cerberus on Nemesis</span>
+                </div>
+                <p className="text-[10px] text-[#8e95a5] leading-relaxed">
+                  Team A correctly predicts Nemesis Team B's boat ➔ +150m bonus & -150m drag!
+                </p>
+              </button>
+
+              <button
+                onClick={() => handleR3SuddenDeathScenario('SHIELDS', 'RAM')}
+                className="p-3.5 rounded-2xl bg-[#161922] border border-[#2a2e3d] hover:border-blue-500/50 text-left transition-all space-y-1.5"
+              >
+                <div className="flex items-center space-x-2 text-blue-400 font-bold text-xs font-serif">
+                  <Shield className="w-4 h-4" />
+                  <span>Sudden Death: Shield Deflects Ram</span>
+                </div>
+                <p className="text-[10px] text-[#8e95a5] leading-relaxed">
+                  Team A [Shields] deflecting Team B [Ram] ➔ Team A claims higher podium!
+                </p>
+              </button>
+
+              <button
+                onClick={() => handleR3SuddenDeathScenario('RAM', 'SAILS')}
+                className="p-3.5 rounded-2xl bg-[#161922] border border-[#2a2e3d] hover:border-red-500/50 text-left transition-all space-y-1.5"
+              >
+                <div className="flex items-center space-x-2 text-red-400 font-bold text-xs font-serif">
+                  <Swords className="w-4 h-4" />
+                  <span>Sudden Death: Ram Smashes Sails</span>
+                </div>
+                <p className="text-[10px] text-[#8e95a5] leading-relaxed">
+                  Team A [Ram] crushes Team B [Full Sails] ➔ Team A claims victory!
+                </p>
+              </button>
+
+              <button
+                onClick={() => handleR3SuddenDeathScenario('SAILS', 'SHIELDS')}
+                className="p-3.5 rounded-2xl bg-[#161922] border border-[#2a2e3d] hover:border-amber-500/50 text-left transition-all space-y-1.5"
+              >
+                <div className="flex items-center space-x-2 text-amber-400 font-bold text-xs font-serif">
+                  <Zap className="w-4 h-4" />
+                  <span>Sudden Death: Sails Outrun Shields</span>
+                </div>
+                <p className="text-[10px] text-[#8e95a5] leading-relaxed">
+                  Team A [Full Sails] speeds past Team B [Shields] ➔ Team A claims podium!
+                </p>
+              </button>
+            </div>
+          </div>
+
+          {/* Fleet Distance Tracker in Solo Workbench */}
+          {round3Session?.team_states && Object.keys(round3Session.team_states).length > 0 && (
+            <div className="bg-[#10121a] border border-[#2a2e3d] rounded-2xl p-4 shadow-xl space-y-3">
+              <span className="text-xs font-serif font-bold text-[#f4f0e8] uppercase block">
+                Tartarus Escape Fleet Distance Tracker
+              </span>
+              <div className="space-y-2">
+                {payload?.teams_leaderboard?.map(t => {
+                  const state = round3Session.team_states[t.id];
+                  const dist = state?.current_distance_meters || 0;
+                  const targetMeters = payload?.config?.round3?.target_distance_meters || 1000;
+                  const pct = Math.min(100, Math.max(0, Math.round((dist / targetMeters) * 100)));
+                  return (
+                    <div key={t.id} className="p-3 rounded-xl bg-[#08090c] border border-[#2a2e3d] flex items-center justify-between gap-4">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center space-x-2 mb-1">
+                          <span className="font-serif font-bold text-xs text-[#f4f0e8] truncate">{t.name}</span>
+                          {state?.has_escaped && (
+                            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-[#c4a45a] text-[#08090c]">
+                              {state.escape_rank === 1 ? '🥇 GOLD' : state.escape_rank === 2 ? '🥈 SILVER' : '🥉 BRONZE'}
+                            </span>
+                          )}
+                          <span className="text-[10px] font-mono text-[#c4a45a] ml-auto">
+                            {dist}m / {targetMeters}m ({pct}%)
+                          </span>
+                        </div>
+                        <div className="h-2 w-full bg-[#161922] rounded-full overflow-hidden border border-[#2a2e3d]">
+                          <div
+                            className={`h-full transition-all duration-500 ${
+                              state?.has_escaped ? 'bg-gradient-to-r from-emerald-500 to-[#c4a45a]' : 'bg-[#c4a45a]'
+                            }`}
+                            style={{ width: `${pct}%` }}
+                          />
+                        </div>
+                      </div>
+                      <div className="flex items-center space-x-1 shrink-0">
+                        <button
+                          onClick={async () => {
+                            await adminRound3AdjustDistance(adminPass, t.id, 50);
+                            await refresh();
+                          }}
+                          className="px-2 py-1 rounded bg-[#161922] border border-[#2a2e3d] text-emerald-400 hover:border-emerald-500 text-[10px] font-mono"
+                        >
+                          +50m
+                        </button>
+                        <button
+                          onClick={async () => {
+                            await adminRound3AdjustDistance(adminPass, t.id, -50);
+                            await refresh();
+                          }}
+                          className="px-2 py-1 rounded bg-[#161922] border border-[#2a2e3d] text-rose-400 hover:border-rose-500 text-[10px] font-mono"
+                        >
+                          -50m
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </div>
       )}
 

@@ -15,6 +15,7 @@ export function preloadAllRounds() {
     import('../components/rounds/ShadesInTheMistRound').catch(() => {});
     import('../components/rounds/AsymmetricTextPuzzleRound').catch(() => {});
     import('../components/rounds/OfflineTaskTimerRound').catch(() => {});
+    import('../components/rounds/OdysseyEscapeRoyaleRound').catch(() => {});
   };
 
   if ('requestIdleCallback' in window) {

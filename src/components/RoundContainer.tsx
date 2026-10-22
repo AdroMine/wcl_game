@@ -14,6 +14,9 @@ const AsymmetricTextPuzzleRound = lazy(() =>
 const OfflineTaskTimerRound = lazy(() =>
   import('./rounds/OfflineTaskTimerRound').then(m => ({ default: m.OfflineTaskTimerRound }))
 );
+const OdysseyEscapeRoyaleRound = lazy(() =>
+  import('./rounds/OdysseyEscapeRoyaleRound').then(m => ({ default: m.OdysseyEscapeRoyaleRound }))
+);
 
 export const RoundContainer: React.FC = () => {
   const { currentRound, timeRemainingSeconds, payload } = useGameSession();
@@ -88,6 +91,7 @@ export const RoundContainer: React.FC = () => {
         {currentRound.type === 'PRISONERS_DILEMMA' && <ShadesInTheMistRound />}
         {currentRound.type === 'ASYMMETRIC_TEXT_PUZZLE' && <AsymmetricTextPuzzleRound />}
         {currentRound.type === 'OFFLINE_TASK_TIMER' && <OfflineTaskTimerRound />}
+        {currentRound.type === 'ODYSSEY_ESCAPE_ROYALE' && <OdysseyEscapeRoyaleRound />}
       </Suspense>
     </div>
   );

@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useEffect, useState, useRef, useCallback } from 'react';
-import type { SyncPayload, Player, Team, RoleConfig, RoundConfig, Round2Match } from '../types';
+import type { SyncPayload, Player, Team, RoleConfig, RoundConfig, Round2Match, Round3Session, Round3Vessel, Round3SuddenDeathAction } from '../types';
 import {
   joinPlayer,
   leavePlayer,
@@ -12,6 +12,8 @@ import {
   round2AdvancePhaseApi,
   requestRoundHintApi,
   rerollPlayerRoleApi,
+  round3CastVoteApi,
+  round3SuddenDeathVoteApi,
 } from '../lib/api';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 
@@ -38,6 +40,9 @@ interface GameContextType {
   pairRound2: (opponentBattleCode: string) => Promise<{ success: boolean; error?: string }>;
   voteRound2: (vote: 'TRUCE' | 'AMBUSH') => Promise<{ success: boolean; error?: string }>;
   advanceRound2: (matchId?: string) => Promise<void>;
+  round3Session: Round3Session | null;
+  voteRound3: (vessel: Round3Vessel, cerberusTargetTeamId?: string, cerberusGuessedVessel?: Round3Vessel) => Promise<{ success: boolean; error?: string }>;
+  voteRound3SuddenDeath: (action: Round3SuddenDeathAction) => Promise<{ success: boolean; error?: string }>;
   timeRemainingSeconds: number;
   rerollRole: () => Promise<{ success: boolean; error?: string }>;
   refresh: () => Promise<void>;
@@ -367,6 +372,36 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  const voteRound3 = async (
+    vessel: Round3Vessel,
+    cerberusTargetTeamId?: string,
+    cerberusGuessedVessel?: Round3Vessel
+  ) => {
+    if (!player || !team) {
+      return { success: false, error: 'Cannot vote: crew or shade not found' };
+    }
+    try {
+      const res = await round3CastVoteApi(team.id, player.id, vessel, cerberusTargetTeamId, cerberusGuessedVessel);
+      await runPoll();
+      return res;
+    } catch (err: any) {
+      return { success: false, error: err.message || 'Failed to cast vessel ballot' };
+    }
+  };
+
+  const voteRound3SuddenDeath = async (action: Round3SuddenDeathAction) => {
+    if (!player || !team) {
+      return { success: false, error: 'Cannot vote: crew or shade not found' };
+    }
+    try {
+      const res = await round3SuddenDeathVoteApi(team.id, player.id, action);
+      await runPoll();
+      return res;
+    } catch (err: any) {
+      return { success: false, error: err.message || 'Failed to cast standoff maneuver' };
+    }
+  };
+
   return (
     <GameContext.Provider
       value={{
@@ -376,6 +411,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         role,
         currentRound,
         round2Match,
+        round3Session: payload?.round3_session || null,
         connectionStatus,
         lastSyncedAt,
         lowDataMode,
@@ -392,6 +428,8 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         pairRound2,
         voteRound2,
         advanceRound2,
+        voteRound3,
+        voteRound3SuddenDeath,
         rerollRole,
         timeRemainingSeconds,
         refresh: runPoll,

@@ -1,6 +1,6 @@
 export type GameState = 'LOBBY_TEAM_FORMATION' | 'ROUND_ACTIVE' | 'ROUND_LEADERBOARD';
 
-export type RoundType = 'ASCII_SPLITTER' | 'ASYMMETRIC_TEXT_PUZZLE' | 'OFFLINE_TASK_TIMER' | 'PRISONERS_DILEMMA';
+export type RoundType = 'ASCII_SPLITTER' | 'ASYMMETRIC_TEXT_PUZZLE' | 'OFFLINE_TASK_TIMER' | 'PRISONERS_DILEMMA' | 'ODYSSEY_ESCAPE_ROYALE';
 
 export type Round2Phase = 'HUDDLE' | 'PARLEY' | 'VOTE' | 'DEBRIEF';
 export type Round2Vote = 'TRUCE' | 'AMBUSH' | 'ABSTAIN' | 'LOCKED';
@@ -45,6 +45,130 @@ export interface Round2Match {
   clash_data: Round2ClashData[];
   completed: boolean;
   created_at?: string;
+  updated_at?: string;
+}
+
+// --------------------------------------------------------------------------
+// ROUND 3: THE ODYSSEY ESCAPE ROYALE
+// --------------------------------------------------------------------------
+export type Round3Phase = 'BLUFF' | 'VOTE' | 'REVEAL' | 'COMPLETED';
+export type Round3Vessel = 'ROWBOAT' | 'SAILBOAT' | 'GHOST_SHIP';
+export type Round3SuddenDeathAction = 'SHIELDS' | 'RAM' | 'SAILS';
+
+export interface Round3VesselConfig {
+  name: string;
+  icon: string;
+  risk_label: string;
+  capacity_rule: 'UNLIMITED' | 'MAX_PERCENT' | 'EXACTLY_ONE';
+  capacity_percent?: number;
+  distance_success: number;
+  distance_fail: number;
+  desc: string;
+}
+
+export interface Round3VengeanceConfig {
+  cerberus_penalty_meters: number;
+  cerberus_bonus_meters: number;
+}
+
+export interface Round3Config {
+  target_distance_meters: number;
+  headstart_point_divisor: number;
+  max_headstart_meters: number;
+  num_scheduled_waves: number;
+  wave_phase_durations: {
+    BLUFF: number;
+    VOTE: number;
+    REVEAL: number;
+  };
+  vessels: Record<Round3Vessel, Round3VesselConfig>;
+  vengeance: Round3VengeanceConfig;
+}
+
+export interface Round3TeamState {
+  team_id: string;
+  current_distance_meters: number;
+  has_escaped: boolean;
+  escape_rank: number | null; // 1 for Gold, 2 for Silver, 3 for Bronze
+  escaped_in_wave: number | null;
+  cerberus_used: boolean;
+}
+
+export interface Round3TeamWaveVote {
+  team_id: string;
+  player_votes: Record<string, Round3Vessel | 'ABSTAIN'>;
+  resolved_vessel: Round3Vessel;
+  cerberus_target_team_id?: string | null;
+  cerberus_guessed_vessel?: Round3Vessel | null;
+  meters_gained: number;
+  created_at?: string;
+}
+
+export interface Round3CerberusEvent {
+  attacker_team_id: string;
+  attacker_team_name: string;
+  target_team_id: string;
+  target_team_name: string;
+  guessed_vessel: Round3Vessel;
+  actual_vessel: Round3Vessel;
+  success: boolean;
+  attacker_bonus: number;
+  target_penalty: number;
+}
+
+export interface Round3WaveReport {
+  wave_number: number;
+  rowboat_teams: string[];
+  sailboat_teams: string[];
+  ghost_ship_teams: string[];
+  sailboat_capsized: boolean;
+  ghost_ship_collided: boolean;
+  ghost_ship_solo_team_id: string | null;
+  cerberus_events: Round3CerberusEvent[];
+  team_outcomes: Record<string, {
+    vessel: Round3Vessel;
+    base_meters: number;
+    cerberus_delta: number;
+    total_meters_gained: number;
+    new_total_distance: number;
+    just_escaped: boolean;
+    escape_rank?: number | null;
+  }>;
+}
+
+export interface Round3SuddenDeathState {
+  is_active: boolean;
+  phase: 'PARLEY' | 'VOTE' | 'REVEAL';
+  phase_ends_at: number;
+  teams: [string, string]; // [TeamAId, TeamBId]
+  player_votes: {
+    team_a: Record<string, Round3SuddenDeathAction>;
+    team_b: Record<string, Round3SuddenDeathAction>;
+  };
+  stances: {
+    team_a?: Round3SuddenDeathAction;
+    team_b?: Round3SuddenDeathAction;
+  };
+  winner_team_id?: string | null;
+  resolution_text?: string | null;
+}
+
+export interface Round3Session {
+  id: string;
+  session_id: string;
+  current_wave: number;
+  current_phase: Round3Phase;
+  phase_ends_at: number; // epoch ms
+  team_states: Record<string, Round3TeamState>;
+  wave_votes: Record<number, Record<string, Round3TeamWaveVote>>;
+  wave_reports: Record<number, Round3WaveReport>;
+  is_sudden_death: boolean;
+  sudden_death_state?: Round3SuddenDeathState | null;
+  podium: {
+    gold_team_id: string | null;
+    silver_team_id: string | null;
+    bronze_team_id: string | null;
+  };
   updated_at?: string;
 }
 
@@ -109,6 +233,7 @@ export interface GameConfig {
   roles: RoleConfig[];
   rounds: RoundConfig[];
   round2?: Round2Config;
+  round3?: Round3Config;
 }
 
 export interface Player {
@@ -158,6 +283,7 @@ export interface SyncPayload {
   formed_teams_count: number;
   round2_match?: Round2Match | null;
   round2_all_matches?: Round2Match[];
+  round3_session?: Round3Session | null;
   teams_leaderboard: {
     id: string;
     name: string;

@@ -21,8 +21,15 @@ import {
   adminRound2AdjustTimer,
   adminRound2SkipPhase,
   adminRound2ResetMatches,
+  adminRound3AdjustTimer,
+  adminRound3NextPhase,
+  adminRound3ForceNextWave,
+  adminRound3AdjustDistance,
+  adminRound3TriggerSuddenDeath,
+  adminRound3SaveConfig,
+  adminRound3ResetSession,
 } from '../lib/api';
-import type { SyncPayload, GameConfig } from '../types';
+import type { SyncPayload, GameConfig, Round3Config } from '../types';
 import {
   ShieldAlert,
   Play,
@@ -48,6 +55,7 @@ import {
   Trophy,
   Sparkles,
   X,
+  Anchor,
 } from 'lucide-react';
 import { parseTabletCodeword, TABLET_CONFIG, getSlotPositionLabel, getTabletTextMetrics } from '../lib/tabletEngine';
 
@@ -63,7 +71,7 @@ export const AdminControlPanel: React.FC<AdminProps> = ({ payload, onClose }) =>
   const [authError, setAuthError] = useState<string | null>(null);
 
   // Tab navigation
-  const [activeTab, setActiveTab] = useState<'controller' | 'round2' | 'roster' | 'config' | 'qr'>('controller');
+  const [activeTab, setActiveTab] = useState<'controller' | 'round2' | 'round3' | 'roster' | 'config' | 'qr'>('controller');
 
   // Server info & QR
   const [serverInfo, setServerInfo] = useState<{ localIp: string; joinUrl: string; qrDataUrl: string | null } | null>(null);
@@ -82,6 +90,12 @@ export const AdminControlPanel: React.FC<AdminProps> = ({ payload, onClose }) =>
   const [r2Msg, setR2Msg] = useState<string | null>(null);
 
   const [showManualPairing, setShowManualPairing] = useState(false);
+
+  // Round 3 state
+  const [r3Msg, setR3Msg] = useState<string | null>(null);
+  const [sdTeamA, setSdTeamA] = useState('');
+  const [sdTeamB, setSdTeamB] = useState('');
+  const [editableR3Config, setEditableR3Config] = useState<Round3Config | null>(null);
 
   // Private Admin-Only Live Leaderboard modal state
   const [showAdminLeaderboard, setShowAdminLeaderboard] = useState(false);
@@ -121,6 +135,7 @@ export const AdminControlPanel: React.FC<AdminProps> = ({ payload, onClose }) =>
     await Promise.all([
       adminAdjustTimer(passcode, 'adjust', deltaSeconds),
       adminRound2AdjustTimer(passcode, deltaSeconds),
+      adminRound3AdjustTimer(passcode, deltaSeconds),
     ]);
     await refresh();
   };
@@ -128,6 +143,9 @@ export const AdminControlPanel: React.FC<AdminProps> = ({ payload, onClose }) =>
   useEffect(() => {
     if (payload?.config) {
       setEditableConfig(JSON.parse(JSON.stringify(payload.config)));
+      if (payload.config.round3) {
+        setEditableR3Config(JSON.parse(JSON.stringify(payload.config.round3)));
+      }
     }
   }, [payload?.config]);
 
@@ -314,6 +332,64 @@ export const AdminControlPanel: React.FC<AdminProps> = ({ payload, onClose }) =>
     if (confirm('Reset all Round 2 matches, clash records, and nemesis markings?')) {
       await adminRound2ResetMatches(passcode);
       await refresh();
+    }
+  };
+
+  // Round 3 Handlers
+  const handleR3AdjustTimer = async (delta: number) => {
+    await adminRound3AdjustTimer(passcode, delta);
+    await refresh();
+    setR3Msg(`Adjusted Round 3 wave timer by +${delta}s`);
+    setTimeout(() => setR3Msg(null), 4000);
+  };
+
+  const handleR3NextPhase = async () => {
+    await adminRound3NextPhase(passcode);
+    await refresh();
+    setR3Msg('Advanced Round 3 to next phase');
+    setTimeout(() => setR3Msg(null), 4000);
+  };
+
+  const handleR3ForceWave = async () => {
+    await adminRound3ForceNextWave(passcode);
+    await refresh();
+    setR3Msg('Forced Round 3 to next wave');
+    setTimeout(() => setR3Msg(null), 4000);
+  };
+
+  const handleR3AdjustDistance = async (teamId: string, deltaMeters: number) => {
+    await adminRound3AdjustDistance(passcode, teamId, deltaMeters);
+    await refresh();
+    setR3Msg(`Adjusted team distance by ${deltaMeters >= 0 ? `+${deltaMeters}` : deltaMeters}m`);
+    setTimeout(() => setR3Msg(null), 4000);
+  };
+
+  const handleR3TriggerSuddenDeath = async () => {
+    if (!sdTeamA || !sdTeamB) return;
+    const res = await adminRound3TriggerSuddenDeath(passcode, sdTeamA, sdTeamB);
+    if (res.error) {
+      setR3Msg(`Sudden death error: ${res.error}`);
+    } else {
+      setR3Msg('⚡ Sudden Death Standoff activated between contenders!');
+    }
+    setTimeout(() => setR3Msg(null), 4000);
+    await refresh();
+  };
+
+  const handleR3SaveConfig = async () => {
+    if (!editableR3Config) return;
+    await adminRound3SaveConfig(passcode, editableR3Config);
+    await refresh();
+    setR3Msg('Round 3 Congestion settings saved');
+    setTimeout(() => setR3Msg(null), 4000);
+  };
+
+  const handleR3ResetSession = async () => {
+    if (confirm('Reset Round 3 Escape Royale session and all fleet records?')) {
+      await adminRound3ResetSession(passcode);
+      await refresh();
+      setR3Msg('Round 3 session reset');
+      setTimeout(() => setR3Msg(null), 4000);
     }
   };
 
@@ -619,7 +695,7 @@ export const AdminControlPanel: React.FC<AdminProps> = ({ payload, onClose }) =>
       </div>
 
       {/* Tabs */}
-      <div className="grid grid-cols-5 gap-1 bg-[#10121a] border border-[#2a2e3d] p-1 rounded-xl">
+      <div className="grid grid-cols-6 gap-1 bg-[#10121a] border border-[#2a2e3d] p-1 rounded-xl">
         <button
           onClick={() => setActiveTab('controller')}
           className={`py-2 text-xs font-medium rounded-lg flex items-center justify-center space-x-1.5 transition-colors ${
@@ -641,6 +717,17 @@ export const AdminControlPanel: React.FC<AdminProps> = ({ payload, onClose }) =>
         >
           <Swords className="w-3.5 h-3.5" />
           <span className="hidden xs:inline">Clash Arena</span>
+        </button>
+        <button
+          onClick={() => setActiveTab('round3')}
+          className={`py-2 text-xs font-medium rounded-lg flex items-center justify-center space-x-1.5 transition-colors ${
+            activeTab === 'round3'
+              ? 'bg-[#c4a45a] text-[#08090c] font-bold'
+              : 'text-[#8e95a5] hover:text-[#f4f0e8]'
+          }`}
+        >
+          <Anchor className="w-3.5 h-3.5" />
+          <span className="hidden xs:inline">Escape Royale</span>
         </button>
         <button
           onClick={() => setActiveTab('roster')}
@@ -1079,6 +1166,332 @@ export const AdminControlPanel: React.FC<AdminProps> = ({ payload, onClose }) =>
                 })}
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* TAB: ROUND 3 (THE ODYSSEY ESCAPE ROYALE) */}
+      {activeTab === 'round3' && (
+        <div className="space-y-4">
+          {/* Status Alert Banner */}
+          {r3Msg && (
+            <div className="p-3 rounded-xl bg-[#c4a45a]/10 border border-[#c4a45a] flex items-center space-x-2 text-xs font-mono text-[#c4a45a]">
+              <CheckCircle2 className="w-4 h-4 text-[#c4a45a] flex-shrink-0" />
+              <span>{r3Msg}</span>
+            </div>
+          )}
+
+          {/* Section 1: Live Wave Pacing Controls */}
+          <div className="bg-[#10121a] border border-[#2a2e3d] rounded-2xl p-5 shadow-xl space-y-4">
+            <div className="flex items-center justify-between border-b border-[#2a2e3d] pb-3">
+              <div>
+                <span className="text-[10px] font-mono uppercase tracking-wider text-[#c4a45a] font-bold">
+                  Round 3 Controls
+                </span>
+                <h3 className="text-sm font-serif font-black text-[#f4f0e8]">
+                  Live Wave Pacing & Phase Controls
+                </h3>
+              </div>
+              <div className="flex items-center space-x-2 text-xs font-mono">
+                <span className="text-[#8e95a5]">
+                  Wave: <strong className="text-[#f4f0e8]">{payload?.round3_session?.current_wave || 1}</strong>
+                </span>
+                <span className="px-2 py-0.5 rounded bg-[#161922] border border-[#2a2e3d] text-amber-400 font-bold">
+                  {payload?.round3_session?.current_phase || 'BLUFF'}
+                </span>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              <button
+                onClick={() => handleR3AdjustTimer(15)}
+                className="p-3 rounded-xl bg-[#161922] border border-[#2a2e3d] hover:border-[#c4a45a] text-xs font-mono font-bold text-[#f4f0e8] flex items-center justify-center space-x-1"
+              >
+                <span>+15s Wave</span>
+              </button>
+              <button
+                onClick={() => handleR3AdjustTimer(30)}
+                className="p-3 rounded-xl bg-[#161922] border border-[#2a2e3d] hover:border-[#c4a45a] text-xs font-mono font-bold text-[#f4f0e8] flex items-center justify-center space-x-1"
+              >
+                <span>+30s Wave</span>
+              </button>
+              <button
+                onClick={handleR3NextPhase}
+                className="p-3 rounded-xl bg-gradient-to-r from-amber-600 to-amber-500 hover:from-amber-500 hover:to-amber-400 text-xs font-mono font-bold text-[#08090c] shadow-md flex items-center justify-center space-x-1"
+              >
+                <FastForward className="w-3.5 h-3.5 text-[#08090c]" />
+                <span>Next Phase ⏭️</span>
+              </button>
+              <button
+                onClick={handleR3ForceWave}
+                className="p-3 rounded-xl bg-[#161922] border border-sky-500/50 hover:bg-sky-950/60 text-xs font-mono font-bold text-sky-300 flex items-center justify-center space-x-1"
+              >
+                <span>Force Wave 🌊</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Section 2: Fleet Distance & Escape Status Tracker */}
+          <div className="bg-[#10121a] border border-[#2a2e3d] rounded-2xl p-5 shadow-xl space-y-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <span className="text-[10px] font-mono uppercase tracking-wider text-[#c4a45a] font-bold">
+                  Fleet Tracker
+                </span>
+                <h4 className="text-xs font-serif font-black text-[#f4f0e8]">
+                  Live Distances & Manual Overrides
+                </h4>
+              </div>
+              <span className="text-[10px] font-mono text-[#8e95a5]">
+                Target: {payload?.config?.round3?.target_distance_meters || 1000}m
+              </span>
+            </div>
+
+            <div className="space-y-2">
+              {payload?.teams_leaderboard?.map((t) => {
+                const state = payload?.round3_session?.team_states?.[t.id];
+                const dist = state?.current_distance_meters || 0;
+                const escaped = state?.has_escaped;
+
+                return (
+                  <div
+                    key={t.id}
+                    className="p-3 rounded-xl bg-[#161922] border border-[#2a2e3d] flex items-center justify-between text-xs font-mono"
+                  >
+                    <div>
+                      <div className="font-bold text-[#f4f0e8] flex items-center space-x-1.5">
+                        <span>{t.name}</span>
+                        {escaped && (
+                          <span className="px-1.5 py-0.2 rounded bg-emerald-950 border border-emerald-500/50 text-emerald-400 text-[10px]">
+                            {state?.escape_rank === 1 ? '🥇 GOLD' : state?.escape_rank === 2 ? '🥈 SILVER' : state?.escape_rank === 3 ? '🥉 BRONZE' : 'ESCAPED'}
+                          </span>
+                        )}
+                      </div>
+                      <span className="text-[10px] text-[#8e95a5]">
+                        Distance: <strong className="text-[#c4a45a]">{dist}m</strong> | Score: {t.score} pts
+                      </span>
+                    </div>
+
+                    <div className="flex items-center space-x-1.5">
+                      <button
+                        onClick={() => handleR3AdjustDistance(t.id, -50)}
+                        className="px-2 py-1 rounded bg-[#10121a] border border-[#2a2e3d] hover:border-red-400 text-[10px] text-red-300 font-bold"
+                      >
+                        -50m
+                      </button>
+                      <button
+                        onClick={() => handleR3AdjustDistance(t.id, 50)}
+                        className="px-2 py-1 rounded bg-[#10121a] border border-[#2a2e3d] hover:border-emerald-400 text-[10px] text-emerald-300 font-bold"
+                      >
+                        +50m
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Section 3: Sudden Death Standoff Engine */}
+          <div className="bg-[#10121a] border border-[#2a2e3d] rounded-2xl p-5 shadow-xl space-y-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <span className="text-[10px] font-mono uppercase tracking-wider text-red-400 font-bold">
+                  Sudden Death Standoff
+                </span>
+                <h4 className="text-xs font-serif font-black text-[#f4f0e8]">
+                  Head-to-Head Narrow Gate Duel
+                </h4>
+              </div>
+              <span className="text-[10px] font-mono text-[#8e95a5]">
+                Shields • Ram • Sails
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <div>
+                <label className="text-[10px] font-mono text-[#8e95a5] block mb-1">Contender Crew A:</label>
+                <select
+                  value={sdTeamA}
+                  onChange={(e) => setSdTeamA(e.target.value)}
+                  className="w-full bg-[#161922] border border-[#2a2e3d] rounded-xl px-3 py-2 text-xs font-mono text-[#f4f0e8] outline-none"
+                >
+                  <option value="">Select Team A</option>
+                  {payload?.teams_leaderboard?.map(t => (
+                    <option key={t.id} value={t.id}>{t.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="text-[10px] font-mono text-[#8e95a5] block mb-1">Contender Crew B:</label>
+                <select
+                  value={sdTeamB}
+                  onChange={(e) => setSdTeamB(e.target.value)}
+                  className="w-full bg-[#161922] border border-[#2a2e3d] rounded-xl px-3 py-2 text-xs font-mono text-[#f4f0e8] outline-none"
+                >
+                  <option value="">Select Team B</option>
+                  {payload?.teams_leaderboard?.map(t => (
+                    <option key={t.id} value={t.id}>{t.name}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <button
+              onClick={handleR3TriggerSuddenDeath}
+              disabled={!sdTeamA || !sdTeamB || sdTeamA === sdTeamB}
+              className="w-full py-2.5 rounded-xl bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-500 hover:to-rose-500 text-white font-mono font-bold text-xs disabled:opacity-50 transition-all flex items-center justify-center space-x-1.5"
+            >
+              <Swords className="w-3.5 h-3.5" />
+              <span>⚡ Trigger Sudden Death Standoff</span>
+            </button>
+          </div>
+
+          {/* Section 4: Dynamic Round 3 Settings Form */}
+          <div className="bg-[#10121a] border border-[#2a2e3d] rounded-2xl p-5 shadow-xl space-y-4">
+            <div className="flex items-center justify-between border-b border-[#2a2e3d] pb-2">
+              <div>
+                <span className="text-[10px] font-mono uppercase tracking-wider text-[#c4a45a] font-bold">
+                  Congestion Settings
+                </span>
+                <h4 className="text-xs font-serif font-black text-[#f4f0e8]">
+                  Distances, Divisors & Vessel Velocities
+                </h4>
+              </div>
+              <button
+                onClick={handleR3SaveConfig}
+                className="px-3 py-1.5 rounded-xl bg-[#c4a45a] hover:bg-[#d8b86e] text-[#08090c] font-mono font-bold text-xs flex items-center space-x-1 transition-all"
+              >
+                <Save className="w-3 h-3" />
+                <span>Save Settings</span>
+              </button>
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs font-mono">
+              <div>
+                <label className="text-[10px] text-[#8e95a5] block mb-1">Target Distance (m)</label>
+                <input
+                  type="number"
+                  value={editableR3Config?.target_distance_meters || 1000}
+                  onChange={(e) => setEditableR3Config(prev => prev ? ({ ...prev, target_distance_meters: Number(e.target.value) }) : prev)}
+                  className="w-full bg-[#161922] border border-[#2a2e3d] rounded-lg px-2.5 py-1.5 text-white"
+                />
+              </div>
+              <div>
+                <label className="text-[10px] text-[#8e95a5] block mb-1">Headstart Divisor</label>
+                <input
+                  type="number"
+                  value={editableR3Config?.headstart_point_divisor || 5}
+                  onChange={(e) => setEditableR3Config(prev => prev ? ({ ...prev, headstart_point_divisor: Number(e.target.value) }) : prev)}
+                  className="w-full bg-[#161922] border border-[#2a2e3d] rounded-lg px-2.5 py-1.5 text-white"
+                />
+              </div>
+              <div>
+                <label className="text-[10px] text-[#8e95a5] block mb-1">Rowboat Speed (m)</label>
+                <input
+                  type="number"
+                  value={editableR3Config?.vessels?.ROWBOAT?.distance_success || 150}
+                  onChange={(e) => {
+                    const val = Number(e.target.value);
+                    setEditableR3Config(prev => prev ? ({
+                      ...prev,
+                      vessels: { ...prev.vessels, ROWBOAT: { ...prev.vessels.ROWBOAT, distance_success: val, distance_fail: val } }
+                    }) : prev);
+                  }}
+                  className="w-full bg-[#161922] border border-[#2a2e3d] rounded-lg px-2.5 py-1.5 text-white"
+                />
+              </div>
+              <div>
+                <label className="text-[10px] text-[#8e95a5] block mb-1">Sailboat Speed (m)</label>
+                <input
+                  type="number"
+                  value={editableR3Config?.vessels?.SAILBOAT?.distance_success || 300}
+                  onChange={(e) => {
+                    const val = Number(e.target.value);
+                    setEditableR3Config(prev => prev ? ({
+                      ...prev,
+                      vessels: { ...prev.vessels, SAILBOAT: { ...prev.vessels.SAILBOAT, distance_success: val } }
+                    }) : prev);
+                  }}
+                  className="w-full bg-[#161922] border border-[#2a2e3d] rounded-lg px-2.5 py-1.5 text-white"
+                />
+              </div>
+              <div>
+                <label className="text-[10px] text-[#8e95a5] block mb-1">Sailboat Cap Ratio</label>
+                <input
+                  type="number"
+                  step="0.05"
+                  value={editableR3Config?.vessels?.SAILBOAT?.capacity_percent || 0.30}
+                  onChange={(e) => {
+                    const val = Number(e.target.value);
+                    setEditableR3Config(prev => prev ? ({
+                      ...prev,
+                      vessels: { ...prev.vessels, SAILBOAT: { ...prev.vessels.SAILBOAT, capacity_percent: val } }
+                    }) : prev);
+                  }}
+                  className="w-full bg-[#161922] border border-[#2a2e3d] rounded-lg px-2.5 py-1.5 text-white"
+                />
+              </div>
+              <div>
+                <label className="text-[10px] text-[#8e95a5] block mb-1">Ghost Ship Speed (m)</label>
+                <input
+                  type="number"
+                  value={editableR3Config?.vessels?.GHOST_SHIP?.distance_success || 450}
+                  onChange={(e) => {
+                    const val = Number(e.target.value);
+                    setEditableR3Config(prev => prev ? ({
+                      ...prev,
+                      vessels: { ...prev.vessels, GHOST_SHIP: { ...prev.vessels.GHOST_SHIP, distance_success: val } }
+                    }) : prev);
+                  }}
+                  className="w-full bg-[#161922] border border-[#2a2e3d] rounded-lg px-2.5 py-1.5 text-white"
+                />
+              </div>
+              <div>
+                <label className="text-[10px] text-[#8e95a5] block mb-1">Cerberus Bonus (m)</label>
+                <input
+                  type="number"
+                  value={editableR3Config?.vengeance?.cerberus_bonus_meters || 150}
+                  onChange={(e) => {
+                    const val = Number(e.target.value);
+                    setEditableR3Config(prev => prev ? ({
+                      ...prev,
+                      vengeance: { ...prev.vengeance, cerberus_bonus_meters: val }
+                    }) : prev);
+                  }}
+                  className="w-full bg-[#161922] border border-[#2a2e3d] rounded-lg px-2.5 py-1.5 text-white"
+                />
+              </div>
+              <div>
+                <label className="text-[10px] text-[#8e95a5] block mb-1">Cerberus Penalty (m)</label>
+                <input
+                  type="number"
+                  value={editableR3Config?.vengeance?.cerberus_penalty_meters || -150}
+                  onChange={(e) => {
+                    const val = Number(e.target.value);
+                    setEditableR3Config(prev => prev ? ({
+                      ...prev,
+                      vengeance: { ...prev.vengeance, cerberus_penalty_meters: val }
+                    }) : prev);
+                  }}
+                  className="w-full bg-[#161922] border border-[#2a2e3d] rounded-lg px-2.5 py-1.5 text-white"
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Section 5: Reset Session */}
+          <div className="p-4 rounded-2xl bg-red-950/20 border border-red-500/30 flex items-center justify-between">
+            <div>
+              <h5 className="text-xs font-serif font-bold text-red-200">Reset Round 3 Odyssey</h5>
+              <p className="text-[10px] text-[#8e95a5]">Clear all wave records, distance states, and podium spots</p>
+            </div>
+            <button
+              onClick={handleR3ResetSession}
+              className="px-3 py-1.5 rounded-xl bg-red-950 border border-red-500/50 hover:bg-red-900 text-red-300 font-mono text-xs font-bold transition-all"
+            >
+              Reset Session
+            </button>
           </div>
         </div>
       )}

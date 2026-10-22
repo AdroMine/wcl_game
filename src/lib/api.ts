@@ -32,8 +32,17 @@ import {
   supabaseRequestRoundHint,
   supabaseRerollPlayerRole,
   supabaseAdminRebalanceUnassignedRoles,
+  supabaseRound3CastVote,
+  supabaseRound3SuddenDeathVote,
+  supabaseAdminRound3AdjustTimer,
+  supabaseAdminRound3NextPhase,
+  supabaseAdminRound3ForceNextWave,
+  supabaseAdminRound3AdjustDistance,
+  supabaseAdminRound3TriggerSuddenDeath,
+  supabaseAdminRound3SaveConfig,
+  supabaseAdminRound3ResetSession,
 } from './supabaseService';
-import type { GameState, GameConfig, Round2ScoringTier, Player, Team } from '../types';
+import type { GameState, GameConfig, Round2ScoringTier, Round3Config, Round3Vessel, Round3SuddenDeathAction, Player, Team } from '../types';
 
 const API_BASE = '/api';
 
@@ -546,4 +555,145 @@ export async function adminRound2SaveScoring(
   });
   return res.json();
 }
+
+// --------------------------------------------------------------------------
+// ROUND 3: THE ODYSSEY ESCAPE ROYALE APIS
+// --------------------------------------------------------------------------
+
+export async function round3CastVoteApi(
+  teamId: string,
+  playerId: string,
+  vessel: Round3Vessel,
+  cerberusTargetTeamId?: string,
+  cerberusGuessedVessel?: Round3Vessel
+) {
+  if (isSupabaseConfigured) {
+    return supabaseRound3CastVote(teamId, playerId, vessel, cerberusTargetTeamId, cerberusGuessedVessel);
+  }
+  const res = await fetch(`${API_BASE}/round3/vote`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ teamId, playerId, vessel, cerberusTargetTeamId, cerberusGuessedVessel }),
+  });
+  return res.json();
+}
+
+export async function round3SuddenDeathVoteApi(
+  teamId: string,
+  playerId: string,
+  action: Round3SuddenDeathAction
+) {
+  if (isSupabaseConfigured) {
+    return supabaseRound3SuddenDeathVote(teamId, playerId, action);
+  }
+  const res = await fetch(`${API_BASE}/round3/sudden-death/vote`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ teamId, playerId, action }),
+  });
+  return res.json();
+}
+
+export async function adminRound3AdjustTimer(passcode: string, deltaSeconds: number) {
+  if (isSupabaseConfigured) {
+    return supabaseAdminRound3AdjustTimer(deltaSeconds);
+  }
+  const res = await fetch(`${API_BASE}/admin/round3/adjust-timer`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-admin-passcode': passcode,
+    },
+    body: JSON.stringify({ deltaSeconds }),
+  });
+  return res.json();
+}
+
+export async function adminRound3NextPhase(passcode: string) {
+  if (isSupabaseConfigured) {
+    return supabaseAdminRound3NextPhase();
+  }
+  const res = await fetch(`${API_BASE}/admin/round3/next-phase`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-admin-passcode': passcode,
+    },
+  });
+  return res.json();
+}
+
+export async function adminRound3ForceNextWave(passcode: string) {
+  if (isSupabaseConfigured) {
+    return supabaseAdminRound3ForceNextWave();
+  }
+  const res = await fetch(`${API_BASE}/admin/round3/force-wave`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-admin-passcode': passcode,
+    },
+  });
+  return res.json();
+}
+
+export async function adminRound3AdjustDistance(passcode: string, teamId: string, deltaMeters: number) {
+  if (isSupabaseConfigured) {
+    return supabaseAdminRound3AdjustDistance(teamId, deltaMeters);
+  }
+  const res = await fetch(`${API_BASE}/admin/round3/adjust-distance`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-admin-passcode': passcode,
+    },
+    body: JSON.stringify({ teamId, deltaMeters }),
+  });
+  return res.json();
+}
+
+export async function adminRound3TriggerSuddenDeath(passcode: string, teamAId: string, teamBId: string) {
+  if (isSupabaseConfigured) {
+    return supabaseAdminRound3TriggerSuddenDeath(teamAId, teamBId);
+  }
+  const res = await fetch(`${API_BASE}/admin/round3/sudden-death`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-admin-passcode': passcode,
+    },
+    body: JSON.stringify({ teamAId, teamBId }),
+  });
+  return res.json();
+}
+
+export async function adminRound3SaveConfig(passcode: string, round3Config: Round3Config) {
+  if (isSupabaseConfigured) {
+    return supabaseAdminRound3SaveConfig(round3Config);
+  }
+  const res = await fetch(`${API_BASE}/admin/round3/config`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-admin-passcode': passcode,
+    },
+    body: JSON.stringify({ round3Config }),
+  });
+  return res.json();
+}
+
+export async function adminRound3ResetSession(passcode: string) {
+  if (isSupabaseConfigured) {
+    return supabaseAdminRound3ResetSession();
+  }
+  const res = await fetch(`${API_BASE}/admin/round3/reset`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-admin-passcode': passcode,
+    },
+  });
+  return res.json();
+}
+
 

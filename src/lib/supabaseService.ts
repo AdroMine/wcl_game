@@ -1120,6 +1120,55 @@ export async function supabaseAdminAdjustTeamScore(teamId: string, delta: number
   }
 }
 
+export async function supabaseAdminMarkRound1Solved(teamId: string): Promise<{ success: boolean; message?: string; points?: number }> {
+  if (!supabase) return { success: false, message: 'Database disconnected' };
+
+  const { data: teamRow } = await supabase.from('teams').select('*').eq('id', teamId).maybeSingle();
+  if (!teamRow) return { success: false, message: 'Team not found' };
+
+  const team = mapDbTeam(teamRow);
+  const round1Key = 'round-1';
+
+  if (team.round_submissions?.[round1Key]?.completed) {
+    return { success: true, message: 'Team already solved Round 1', points: team.round_submissions[round1Key].pointsAwarded };
+  }
+
+  const { row: stateData } = await getGameStateRow();
+  const config = (stateData?.config && Object.keys(stateData.config).length > 0) ? stateData.config : DEFAULT_CONFIG;
+  const round = config.rounds?.[0];
+  const durationSecs = round?.durationSeconds || 300;
+
+  const now = Date.now();
+  const roundStartedAt = stateData?.config?.round_started_at
+    ? Number(stateData.config.round_started_at)
+    : (stateData?.round_ends_at ? Math.max(0, Number(stateData.round_ends_at) - durationSecs * 1000) : now - 60000);
+  const solveTimeSeconds = Math.max(0, Math.floor((now - roundStartedAt) / 1000));
+  const hintsCount = team.hints_taken?.length || 0;
+  const breakdown = calculateRound1Score(solveTimeSeconds, hintsCount);
+  const pointsAwarded = breakdown.finalPoints;
+
+  const updatedScore = (team.score || 0) + pointsAwarded;
+  const updatedSubmissions = {
+    ...team.round_submissions,
+    [round1Key]: {
+      completed: true,
+      completedAt: now,
+      answerSubmitted: team.assignedCodeword || 'CRIMSON SHADOW',
+      pointsAwarded,
+      isCorrect: true,
+      hintsCount,
+      solveTimeSeconds,
+    },
+  };
+
+  await supabase.from('teams').update({
+    score: updatedScore,
+    round_submissions: updatedSubmissions,
+  }).eq('id', teamId);
+
+  return { success: true, points: pointsAwarded };
+}
+
 export async function supabaseAdminUpdateConfig(config: GameConfig): Promise<void> {
   if (!supabase) return;
   const { id: stateId } = await getGameStateRow();

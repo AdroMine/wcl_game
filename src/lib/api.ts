@@ -13,6 +13,7 @@ import {
   supabaseAdminRemovePlayer,
   supabaseAdminAddPlayer,
   supabaseAdminAdjustTeamScore,
+  supabaseAdminMarkRound1Solved,
   supabaseAdminUpdateConfig,
   supabaseAdminResetGame,
   supabaseAdminDeleteTeam,
@@ -353,6 +354,21 @@ export async function adminAdjustTeamScore(passcode: string, teamId: string, del
       'x-admin-passcode': passcode,
     },
     body: JSON.stringify({ teamId, delta }),
+  });
+  return res.json();
+}
+
+export async function adminMarkRound1Solved(passcode: string, teamId: string) {
+  if (isSupabaseConfigured) {
+    return supabaseAdminMarkRound1Solved(teamId);
+  }
+  const res = await fetch(`${API_BASE}/admin/round1/mark-solved`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-admin-passcode': passcode,
+    },
+    body: JSON.stringify({ teamId }),
   });
   return res.json();
 }

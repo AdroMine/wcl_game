@@ -8,7 +8,7 @@ import {
   adminMovePlayerTeam,
   adminRemovePlayer,
   adminAddPlayer,
-  adminAdjustTeamScore,
+  adminMarkRound1Solved,
   adminUpdateConfig,
   adminResetGame,
   adminDeleteTeam,
@@ -63,7 +63,7 @@ interface AdminProps {
 }
 
 export const AdminControlPanel: React.FC<AdminProps> = ({ payload, onClose }) => {
-  const { refresh, switchPlayer } = useGameSession();
+  const { refresh } = useGameSession();
   const [passcode, setPasscode] = useState(() => localStorage.getItem('underworld_admin_pass') || 'underworld');
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
@@ -88,6 +88,10 @@ export const AdminControlPanel: React.FC<AdminProps> = ({ payload, onClose }) =>
   const [expandedCrewIds, setExpandedCrewIds] = useState<Set<string>>(new Set());
   const [editingCrewId, setEditingCrewId] = useState<string | null>(null);
   const [editingCrewName, setEditingCrewName] = useState('');
+
+  // Round 1 filter & status message
+  const [r1Search, setR1Search] = useState('');
+  const [r1Msg, setR1Msg] = useState<string | null>(null);
 
   // Add offline player form
   const [newPlayerName, setNewPlayerName] = useState('');
@@ -150,9 +154,17 @@ export const AdminControlPanel: React.FC<AdminProps> = ({ payload, onClose }) =>
     await refresh();
   };
 
-  const handleScoreChange = async (teamId: string, delta: number) => {
-    await adminAdjustTeamScore(passcode, teamId, delta);
-    await refresh();
+  const handleMarkRound1Solved = async (teamId: string, teamName: string) => {
+    if (confirm(`Mark Round 1 as SOLVED for "${teamName}"? This calculates legitimate points based on elapsed time.`)) {
+      const res = await adminMarkRound1Solved(passcode, teamId);
+      if (res?.success) {
+        setR1Msg(`✓ Awarded +${res.points || 0} PTS to ${teamName}!`);
+      } else {
+        setR1Msg(`⚠️ ${res?.message || 'Could not mark solved'}`);
+      }
+      setTimeout(() => setR1Msg(null), 4000);
+      await refresh();
+    }
   };
 
   const handleTargetCrewSizeChange = async (newSize: number) => {
@@ -801,44 +813,95 @@ export const AdminControlPanel: React.FC<AdminProps> = ({ payload, onClose }) =>
                 </div>
               </div>
 
+              {/* Status Notice */}
+              {r1Msg && (
+                <div className="p-3 rounded-xl bg-cyan-950/60 border border-cyan-500/50 text-cyan-200 text-xs font-mono flex items-center space-x-2">
+                  <CheckCircle2 className="w-4 h-4 text-cyan-400 flex-shrink-0" />
+                  <span>{r1Msg}</span>
+                </div>
+              )}
+
               {/* Active Codewords by Crew */}
-              <div className="space-y-2">
-                <span className="text-[10px] font-mono text-[#8e95a5] uppercase tracking-wider block">
-                  Active Crew Codewords & Submission Status
-                </span>
+              <div className="space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-mono text-[#8e95a5] uppercase tracking-wider block">
+                    Active Crew Codewords & Submission Status
+                  </span>
+                  <span className="text-[10px] font-mono text-cyan-400">
+                    {teams.filter(t => (t.score || 0) > 0).length} of {teams.length} Solved
+                  </span>
+                </div>
+
+                {/* Instant Search Filter for Multi-Admin Pub Walkarounds */}
+                <div className="relative">
+                  <Search className="w-3.5 h-3.5 text-[#8e95a5] absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  <input
+                    type="text"
+                    value={r1Search}
+                    onChange={(e) => setR1Search(e.target.value)}
+                    placeholder="Search crew by name or battle code to resolve network lag..."
+                    className="w-full bg-[#161922] border border-[#2a2e3d] rounded-xl pl-9 pr-8 py-2 text-xs text-[#f4f0e8] placeholder-[#8e95a5]/60 outline-none font-mono focus:border-cyan-500"
+                  />
+                  {r1Search && (
+                    <button
+                      onClick={() => setR1Search('')}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#8e95a5] hover:text-[#f4f0e8]"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  {teams.map(t => {
-                    const hasSubmitted = (t.score || 0) > 0;
-                    return (
-                      <div
-                        key={t.id}
-                        className="p-3 rounded-xl bg-[#161922] border border-[#2a2e3d] flex items-center justify-between text-xs font-mono"
-                      >
-                        <div>
-                          <div className="font-bold text-[#f4f0e8] flex items-center space-x-1.5">
-                            <span>{t.name}</span>
-                            {t.battle_code && (
-                              <span className="text-[10px] text-[#c4a45a]">[{t.battle_code}]</span>
+                  {teams
+                    .filter(t => {
+                      if (!r1Search.trim()) return true;
+                      const q = r1Search.toLowerCase().trim();
+                      return t.name.toLowerCase().includes(q) || (t.battle_code || '').toLowerCase().includes(q);
+                    })
+                    .map(t => {
+                      const hasSubmitted = (t.score || 0) > 0;
+                      return (
+                        <div
+                          key={t.id}
+                          className="p-3 rounded-xl bg-[#161922] border border-[#2a2e3d] flex items-center justify-between text-xs font-mono gap-2"
+                        >
+                          <div className="min-w-0 flex-1">
+                            <div className="font-bold text-[#f4f0e8] flex items-center space-x-1.5 truncate">
+                              <span className="truncate">{t.name}</span>
+                              {t.battle_code && (
+                                <span className="text-[10px] text-[#c4a45a] shrink-0">[{t.battle_code}]</span>
+                              )}
+                            </div>
+                            <span className="text-[10px] text-[#8e95a5] block truncate">
+                              Word: <strong className="text-cyan-300">{t.assignedCodeword || 'CRIMSON SHADOW'}</strong>
+                            </span>
+                          </div>
+
+                          <div className="shrink-0">
+                            {hasSubmitted ? (
+                              <span className="px-2 py-0.5 rounded bg-emerald-950/80 border border-emerald-500/50 text-emerald-300 text-[10px] font-bold">
+                                ✓ Solved (+{t.score} PTS)
+                              </span>
+                            ) : (
+                              <div className="flex items-center space-x-1.5">
+                                <span className="px-2 py-0.5 rounded bg-amber-950/60 border border-amber-500/40 text-amber-300 text-[10px]">
+                                  Solving...
+                                </span>
+                                <button
+                                  onClick={() => handleMarkRound1Solved(t.id, t.name)}
+                                  className="px-2 py-0.5 rounded-lg bg-emerald-950/80 border border-emerald-500/50 hover:bg-emerald-900 text-emerald-300 text-[10px] font-mono font-bold flex items-center space-x-1 shadow-sm transition-all"
+                                  title="Manually mark solved if team's phone connection timed out on submit"
+                                >
+                                  <Check className="w-3 h-3 text-emerald-400" />
+                                  <span>Mark Solved</span>
+                                </button>
+                              </div>
                             )}
                           </div>
-                          <span className="text-[10px] text-[#8e95a5]">
-                            Codeword: <strong className="text-cyan-300">{t.assignedCodeword || 'CRIMSON SHADOW'}</strong>
-                          </span>
                         </div>
-                        <div>
-                          {hasSubmitted ? (
-                            <span className="px-2 py-0.5 rounded bg-emerald-950/80 border border-emerald-500/50 text-emerald-300 text-[10px] font-bold">
-                              ✓ Solved (+{t.score} PTS)
-                            </span>
-                          ) : (
-                            <span className="px-2 py-0.5 rounded bg-amber-950/60 border border-amber-500/40 text-amber-300 text-[10px]">
-                              Solving...
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
+                      );
+                    })}
                 </div>
               </div>
 
@@ -1210,57 +1273,6 @@ export const AdminControlPanel: React.FC<AdminProps> = ({ payload, onClose }) =>
               </button>
             </div>
           )}
-
-          {/* QUICK MANUAL SCORE ADJUSTER (ALWAYS ACCESSIBLE IN COCKPIT) */}
-          <div className="bg-[#10121a] border border-[#2a2e3d] rounded-2xl p-5 shadow-xl space-y-3">
-            <div className="flex items-center justify-between border-b border-[#2a2e3d] pb-2">
-              <div>
-                <span className="text-[10px] font-mono uppercase tracking-wider text-[#c4a45a] font-bold">
-                  Score Dispute Arbitrator
-                </span>
-                <h4 className="text-xs font-serif font-bold text-[#f4f0e8]">
-                  Manual Team Point Overrides
-                </h4>
-              </div>
-              <span className="text-[10px] font-mono text-[#8e95a5]">
-                {teams.length} Registered Crews
-              </span>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-              {teams.map((t) => (
-                <div
-                  key={t.id}
-                  className="p-3 rounded-xl bg-[#161922] border border-[#2a2e3d] flex items-center justify-between"
-                >
-                  <div className="min-w-0 pr-2">
-                    <h5 className="text-xs font-serif font-bold text-[#f4f0e8] truncate">{t.name}</h5>
-                    <span className="text-[10px] font-mono text-[#c4a45a] font-bold">{t.score} PTS</span>
-                  </div>
-                  <div className="flex items-center space-x-1 shrink-0">
-                    <button
-                      onClick={() => handleScoreChange(t.id, -25)}
-                      className="px-2 py-1 rounded bg-[#10121a] border border-[#2a2e3d] hover:border-red-500 text-xs font-mono text-red-300"
-                    >
-                      -25
-                    </button>
-                    <button
-                      onClick={() => handleScoreChange(t.id, 25)}
-                      className="px-2 py-1 rounded bg-[#10121a] border border-[#2a2e3d] hover:border-emerald-500 text-xs font-mono text-emerald-300"
-                    >
-                      +25
-                    </button>
-                    <button
-                      onClick={() => handleScoreChange(t.id, 100)}
-                      className="px-2.5 py-1 rounded bg-[#c4a45a]/20 border border-[#c4a45a] hover:bg-[#c4a45a] hover:text-[#08090c] text-xs font-mono text-[#c4a45a] font-bold"
-                    >
-                      +100
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
         </div>
       )}
 
@@ -1517,18 +1529,6 @@ export const AdminControlPanel: React.FC<AdminProps> = ({ payload, onClose }) =>
                                           title="Permanently remove player from game"
                                         >
                                           <UserX className="w-3 h-3" />
-                                        </button>
-
-                                        {/* Quick Test Switch */}
-                                        <button
-                                          onClick={() => {
-                                            switchPlayer(m.id!);
-                                            if (onClose) onClose();
-                                          }}
-                                          className="px-1.5 py-0.5 rounded bg-[#c4a45a]/20 border border-[#c4a45a]/40 text-[#c4a45a] text-[10px] font-bold"
-                                          title="Switch player view"
-                                        >
-                                          Play
                                         </button>
                                       </>
                                     )}

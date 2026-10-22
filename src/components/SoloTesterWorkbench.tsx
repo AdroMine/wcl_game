@@ -15,8 +15,11 @@ import {
   adminSetState,
   adminAdjustTimer,
   adminSpawnDemoCrew,
+  adminResetGame,
   adminRound2AdjustTimer,
   adminRound2AutoPair,
+  adminRound2ResetMatches,
+  adminRound2SkipPhase,
   round2CastVoteApi,
   round3CastVoteApi,
   round3SuddenDeathVoteApi,
@@ -48,9 +51,9 @@ import {
   FastForward,
   RotateCcw,
   Skull,
+  Users,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
-
 
 export const SoloTesterWorkbench: React.FC = () => {
   const {
@@ -64,14 +67,17 @@ export const SoloTesterWorkbench: React.FC = () => {
     refresh,
   } = useGameSession();
 
-  // Mode: 'table' (side-by-side pub table) | 'rack' (5 device frames) | 'round2' (Prisoner's Dilemma) | 'round3' (Escape Royale)
-  const [viewMode, setViewMode] = useState<'table' | 'rack' | 'round2' | 'round3'>('table');
+  // Primary Tabs: 'round1' | 'round2' | 'round3'
+  const [roundTab, setRoundTab] = useState<'round1' | 'round2' | 'round3'>('round1');
 
-  // Word selection for testing (2-word phrases)
+  // Round 1 Sub-View: 'table' (side-by-side pub table) | 'rack' (5 device frames)
+  const [r1ViewMode, setR1ViewMode] = useState<'table' | 'rack'>('table');
+
+  // Codeword selection for testing (2-word phrases)
   const codewordsPool = (payload?.config?.rounds?.[0]?.data as any)?.codewords || DEFAULT_ROUND1_CODEWORDS;
   const [selectedWord, setSelectedWord] = useState<string>('CRIMSON SHADOW');
 
-  // Global & Per-Slot adjustments
+  // Global & Per-Slot adjustments for Round 1
   const [globalZoom, setGlobalZoom] = useState<number>(1.0);
   const [slotZooms, setSlotZooms] = useState<Record<number, number>>({ 0: 1, 1: 1, 2: 1, 3: 1, 4: 1 });
 
@@ -82,6 +88,7 @@ export const SoloTesterWorkbench: React.FC = () => {
 
   // Spawning demo crew
   const [isSpawning, setIsSpawning] = useState(false);
+  const [spawnNotice, setSpawnNotice] = useState<string | null>(null);
 
   // Sync selectedWord with team's assigned codeword if available
   useEffect(() => {
@@ -106,9 +113,13 @@ export const SoloTesterWorkbench: React.FC = () => {
   const elapsedSeconds = Math.max(0, Math.floor((Date.now() - roundStartedAt) / 1000));
   const scoreBreakdown = calculateRound1Score(elapsedSeconds);
 
-  const [spawnNotice, setSpawnNotice] = useState<string | null>(null);
+  // All registered players across all crews for the Acting As identity switcher
+  const allPlayers = payload?.teams_leaderboard?.flatMap(t =>
+    t.members.map(m => ({ ...m, teamName: t.name, teamId: t.id, battleCode: t.battle_code }))
+  ) || [];
+  const currentActingPlayerId = localStorage.getItem('underworld_player_id');
 
-  // Build slot info (falls back to newest registered team if tester is not logged in)
+  // Build slot info for Round 1 visualization
   const effectiveTeam = team;
   const leaderTeam = payload?.teams_leaderboard?.[0];
   const slotMembers: PlayerSlotInfo[] = Array.from({ length: teamSize }).map((_, idx) => {
@@ -124,22 +135,20 @@ export const SoloTesterWorkbench: React.FC = () => {
     };
   });
 
-  // Spawn test crew
-  const handleSpawnDemoCrew = async () => {
+  // Spawn Demo Crews (1 crew or 3 crews at once)
+  const handleSpawnCrews = async (count: number = 1) => {
     try {
       setIsSpawning(true);
-      const res = await adminSpawnDemoCrew(adminPass);
-      if (res?.success && res.players?.[0]?.id) {
-        localStorage.setItem('underworld_player_id', res.players[0].id);
-        if (res.team?.assignedCodeword) {
-          setSelectedWord(res.team.assignedCodeword);
+      for (let i = 0; i < count; i++) {
+        const res = await adminSpawnDemoCrew(adminPass);
+        if (i === 0 && res?.players?.[0]?.id) {
+          localStorage.setItem('underworld_player_id', res.players[0].id);
+          if (res.team?.assignedCodeword) {
+            setSelectedWord(res.team.assignedCodeword);
+          }
         }
-        setSpawnNotice(`✓ Spawned "${res.team?.name || 'Demo Crew'}" with 5 shades!`);
-      } else if (res?.error) {
-        setSpawnNotice(`⚠️ ${res.error}`);
-      } else {
-        setSpawnNotice(`✓ 5-shade demo crew summoned!`);
       }
+      setSpawnNotice(`✓ Summoned ${count} full crew${count > 1 ? 's' : ''} (${count * 5} shades)!`);
       setTimeout(() => setSpawnNotice(null), 4000);
       await refresh();
     } catch (e: any) {
@@ -161,11 +170,19 @@ export const SoloTesterWorkbench: React.FC = () => {
     await Promise.all([
       adminAdjustTimer(adminPass, 'adjust', deltaSeconds),
       adminRound2AdjustTimer(adminPass, deltaSeconds),
+      adminRound3AdjustTimer(adminPass, deltaSeconds),
     ]);
     await refresh();
   };
 
-  // Codeword submit
+  const handleResetToLobby = async () => {
+    if (confirm('Reset entire session back to clean team formation lobby?')) {
+      await adminResetGame(adminPass);
+      await refresh();
+    }
+  };
+
+  // Codeword submit test
   const handleCodewordSubmit = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     const wordToSubmit = testInput.trim() || selectedWord;
@@ -247,7 +264,6 @@ export const SoloTesterWorkbench: React.FC = () => {
     const teamA = teams[0];
     const teamB = teams[1];
 
-    // Team B picks GHOST_SHIP, Team A picks ROWBOAT and targets Team B guessing GHOST_SHIP
     for (const m of teamB.members) {
       if (m.id) await round3CastVoteApi(teamB.id, m.id, 'GHOST_SHIP');
     }
@@ -329,14 +345,17 @@ export const SoloTesterWorkbench: React.FC = () => {
 
           {/* Slab background */}
           <rect x="0" y="0" width={totalWidth} height={totalHeight} fill="#08090c" />
-          <rect x="0" y="0" width={totalWidth} height={totalHeight} fill={`url(#ambient-${slotIdx})`} />
-          <rect x="6" y="6" width={totalWidth - 12} height={totalHeight - 12} rx="10" fill="#0f1118" stroke="#2a2e3d" strokeWidth="3" />
+          <rect x={viewBoxX} y="0" width={slotWidth} height={totalHeight} fill={`url(#ambient-${slotIdx})`} />
 
-          {/* Top Crest */}
-          <rect x="16" y="16" width={totalWidth - 32} height="52" fill="#161924" rx="6" />
-          <line x1="20" y1="72" x2={totalWidth - 20} y2="72" stroke="#c4a45a" strokeWidth="2" opacity="0.6" />
-          <text x={totalWidth / 2} y="48" textAnchor="middle" fontFamily="monospace" fontSize="18" fontWeight="bold" fill="#c4a45a" letterSpacing="8">
-            ▲ TABLET CREST (TOP) ▲
+          {/* Border Filigree */}
+          <rect x="8" y="8" width={totalWidth - 16} height={totalHeight - 16} fill="none" stroke="#c4a45a" strokeWidth="2" strokeDasharray="16 8" opacity="0.4" />
+          <rect x="18" y="18" width={totalWidth - 36} height={totalHeight - 36} fill="none" stroke="#e5cb87" strokeWidth="1" opacity="0.2" />
+
+          {/* Orientation Crest Top */}
+          <polygon points={`${totalWidth / 2},24 ${(totalWidth / 2) - 18},48 ${(totalWidth / 2) + 18},48`} fill="#c4a45a" opacity="0.8" filter={`url(#glow-${slotIdx})`} />
+          <polygon points={`${totalWidth / 2},28 ${(totalWidth / 2) - 12},46 ${(totalWidth / 2) + 12},46`} fill="#ffffff" />
+          <text x={totalWidth / 2} y="74" textAnchor="middle" fontFamily="monospace" fontSize="18" fontWeight="bold" fill="#c4a45a" letterSpacing="6">
+            ▲ TOP (NORTH) ▲
           </text>
 
           {/* Line 1 (Word 1) */}
@@ -395,7 +414,7 @@ export const SoloTesterWorkbench: React.FC = () => {
 
           {/* Bottom Base */}
           <line x1="20" y1="528" x2={totalWidth - 20} y2="528" stroke="#c4a45a" strokeWidth="2" opacity="0.6" />
-          <rect x="16" y="532" width={totalWidth - 32} height="52" fill="#161924" rx="6" />
+          <rect x="16" y="532" width={totalWidth - 32} height="52" fill="#161922" rx="6" />
           <text x={totalWidth / 2} y="564" textAnchor="middle" fontFamily="monospace" fontSize="18" fontWeight="bold" fill="#c4a45a" letterSpacing="8">
             ▼ TABLET BASE (BOTTOM) ▼
           </text>
@@ -405,46 +424,71 @@ export const SoloTesterWorkbench: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-[#08090c] text-[#f4f0e8] underworld-bg-mesh p-4 sm:p-6 space-y-6">
-      {/* Top Header & Navigation */}
+    <div className="min-h-screen bg-[#08090c] text-[#f4f0e8] underworld-bg-mesh p-4 sm:p-6 space-y-5">
+      {/* ===================================================================== */}
+      {/* 1. TOP HEADER: STUDIO TITLE, ACTING IDENTITY & GLOBAL CONTROLS         */}
+      {/* ===================================================================== */}
       <div className="bg-[#10121a] border border-[#2a2e3d] rounded-2xl p-4 shadow-2xl flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center space-x-3">
-          <div className="w-9 h-9 rounded-xl bg-[#c4a45a]/20 border border-[#c4a45a] flex items-center justify-center text-[#c4a45a]">
+          <div className="w-10 h-10 rounded-xl bg-[#c4a45a]/20 border border-[#c4a45a] flex items-center justify-center text-[#c4a45a] shadow-gold-glow">
             <Smartphone className="w-5 h-5" />
           </div>
           <div>
             <div className="flex items-center space-x-2">
               <h1 className="text-base font-serif font-black text-[#f4f0e8] uppercase">
-                Solo Tester Simulation Workbench
+                Solo Tester Simulation Studio
               </h1>
               <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-[#c4a45a]/20 text-[#c4a45a] font-bold">
                 Dev Tool
               </span>
             </div>
             <p className="text-[11px] text-[#8e95a5]">
-              Simulate 5 phone screens placed side-by-side on a pub table to reconstruct the ancient shattered tablet.
+              Simulate individual player perspectives, test team dynamics, and verify game round logic.
             </p>
           </div>
         </div>
 
-        <div className="flex items-center space-x-2">
+        {/* Acting As Identity Switcher & Direct Player Link */}
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center space-x-2 bg-[#161922] border border-[#2a2e3d] rounded-xl px-3 py-1.5 text-xs font-mono">
+            <span className="text-[#8e95a5] text-[10px] uppercase font-bold">Acting As:</span>
+            <select
+              value={currentActingPlayerId || ''}
+              onChange={(e) => {
+                if (e.target.value) {
+                  switchPlayer(e.target.value);
+                }
+              }}
+              className="bg-[#10121a] border border-[#c4a45a]/60 text-[#f4f0e8] font-bold text-xs rounded-lg px-2 py-1 outline-none"
+            >
+              <option value="" disabled>-- Select a Shade to Impersonate --</option>
+              {allPlayers.map(p => (
+                <option key={p.id} value={p.id}>
+                  {p.name} • {p.roleName} ({p.teamName} [{p.battleCode || '--'}])
+                </option>
+              ))}
+            </select>
+          </div>
+
           <button
             onClick={() => { window.location.href = '/'; }}
-            className="px-3 py-1.5 rounded-lg bg-[#c4a45a] hover:bg-[#d8b86e] text-[#08090c] text-xs font-mono font-bold"
+            className="px-3.5 py-2 rounded-xl bg-gradient-to-r from-[#c4a45a] to-[#e5cb87] hover:from-[#d8b86e] hover:to-[#edd99e] text-[#08090c] font-serif font-bold text-xs shadow-gold-glow transition-all"
           >
-            Player Screen
+            Player Screen ➔
           </button>
         </div>
       </div>
 
-      {/* Quick Testing Command Center */}
+      {/* ===================================================================== */}
+      {/* 2. GLOBAL SIMULATOR COMMAND BAR (SUMMONING & PACING)                   */}
+      {/* ===================================================================== */}
       <div className="bg-[#10121a] border border-[#2a2e3d] rounded-2xl p-4 shadow-xl space-y-3">
-        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#2a2e3d] pb-2.5">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#2a2e3d]/60 pb-2.5">
           <span className="text-[10px] font-mono uppercase tracking-wider text-[#c4a45a] font-bold">
-            Live Quick Action Controls
+            Global Sandbox Setup & Server Pacing
           </span>
-          <div className="flex items-center space-x-2">
-            <span className="text-[10px] font-mono text-[#8e95a5]">
+          <div className="flex items-center space-x-2 text-xs font-mono">
+            <span className="text-[#8e95a5]">
               State: <strong className="text-[#f4f0e8]">{payload?.state}</strong>
             </span>
             <button
@@ -464,165 +508,247 @@ export const SoloTesterWorkbench: React.FC = () => {
           </div>
         )}
 
-        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-2">
-          {/* Spawn Crew */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
+          {/* Summon 3 Full Crews (15 Shades) */}
           <button
-            onClick={handleSpawnDemoCrew}
+            onClick={() => handleSpawnCrews(3)}
             disabled={isSpawning}
-            className="py-2 px-3 rounded-xl bg-gradient-to-r from-[#c4a45a] to-[#e5cb87] text-[#08090c] font-serif font-bold text-xs shadow-gold-glow flex items-center justify-center space-x-1.5"
+            className="py-2 px-3 rounded-xl bg-gradient-to-r from-amber-600 to-[#c4a45a] text-[#08090c] font-serif font-bold text-xs shadow-gold-glow flex items-center justify-center space-x-1.5 transition-all disabled:opacity-50"
+            title="Spawns 3 complete crews (15 shades) with all roles assigned for multi-team testing"
+          >
+            <Users className="w-3.5 h-3.5" />
+            <span>{isSpawning ? 'Spawning...' : '⚡ Summon 3 Crews'}</span>
+          </button>
+
+          {/* Summon 1 Crew (5 Shades) */}
+          <button
+            onClick={() => handleSpawnCrews(1)}
+            disabled={isSpawning}
+            className="py-2 px-3 rounded-xl bg-[#161922] border border-[#c4a45a]/60 hover:bg-[#c4a45a] hover:text-[#08090c] text-[#c4a45a] font-mono font-bold text-xs flex items-center justify-center space-x-1 transition-all disabled:opacity-50"
           >
             <Sparkles className="w-3.5 h-3.5" />
-            <span>{isSpawning ? 'Spawning...' : '⚡ Spawn 5 Crew'}</span>
+            <span>+1 Crew (5 Shades)</span>
           </button>
 
-          {/* Start Round 1 */}
-          <button
-            onClick={() => handleLaunchState('ROUND_ACTIVE', 0)}
-            className="py-2 px-3 rounded-xl bg-[#161922] border border-[#c4a45a]/60 hover:bg-[#c4a45a] hover:text-[#08090c] text-[#c4a45a] font-mono font-bold text-xs flex items-center justify-center space-x-1.5 transition-all"
-          >
-            <Play className="w-3.5 h-3.5" />
-            <span>Start Round 1</span>
-          </button>
-
-          {/* Add 1 Minute */}
+          {/* +60s */}
           <button
             onClick={() => handleAdjustTimer(60)}
-            className="py-2 px-3 rounded-xl bg-[#161922] border border-[#2a2e3d] hover:border-[#c4a45a] text-[#8e95a5] hover:text-[#f4f0e8] font-mono text-xs flex items-center justify-center space-x-1"
+            className="py-2 px-3 rounded-xl bg-[#161922] border border-emerald-500/30 hover:border-emerald-400 text-emerald-300 font-mono text-xs flex items-center justify-center space-x-1"
           >
             <Clock className="w-3.5 h-3.5" />
             <span>+60s</span>
           </button>
 
-          {/* Subtract 30s */}
+          {/* -30s */}
           <button
             onClick={() => handleAdjustTimer(-30)}
-            className="py-2 px-3 rounded-xl bg-[#161922] border border-[#2a2e3d] hover:border-red-500/50 text-[#8e95a5] hover:text-red-300 font-mono text-xs flex items-center justify-center space-x-1"
+            className="py-2 px-3 rounded-xl bg-[#161922] border border-red-500/30 hover:border-red-400 text-red-300 font-mono text-xs flex items-center justify-center space-x-1"
           >
             <Clock className="w-3.5 h-3.5" />
             <span>-30s</span>
           </button>
 
-          {/* Reset to Lobby */}
+          {/* Pause / Resume */}
           <button
-            onClick={() => handleLaunchState('LOBBY_TEAM_FORMATION')}
+            onClick={() => handleAdjustTimer(0)}
             className="py-2 px-3 rounded-xl bg-[#161922] border border-[#2a2e3d] hover:border-[#c4a45a] text-[#8e95a5] hover:text-[#f4f0e8] font-mono text-xs flex items-center justify-center space-x-1"
           >
-            <span>Reset to Lobby</span>
+            <span>Sync Time</span>
           </button>
-        </div>
 
-        {/* Codeword Switcher Pills */}
-        <div className="flex flex-wrap items-center gap-1.5 pt-1">
-          <span className="text-[10px] font-mono uppercase text-[#8e95a5] mr-1">Test 2-Word Codeword:</span>
-          {codewordsPool.map((word: string) => (
-            <button
-              key={word}
-              onClick={() => setSelectedWord(word)}
-              className={`px-2.5 py-1 rounded-lg text-xs font-mono font-bold transition-all ${
-                selectedWord === word
-                  ? 'bg-[#c4a45a] text-[#08090c] shadow-gold-glow'
-                  : 'bg-[#161922] border border-[#2a2e3d] text-[#8e95a5] hover:text-[#f4f0e8]'
-              }`}
-            >
-              {word}
-            </button>
-          ))}
+          {/* Reset to Clean Lobby */}
+          <button
+            onClick={handleResetToLobby}
+            className="py-2 px-3 rounded-xl bg-red-950/40 border border-red-500/30 hover:bg-red-900/60 text-red-300 font-mono text-xs flex items-center justify-center space-x-1"
+          >
+            <RotateCcw className="w-3.5 h-3.5" />
+            <span>Clean Lobby</span>
+          </button>
         </div>
       </div>
 
-      {/* View Mode Tabs */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-2 bg-[#10121a] border border-[#2a2e3d] p-1.5 rounded-2xl max-w-3xl mx-auto">
+      {/* ===================================================================== */}
+      {/* 3. THREE ROUND STUDIO TABS                                             */}
+      {/* ===================================================================== */}
+      <div className="grid grid-cols-3 gap-2 bg-[#10121a] border border-[#2a2e3d] p-1.5 rounded-2xl max-w-2xl mx-auto">
         <button
-          onClick={() => setViewMode('table')}
+          onClick={() => setRoundTab('round1')}
           className={`py-2 px-3 rounded-xl text-xs font-mono font-bold flex items-center justify-center space-x-2 transition-all ${
-            viewMode === 'table'
+            roundTab === 'round1'
               ? 'bg-[#c4a45a] text-[#08090c] shadow-gold-glow'
               : 'text-[#8e95a5] hover:text-[#f4f0e8]'
           }`}
         >
           <Layers className="w-4 h-4" />
-          <span>Side-by-Side Table</span>
+          <span>Round 1: Words</span>
         </button>
 
         <button
-          onClick={() => setViewMode('rack')}
+          onClick={() => setRoundTab('round2')}
           className={`py-2 px-3 rounded-xl text-xs font-mono font-bold flex items-center justify-center space-x-2 transition-all ${
-            viewMode === 'rack'
-              ? 'bg-[#c4a45a] text-[#08090c] shadow-gold-glow'
-              : 'text-[#8e95a5] hover:text-[#f4f0e8]'
-          }`}
-        >
-          <Smartphone className="w-4 h-4" />
-          <span>5-Phone Rack</span>
-        </button>
-
-        <button
-          onClick={() => setViewMode('round2')}
-          className={`py-2 px-3 rounded-xl text-xs font-mono font-bold flex items-center justify-center space-x-2 transition-all ${
-            viewMode === 'round2'
+            roundTab === 'round2'
               ? 'bg-[#c4a45a] text-[#08090c] shadow-gold-glow'
               : 'text-[#8e95a5] hover:text-[#f4f0e8]'
           }`}
         >
           <Swords className="w-4 h-4" />
-          <span>Round 2 Dilemma</span>
+          <span>Round 2: Mist</span>
         </button>
 
         <button
-          onClick={() => setViewMode('round3')}
+          onClick={() => setRoundTab('round3')}
           className={`py-2 px-3 rounded-xl text-xs font-mono font-bold flex items-center justify-center space-x-2 transition-all ${
-            viewMode === 'round3'
+            roundTab === 'round3'
               ? 'bg-[#c4a45a] text-[#08090c] shadow-gold-glow'
               : 'text-[#8e95a5] hover:text-[#f4f0e8]'
           }`}
         >
           <Compass className="w-4 h-4" />
-          <span>Round 3 Escape</span>
+          <span>Round 3: Escape</span>
         </button>
       </div>
 
       {/* ===================================================================== */}
-      {/* MODE 1: PUB TABLE SIDE-BY-SIDE MODE (5 PHONES ACROSS THE TABLE)        */}
+      {/* TAB 1: ROUND 1 STUDIO (SHATTERED TABLET & SUBMISSION)                 */}
       {/* ===================================================================== */}
-      {viewMode === 'table' && (
+      {roundTab === 'round1' && (
         <div className="space-y-4">
+          {/* Round 1 Header & Controls */}
           <div className="bg-[#10121a] border border-[#2a2e3d] rounded-2xl p-4 shadow-xl flex flex-wrap items-center justify-between gap-3">
             <div>
-              <span className="text-xs font-serif font-bold text-[#f4f0e8] uppercase block">
-                Pub Table View: Shattered Tablet Reconstructed ("{selectedWord}")
-              </span>
-              <p className="text-[10px] text-[#8e95a5]">
-                Simulates 5 phones placed side-by-side across a pub table (Left to Right). The central horizon line and seam notches connect seamlessly!
+              <div className="flex items-center space-x-2">
+                <span className="text-xs font-serif font-bold text-[#f4f0e8] uppercase">
+                  Round 1: The Shattered Tablet Visualizer
+                </span>
+                <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-cyan-950 border border-cyan-500/40 text-cyan-300">
+                  {selectedWord}
+                </span>
+              </div>
+              <p className="text-[10px] text-[#8e95a5] mt-0.5">
+                Simulates 5 phone screens placed side-by-side on a pub table with interlocking seam notches and orientation crests.
               </p>
             </div>
 
-            {/* Global Zoom controls */}
-            <div className="flex items-center space-x-1.5 bg-[#161922] border border-[#2a2e3d] px-2 py-1 rounded-xl">
-              <span className="text-[10px] font-mono text-[#8e95a5]">Table Zoom:</span>
+            <div className="flex items-center space-x-2">
               <button
-                onClick={() => setGlobalZoom(z => Math.max(0.6, Math.round((z - 0.1) * 10) / 10))}
-                className="p-1 text-[#8e95a5] hover:text-[#f4f0e8]"
+                onClick={() => handleLaunchState('ROUND_ACTIVE', 0)}
+                className="py-1.5 px-3 rounded-xl bg-cyan-950/60 border border-cyan-500/50 hover:bg-cyan-900 text-cyan-200 text-xs font-mono font-bold flex items-center space-x-1"
               >
-                <ZoomOut className="w-3.5 h-3.5" />
+                <Play className="w-3.5 h-3.5" />
+                <span>Launch Round 1</span>
               </button>
-              <button
-                onClick={() => setGlobalZoom(1.0)}
-                className="text-[11px] font-mono font-bold text-[#c4a45a] px-1 hover:underline"
-              >
-                {Math.round(globalZoom * 100)}%
-              </button>
-              <button
-                onClick={() => setGlobalZoom(z => Math.min(2.0, Math.round((z + 0.1) * 10) / 10))}
-                className="p-1 text-[#8e95a5] hover:text-[#f4f0e8]"
-              >
-                <ZoomIn className="w-3.5 h-3.5" />
-              </button>
+
+              {/* Sub-view toggle (Table vs Rack) */}
+              <div className="flex items-center bg-[#161922] border border-[#2a2e3d] rounded-xl p-1">
+                <button
+                  onClick={() => setR1ViewMode('table')}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-mono font-bold transition-all ${
+                    r1ViewMode === 'table' ? 'bg-[#c4a45a] text-[#08090c]' : 'text-[#8e95a5]'
+                  }`}
+                >
+                  Table View
+                </button>
+                <button
+                  onClick={() => setR1ViewMode('rack')}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-mono font-bold transition-all ${
+                    r1ViewMode === 'rack' ? 'bg-[#c4a45a] text-[#08090c]' : 'text-[#8e95a5]'
+                  }`}
+                >
+                  Device Rack
+                </button>
+              </div>
             </div>
           </div>
 
-          {/* 5 Side-by-Side Mobile Devices on the Pub Table */}
-          <div className="max-w-5xl mx-auto p-4 bg-[#050608] border-2 border-dashed border-[#2a2e3d] rounded-3xl shadow-2xl">
-            <div className="grid grid-cols-5 gap-1.5 sm:gap-2">
+          {/* Codeword Switcher Pills */}
+          <div className="flex flex-wrap items-center gap-1.5 bg-[#10121a] border border-[#2a2e3d] p-3 rounded-2xl">
+            <span className="text-[10px] font-mono uppercase text-[#8e95a5] mr-1">Select 2-Word Codeword:</span>
+            {codewordsPool.map((word: string) => (
+              <button
+                key={word}
+                onClick={() => setSelectedWord(word)}
+                className={`px-2.5 py-1 rounded-lg text-xs font-mono font-bold transition-all ${
+                  selectedWord === word
+                    ? 'bg-[#c4a45a] text-[#08090c] shadow-gold-glow'
+                    : 'bg-[#161922] border border-[#2a2e3d] text-[#8e95a5] hover:text-[#f4f0e8]'
+                }`}
+              >
+                {word}
+              </button>
+            ))}
+          </div>
+
+          {/* SUB-VIEW 1: PUB TABLE SIDE-BY-SIDE */}
+          {r1ViewMode === 'table' && (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between text-xs font-mono px-1">
+                <span className="text-[#8e95a5]">5 Phone Screens Reconstructing the Tablet:</span>
+                <div className="flex items-center space-x-1.5 bg-[#161922] border border-[#2a2e3d] px-2 py-0.5 rounded-lg">
+                  <span className="text-[10px] text-[#8e95a5]">Zoom:</span>
+                  <button
+                    onClick={() => setGlobalZoom(z => Math.max(0.6, Math.round((z - 0.1) * 10) / 10))}
+                    className="p-1 text-[#8e95a5] hover:text-[#f4f0e8]"
+                  >
+                    <ZoomOut className="w-3.5 h-3.5" />
+                  </button>
+                  <span className="text-[#c4a45a] font-bold px-1">{Math.round(globalZoom * 100)}%</span>
+                  <button
+                    onClick={() => setGlobalZoom(z => Math.min(2.0, Math.round((z + 0.1) * 10) / 10))}
+                    className="p-1 text-[#8e95a5] hover:text-[#f4f0e8]"
+                  >
+                    <ZoomIn className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
+
+              <div className="max-w-5xl mx-auto p-4 bg-[#050608] border-2 border-dashed border-[#2a2e3d] rounded-3xl shadow-2xl">
+                <div className="grid grid-cols-5 gap-1.5 sm:gap-2">
+                  {Array.from({ length: teamSize }).map((_, slotIdx) => {
+                    const roleCfg = payload?.config?.roles?.[slotIdx] || { name: `Role #${slotIdx + 1}`, color: '#c4a45a' };
+                    const memberInfo = slotMembers[slotIdx];
+
+                    return (
+                      <div
+                        key={slotIdx}
+                        className="bg-black border-2 rounded-2xl overflow-hidden shadow-xl transition-all relative flex flex-col justify-between"
+                        style={{ borderColor: `${roleCfg.color}80` }}
+                      >
+                        <div className="px-2 py-1.5 bg-[#10121a]/95 border-b border-[#2a2e3d]/80 flex flex-col text-[10px] font-mono text-center">
+                          <div className="flex items-center justify-center space-x-1">
+                            <span className="w-2 h-2 rounded-full" style={{ backgroundColor: roleCfg.color }} />
+                            <span className="font-bold text-[#f4f0e8] text-[11px]">#{slotIdx + 1}</span>
+                          </div>
+                          <span className="text-[9px] text-[#8e95a5] truncate">
+                            {getSlotPositionLabel(slotIdx, teamSize)}
+                          </span>
+                          <span className="text-[9px] font-bold truncate" style={{ color: roleCfg.color }}>
+                            {memberInfo.playerName}
+                          </span>
+
+                          {team?.player_ids?.[slotIdx] && (
+                            <button
+                              onClick={() => switchPlayer(team.player_ids[slotIdx])}
+                              className="mt-1 px-1.5 py-0.5 rounded bg-[#c4a45a]/20 text-[#c4a45a] hover:bg-[#c4a45a] hover:text-[#08090c] text-[8px] font-bold"
+                            >
+                              Play as
+                            </button>
+                          )}
+                        </div>
+
+                        <div className="p-1 bg-black flex items-center justify-center h-48 sm:h-64">
+                          {renderSlotTabletSlice(slotIdx, 180, 240)}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* SUB-VIEW 2: MULTI-DEVICE RACK */}
+          {r1ViewMode === 'rack' && (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3">
               {Array.from({ length: teamSize }).map((_, slotIdx) => {
                 const roleCfg = payload?.config?.roles?.[slotIdx] || { name: `Role #${slotIdx + 1}`, color: '#c4a45a' };
                 const memberInfo = slotMembers[slotIdx];
@@ -630,133 +756,141 @@ export const SoloTesterWorkbench: React.FC = () => {
                 return (
                   <div
                     key={slotIdx}
-                    className="bg-black border-2 rounded-2xl overflow-hidden shadow-xl transition-all relative flex flex-col justify-between"
-                    style={{ borderColor: `${roleCfg.color}80` }}
+                    className="bg-[#10121a] border border-[#2a2e3d] rounded-2xl p-3 shadow-xl space-y-2 flex flex-col justify-between"
+                    style={{ borderTop: `3px solid ${roleCfg.color}` }}
                   >
-                    {/* Phone Header / Bezel Label */}
-                    <div className="px-2 py-1.5 bg-[#10121a]/95 border-b border-[#2a2e3d]/80 flex flex-col text-[10px] font-mono text-center">
-                      <div className="flex items-center justify-center space-x-1">
-                        <span className="w-2 h-2 rounded-full" style={{ backgroundColor: roleCfg.color }} />
-                        <span className="font-bold text-[#f4f0e8] text-[11px]">#{slotIdx + 1}</span>
+                    <div className="space-y-0.5">
+                      <div className="flex items-center justify-between text-[10px] font-mono">
+                        <span className="font-bold" style={{ color: roleCfg.color }}>
+                          SLOT #{slotIdx + 1}
+                        </span>
+                        <span className="text-[#8e95a5] text-[9px]">
+                          {getSlotPositionLabel(slotIdx, teamSize)}
+                        </span>
                       </div>
-                      <span className="text-[9px] text-[#8e95a5] truncate">
-                        {getSlotPositionLabel(slotIdx, teamSize)}
-                      </span>
-                      <span className="text-[9px] font-bold truncate" style={{ color: roleCfg.color }}>
+                      <div className="text-xs font-serif font-bold text-[#f4f0e8] truncate">
                         {memberInfo.playerName}
-                      </span>
-
-                      {team?.player_ids?.[slotIdx] && (
-                        <button
-                          onClick={() => switchPlayer(team.player_ids[slotIdx])}
-                          className="mt-1 px-1.5 py-0.5 rounded bg-[#c4a45a]/20 text-[#c4a45a] hover:bg-[#c4a45a] hover:text-[#08090c] text-[8px] font-bold"
-                        >
-                          Play as
-                        </button>
-                      )}
+                      </div>
                     </div>
 
-                    {/* Screen Content: Vector SVG Tablet Slice */}
-                    <div className="p-1 bg-black flex items-center justify-center h-48 sm:h-64">
-                      {renderSlotTabletSlice(slotIdx, 180, 240)}
+                    <div className="w-full bg-black border border-[#2a2e3d] rounded-xl p-2 h-52 flex items-center justify-center overflow-hidden">
+                      {renderSlotTabletSlice(slotIdx, 160, 200)}
                     </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        </div>
-      )}
 
-      {/* ===================================================================== */}
-      {/* MODE 2: 5-PHONE DEVICE RACK VIEW                                     */}
-      {/* ===================================================================== */}
-      {viewMode === 'rack' && (
-        <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <span className="text-xs font-serif font-bold text-[#f4f0e8] uppercase block">
-                5-Phone Multi-Device Rack View
-              </span>
-              <p className="text-[10px] text-[#8e95a5]">
-                Inspect each simulated phone fragment independently with custom per-phone zoom.
-              </p>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3">
-            {Array.from({ length: teamSize }).map((_, slotIdx) => {
-              const roleCfg = payload?.config?.roles?.[slotIdx] || { name: `Role #${slotIdx + 1}`, color: '#c4a45a' };
-              const memberInfo = slotMembers[slotIdx];
-
-              return (
-                <div
-                  key={slotIdx}
-                  className="bg-[#10121a] border border-[#2a2e3d] rounded-2xl p-3 shadow-xl space-y-2.5 flex flex-col justify-between"
-                  style={{ borderTop: `3px solid ${roleCfg.color}` }}
-                >
-                  <div className="space-y-1">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[10px] font-mono font-bold" style={{ color: roleCfg.color }}>
-                        SLOT #{slotIdx + 1}
-                      </span>
-                      <span className="text-[9px] font-mono text-[#8e95a5]">
-                        {getSlotPositionLabel(slotIdx, teamSize)}
-                      </span>
-                    </div>
-                    <div className="text-xs font-serif font-bold text-[#f4f0e8] truncate">
-                      {memberInfo.playerName}
-                    </div>
-                    <span className="text-[10px] text-[#8e95a5] block truncate">
-                      {roleCfg.name}
-                    </span>
-                  </div>
-
-                  {/* Simulated Phone Screen */}
-                  <div className="w-full bg-black border border-[#2a2e3d] rounded-xl p-2 h-52 flex items-center justify-center overflow-hidden relative">
-                    {renderSlotTabletSlice(slotIdx, 160, 200)}
-                  </div>
-
-                  {/* Individual Controls */}
-                  <div className="space-y-2 pt-2 border-t border-[#2a2e3d]">
-                    <div className="flex items-center justify-between text-[10px] font-mono">
+                    <div className="flex items-center justify-between text-[10px] font-mono pt-1 border-t border-[#2a2e3d]">
                       <span className="text-[#8e95a5]">Zoom:</span>
                       <div className="flex items-center space-x-1">
                         <button
                           onClick={() => setSlotZooms(prev => ({ ...prev, [slotIdx]: Math.max(0.6, (prev[slotIdx] || 1) - 0.1) }))}
-                          className="px-1.5 py-0.5 rounded bg-[#161922] text-[#8e95a5] hover:text-[#f4f0e8]"
+                          className="px-1.5 py-0.5 rounded bg-[#161922] text-[#8e95a5]"
                         >
                           -
                         </button>
                         <span className="text-[#c4a45a] font-bold px-1">{Math.round((slotZooms[slotIdx] || 1) * 100)}%</span>
                         <button
                           onClick={() => setSlotZooms(prev => ({ ...prev, [slotIdx]: Math.min(2.0, (prev[slotIdx] || 1) + 0.1) }))}
-                          className="px-1.5 py-0.5 rounded bg-[#161922] text-[#8e95a5] hover:text-[#f4f0e8]"
+                          className="px-1.5 py-0.5 rounded bg-[#161922] text-[#8e95a5]"
                         >
                           +
                         </button>
                       </div>
                     </div>
                   </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* INTEGRATED CODEWORD VERIFICATION & SCORE SANDBOX */}
+          <div className="bg-[#10121a] border border-[#2a2e3d] rounded-2xl p-5 shadow-xl space-y-3">
+            <div className="flex items-center justify-between border-b border-[#2a2e3d] pb-2.5">
+              <div className="flex items-center space-x-2">
+                <Sparkles className="w-4 h-4 text-[#c4a45a]" />
+                <h3 className="text-xs font-serif font-bold text-[#f4f0e8] uppercase">
+                  Codeword Submission & Dynamic Scoring Simulator
+                </h3>
+              </div>
+              <button
+                onClick={() => setTestInput(selectedWord)}
+                className="text-[10px] font-mono text-[#c4a45a] hover:underline"
+              >
+                Auto-fill: {selectedWord}
+              </button>
+            </div>
+
+            <form onSubmit={handleCodewordSubmit} className="space-y-3">
+              <div className="flex flex-col sm:flex-row gap-2">
+                <input
+                  type="text"
+                  value={testInput}
+                  onChange={(e) => setTestInput(e.target.value.toUpperCase())}
+                  placeholder={`ENTER 2-WORD CODEWORD (e.g. ${selectedWord})...`}
+                  className="flex-1 bg-[#161922] border border-[#2a2e3d] focus:border-[#c4a45a] rounded-xl px-4 py-2.5 text-xs font-mono tracking-widest text-[#f4f0e8] uppercase outline-none"
+                />
+                <button
+                  type="submit"
+                  disabled={submitting}
+                  className="py-2.5 px-6 rounded-xl bg-gradient-to-r from-[#c4a45a] to-[#e5cb87] hover:from-[#d8b86e] hover:to-[#f0d89e] text-[#08090c] font-serif font-bold text-xs shadow-gold-glow transition-all"
+                >
+                  {submitting ? 'Verifying...' : 'Submit & Test Score'}
+                </button>
+              </div>
+
+              {testResult && (
+                <div
+                  className={`p-3 rounded-xl border text-xs flex items-center space-x-2 ${
+                    testResult.success
+                      ? 'bg-emerald-950/60 border-emerald-500/60 text-emerald-200'
+                      : 'bg-red-950/60 border-red-500/60 text-red-200'
+                  }`}
+                >
+                  {testResult.success ? (
+                    <CheckCircle2 className="w-4 h-4 flex-shrink-0 text-emerald-400" />
+                  ) : (
+                    <AlertCircle className="w-4 h-4 flex-shrink-0 text-red-400" />
+                  )}
+                  <span>{testResult.message}</span>
                 </div>
-              );
-            })}
+              )}
+            </form>
+
+            <div className="p-3 rounded-xl bg-[#08090c] border border-[#2a2e3d] grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs font-mono">
+              <div>
+                <span className="text-[#8e95a5] block text-[10px]">Elapsed Time</span>
+                <span className="text-[#f4f0e8] font-bold">
+                  {Math.floor(elapsedSeconds / 60)}m {elapsedSeconds % 60}s
+                </span>
+              </div>
+              <div>
+                <span className="text-[#8e95a5] block text-[10px]">Speed Tier</span>
+                <span className="text-[#c4a45a] font-bold">{scoreBreakdown.speedTier}</span>
+              </div>
+              <div>
+                <span className="text-[#8e95a5] block text-[10px]">Est. Points Awarded</span>
+                <span className="text-emerald-400 font-bold text-sm">+{scoreBreakdown.finalPoints} PTS</span>
+              </div>
+            </div>
           </div>
         </div>
       )}
 
       {/* ===================================================================== */}
-      {/* MODE 3: ROUND 2 PRISONER'S DILEMMA TEST ARENA                        */}
+      {/* TAB 2: ROUND 2 STUDIO (PRISONER'S DILEMMA & TIE-BREAKER)              */}
       {/* ===================================================================== */}
-      {viewMode === 'round2' && (
+      {roundTab === 'round2' && (
         <div className="space-y-4">
           <div className="bg-[#10121a] border border-[#2a2e3d] rounded-2xl p-4 shadow-xl flex flex-wrap items-center justify-between gap-3">
             <div>
-              <span className="text-xs font-serif font-bold text-[#f4f0e8] uppercase block">
-                Round 2: Shades in the Mist Simulator
-              </span>
-              <p className="text-[10px] text-[#8e95a5]">
-                Simulate face-to-face 3-clash matches, test voting stances, tie-breakers, and escalating scores.
+              <div className="flex items-center space-x-2">
+                <span className="text-xs font-serif font-bold text-[#f4f0e8] uppercase">
+                  Round 2: Shades in the Mist Simulator
+                </span>
+                <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-purple-950 border border-purple-500/40 text-purple-300">
+                  {payload?.round2_all_matches?.length || 0} Matches Paired
+                </span>
+              </div>
+              <p className="text-[10px] text-[#8e95a5] mt-0.5">
+                Simulate face-to-face 3-clash Prisoner&apos;s Dilemma matchups, test voting stances, and verify Negotiator tie-breakers.
               </p>
             </div>
 
@@ -766,87 +900,111 @@ export const SoloTesterWorkbench: React.FC = () => {
                 className="py-1.5 px-3 rounded-xl bg-purple-900/60 border border-purple-500/50 hover:bg-purple-800 text-purple-200 text-xs font-mono font-bold flex items-center space-x-1"
               >
                 <Play className="w-3.5 h-3.5" />
-                <span>Launch Round 2 Active</span>
+                <span>Launch Round 2</span>
+              </button>
+              <button
+                onClick={async () => {
+                  await adminRound2SkipPhase(adminPass);
+                  await refresh();
+                }}
+                className="py-1.5 px-3 rounded-xl bg-[#161922] border border-purple-500/40 text-purple-200 text-xs font-mono flex items-center space-x-1"
+              >
+                <FastForward className="w-3.5 h-3.5" />
+                <span>Skip Phase</span>
+              </button>
+              <button
+                onClick={async () => {
+                  await adminRound2ResetMatches(adminPass);
+                  await refresh();
+                }}
+                className="py-1.5 px-2.5 rounded-xl bg-[#161922] border border-red-500/30 text-red-300 text-xs font-mono"
+                title="Reset matches"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
               </button>
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
-            <button
-              onClick={() => handleR2CastPresetVotes('TRUCE', 'TRUCE')}
-              className="p-3.5 rounded-2xl bg-gradient-to-r from-emerald-950/60 to-[#10121a] border border-emerald-500/50 text-left hover:border-emerald-400 transition-all space-y-1.5"
-            >
-              <div className="flex items-center space-x-2 text-emerald-400 font-bold text-xs font-serif">
-                <Handshake className="w-4 h-4" />
-                <span>Simulate: Both Truce</span>
-              </div>
-              <p className="text-[10px] text-[#8e95a5] leading-relaxed">
-                Both crews cooperate honorably (+75 / +150 / +225 PTS each).
-              </p>
-            </button>
+          {/* Quick Scenario Testing Cards */}
+          <div className="space-y-2">
+            <span className="text-[10px] font-mono uppercase text-[#8e95a5] tracking-widest block">
+              Simulate Matchup Clash Stances (Auto-casts for all squad members)
+            </span>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+              <button
+                onClick={() => handleR2CastPresetVotes('TRUCE', 'TRUCE')}
+                className="p-3.5 rounded-2xl bg-gradient-to-r from-emerald-950/60 to-[#10121a] border border-emerald-500/50 text-left hover:border-emerald-400 transition-all space-y-1.5"
+              >
+                <div className="flex items-center space-x-2 text-emerald-400 font-bold text-xs font-serif">
+                  <Handshake className="w-4 h-4" />
+                  <span>Both Truce (Honor)</span>
+                </div>
+                <p className="text-[10px] text-[#8e95a5] leading-relaxed">
+                  Both crews cooperate honorably (+75 / +150 / +225 PTS each).
+                </p>
+              </button>
 
-            <button
-              onClick={() => handleR2CastPresetVotes('AMBUSH', 'TRUCE')}
-              className="p-3.5 rounded-2xl bg-gradient-to-r from-amber-950/60 to-[#10121a] border border-amber-500/50 text-left hover:border-amber-400 transition-all space-y-1.5"
-            >
-              <div className="flex items-center space-x-2 text-amber-400 font-bold text-xs font-serif">
-                <Crown className="w-4 h-4" />
-                <span>Simulate: Team A Ambush Wins</span>
-              </div>
-              <p className="text-[10px] text-[#8e95a5] leading-relaxed">
-                Team A backstabs (+150 / +300 / +450 PTS), Team B gets 0.
-              </p>
-            </button>
+              <button
+                onClick={() => handleR2CastPresetVotes('AMBUSH', 'TRUCE')}
+                className="p-3.5 rounded-2xl bg-gradient-to-r from-amber-950/60 to-[#10121a] border border-amber-500/50 text-left hover:border-amber-400 transition-all space-y-1.5"
+              >
+                <div className="flex items-center space-x-2 text-amber-400 font-bold text-xs font-serif">
+                  <Crown className="w-4 h-4" />
+                  <span>Team A Ambush Wins</span>
+                </div>
+                <p className="text-[10px] text-[#8e95a5] leading-relaxed">
+                  Team A backstabs (+150 / +300 / +450 PTS), Team B gets 0.
+                </p>
+              </button>
 
-            <button
-              onClick={() => handleR2CastPresetVotes('TRUCE', 'AMBUSH')}
-              className="p-3.5 rounded-2xl bg-gradient-to-r from-rose-950/60 to-[#10121a] border border-rose-500/50 text-left hover:border-rose-400 transition-all space-y-1.5"
-            >
-              <div className="flex items-center space-x-2 text-rose-400 font-bold text-xs font-serif">
-                <AlertCircle className="w-4 h-4" />
-                <span>Simulate: Team B Ambush Wins</span>
-              </div>
-              <p className="text-[10px] text-[#8e95a5] leading-relaxed">
-                Team B backstabs (+150 / +300 / +450 PTS), Team A gets 0.
-              </p>
-            </button>
+              <button
+                onClick={() => handleR2CastPresetVotes('TRUCE', 'AMBUSH')}
+                className="p-3.5 rounded-2xl bg-gradient-to-r from-rose-950/60 to-[#10121a] border border-rose-500/50 text-left hover:border-rose-400 transition-all space-y-1.5"
+              >
+                <div className="flex items-center space-x-2 text-rose-400 font-bold text-xs font-serif">
+                  <AlertCircle className="w-4 h-4" />
+                  <span>Team B Ambush Wins</span>
+                </div>
+                <p className="text-[10px] text-[#8e95a5] leading-relaxed">
+                  Team B backstabs (+150 / +300 / +450 PTS), Team A gets 0.
+                </p>
+              </button>
 
-            <button
-              onClick={() => handleR2CastPresetVotes('AMBUSH', 'AMBUSH')}
-              className="p-3.5 rounded-2xl bg-gradient-to-r from-purple-950/60 to-[#10121a] border border-purple-500/50 text-left hover:border-purple-400 transition-all space-y-1.5"
-            >
-              <div className="flex items-center space-x-2 text-purple-400 font-bold text-xs font-serif">
-                <Swords className="w-4 h-4" />
-                <span>Simulate: Mutual Betrayal</span>
-              </div>
-              <p className="text-[10px] text-[#8e95a5] leading-relaxed">
-                Both crews betray (+15 / +30 / +45 PTS each).
-              </p>
-            </button>
+              <button
+                onClick={() => handleR2CastPresetVotes('AMBUSH', 'AMBUSH')}
+                className="p-3.5 rounded-2xl bg-gradient-to-r from-purple-950/60 to-[#10121a] border border-purple-500/50 text-left hover:border-purple-400 transition-all space-y-1.5"
+              >
+                <div className="flex items-center space-x-2 text-purple-400 font-bold text-xs font-serif">
+                  <Swords className="w-4 h-4" />
+                  <span>Mutual Betrayal</span>
+                </div>
+                <p className="text-[10px] text-[#8e95a5] leading-relaxed">
+                  Both crews betray (+15 / +30 / +45 PTS each).
+                </p>
+              </button>
+            </div>
           </div>
         </div>
       )}
 
       {/* ===================================================================== */}
-      {/* MODE 4: ROUND 3 ESCAPE ROYALE TEST ARENA                             */}
+      {/* TAB 3: ROUND 3 STUDIO (CONGESTION & ESCAPE ROYALE)                    */}
       {/* ===================================================================== */}
-      {viewMode === 'round3' && (
+      {roundTab === 'round3' && (
         <div className="space-y-4">
           <div className="bg-[#10121a] border border-[#2a2e3d] rounded-2xl p-4 shadow-xl flex flex-wrap items-center justify-between gap-3">
             <div>
               <div className="flex items-center space-x-2">
                 <Compass className="w-4 h-4 text-[#c4a45a]" />
                 <span className="text-xs font-serif font-bold text-[#f4f0e8] uppercase">
-                  Round 3: Escape from Tartarus (Escape Royale)
+                  Round 3: The Odyssey Escape Royale Studio
                 </span>
-                <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-[#c4a45a]/20 text-[#c4a45a] border border-[#c4a45a]/40">
-                  {round3Session?.is_sudden_death
-                    ? 'SUDDEN DEATH STANDOFF'
-                    : `WAVE ${round3Session?.current_wave || 1} • ${round3Session?.current_phase || 'NOT STARTED'}`}
+                <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-amber-950 border border-amber-500/40 text-amber-300">
+                  WAVE {round3Session?.current_wave || 1} • {round3Session?.current_phase || 'NOT STARTED'}
                 </span>
               </div>
-              <p className="text-[10px] text-[#8e95a5] mt-1">
-                Simulate minority game congestion, boat capsizing, Cerberus revenge strikes, and Sudden Death parleys.
+              <p className="text-[10px] text-[#8e95a5] mt-0.5">
+                Simulate minority game congestion, boat capsizing, Cerberus revenge strikes, and Sudden Death duels.
               </p>
             </div>
 
@@ -866,35 +1024,26 @@ export const SoloTesterWorkbench: React.FC = () => {
                 className="py-1.5 px-3 rounded-xl bg-[#161922] border border-[#2a2e3d] hover:border-[#c4a45a] text-[#f4f0e8] text-xs font-mono flex items-center space-x-1"
               >
                 <FastForward className="w-3.5 h-3.5 text-[#c4a45a]" />
-                <span>Advance Phase</span>
+                <span>Next Phase</span>
               </button>
               <button
                 onClick={async () => {
                   await adminRound3ForceNextWave(adminPass);
                   await refresh();
                 }}
-                className="py-1.5 px-3 rounded-xl bg-[#161922] border border-[#2a2e3d] hover:border-cyan-500/50 text-cyan-300 text-xs font-mono flex items-center space-x-1"
+                className="py-1.5 px-3 rounded-xl bg-[#161922] border border-cyan-500/50 text-cyan-300 text-xs font-mono flex items-center space-x-1"
               >
                 <span>Force Wave 🌊</span>
-              </button>
-              <button
-                onClick={async () => {
-                  await adminRound3AdjustTimer(adminPass, 15);
-                  await refresh();
-                }}
-                className="py-1.5 px-2.5 rounded-xl bg-[#161922] border border-[#2a2e3d] text-[#8e95a5] hover:text-[#f4f0e8] text-xs font-mono"
-              >
-                +15s
               </button>
               <button
                 onClick={async () => {
                   await adminRound3ResetSession(adminPass);
                   await refresh();
                 }}
-                className="py-1.5 px-2.5 rounded-xl bg-[#161922] border border-red-900/50 text-red-400 hover:text-red-300 text-xs font-mono flex items-center space-x-1"
+                className="py-1.5 px-2.5 rounded-xl bg-[#161922] border border-red-900/50 text-red-400 text-xs font-mono"
                 title="Reset Round 3 session"
               >
-                <RotateCcw className="w-3 h-3" />
+                <RotateCcw className="w-3.5 h-3.5" />
               </button>
             </div>
           </div>
@@ -974,7 +1123,7 @@ export const SoloTesterWorkbench: React.FC = () => {
                   <span>Sic Cerberus on Nemesis</span>
                 </div>
                 <p className="text-[10px] text-[#8e95a5] leading-relaxed">
-                  Team A correctly predicts Nemesis Team B's boat ➔ +150m bonus & -150m drag!
+                  Team A correctly predicts Nemesis Team B&apos;s boat ➔ +150m bonus & -150m drag!
                 </p>
               </button>
 
@@ -1082,80 +1231,6 @@ export const SoloTesterWorkbench: React.FC = () => {
           )}
         </div>
       )}
-
-      {/* ===================================================================== */}
-      {/* VERIFICATION & SUBMISSION TEST PANEL                                  */}
-      {/* ===================================================================== */}
-      <div className="bg-[#10121a] border border-[#2a2e3d] rounded-2xl p-5 shadow-xl space-y-4">
-        <div className="flex items-center justify-between border-b border-[#2a2e3d] pb-3">
-          <div className="flex items-center space-x-2">
-            <Sparkles className="w-4 h-4 text-[#c4a45a]" />
-            <h3 className="text-sm font-serif font-bold text-[#f4f0e8] uppercase">
-              Codeword Verification & Escalating Scoring Test
-            </h3>
-          </div>
-          <button
-            onClick={() => setTestInput(selectedWord)}
-            className="text-[10px] font-mono text-[#c4a45a] hover:underline"
-          >
-            Auto-fill: {selectedWord}
-          </button>
-        </div>
-
-        <form onSubmit={handleCodewordSubmit} className="space-y-3">
-          <div className="flex flex-col sm:flex-row gap-2">
-            <input
-              type="text"
-              value={testInput}
-              onChange={(e) => setTestInput(e.target.value.toUpperCase())}
-              placeholder={`ENTER 2-WORD CODEWORD (e.g. ${selectedWord})...`}
-              className="flex-1 bg-[#161922] border border-[#2a2e3d] focus:border-[#c4a45a] rounded-xl px-4 py-2.5 text-sm font-mono tracking-widest text-[#f4f0e8] uppercase outline-none"
-            />
-            <button
-              type="submit"
-              disabled={submitting}
-              className="py-2.5 px-6 rounded-xl bg-gradient-to-r from-[#c4a45a] to-[#e5cb87] hover:from-[#d8b86e] hover:to-[#f0d89e] text-[#08090c] font-serif font-bold text-xs shadow-gold-glow transition-all"
-            >
-              {submitting ? 'Verifying...' : 'Submit & Test Score'}
-            </button>
-          </div>
-
-          {testResult && (
-            <div
-              className={`p-3 rounded-xl border text-xs flex items-center space-x-2 ${
-                testResult.success
-                  ? 'bg-emerald-950/60 border-emerald-500/60 text-emerald-200'
-                  : 'bg-red-950/60 border-red-500/60 text-red-200'
-              }`}
-            >
-              {testResult.success ? (
-                <CheckCircle2 className="w-4 h-4 flex-shrink-0 text-emerald-400" />
-              ) : (
-                <AlertCircle className="w-4 h-4 flex-shrink-0 text-red-400" />
-              )}
-              <span>{testResult.message}</span>
-            </div>
-          )}
-        </form>
-
-        {/* Dynamic Scoring Metrics Breakdown */}
-        <div className="p-3.5 rounded-xl bg-[#08090c] border border-[#2a2e3d] grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs font-mono">
-          <div>
-            <span className="text-[#8e95a5] block text-[10px]">Elapsed Time</span>
-            <span className="text-[#f4f0e8] font-bold">
-              {Math.floor(elapsedSeconds / 60)}m {elapsedSeconds % 60}s
-            </span>
-          </div>
-          <div>
-            <span className="text-[#8e95a5] block text-[10px]">Speed Tier</span>
-            <span className="text-[#c4a45a] font-bold">{scoreBreakdown.speedTier}</span>
-          </div>
-          <div>
-            <span className="text-[#8e95a5] block text-[10px]">Est. Points Awarded</span>
-            <span className="text-emerald-400 font-bold text-sm">+{scoreBreakdown.finalPoints} PTS</span>
-          </div>
-        </div>
-      </div>
     </div>
   );
 };

@@ -10,21 +10,11 @@ import {
   Maximize2,
   Minimize2,
   RotateCw,
-  ZoomIn,
-  ZoomOut,
   CheckCircle2,
   AlertCircle,
   Sparkles,
-  AlignVerticalJustifyStart,
-  AlignVerticalJustifyCenter,
-  AlignVerticalJustifyEnd,
-  AlignLeft,
-  AlignCenter,
-  AlignRight,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
-
-type AlignmentAnchor = 'start' | 'center' | 'end';
 
 export const AsciiSplitterRound: React.FC = () => {
   const { player, team, role, currentRound, submitAnswer, payload } = useGameSession();
@@ -34,10 +24,8 @@ export const AsciiSplitterRound: React.FC = () => {
   const wakeLockRef = useRef<any>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // Alignment & Sizing controls (Default to 0deg portrait for natural pub table placement)
-  const [anchor, setAnchor] = useState<AlignmentAnchor>('center');
+  // Rotation state (Default to 0deg portrait for natural pub table placement)
   const [rotation, setRotation] = useState<0 | 90 | 180 | 270>(0);
-  const [zoomLevel, setZoomLevel] = useState<number>(1.0);
   const [showHud, setShowHud] = useState(true);
   const hudTimeoutRef = useRef<number | null>(null);
 
@@ -184,27 +172,6 @@ export const AsciiSplitterRound: React.FC = () => {
     });
   };
 
-  const handleZoom = (e: React.MouseEvent, delta: number) => {
-    e.stopPropagation();
-    resetHudTimeout();
-    setZoomLevel(prev => {
-      const next = Math.round((prev + delta) * 10) / 10;
-      return Math.min(2.0, Math.max(0.6, next));
-    });
-  };
-
-  const handleResetZoom = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    resetHudTimeout();
-    setZoomLevel(1.0);
-  };
-
-  const handleAnchorSelect = (e: React.MouseEvent, a: AlignmentAnchor) => {
-    e.stopPropagation();
-    resetHudTimeout();
-    setAnchor(a);
-  };
-
   const handleCodewordSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!codewordInput.trim()) return;
@@ -236,21 +203,6 @@ export const AsciiSplitterRound: React.FC = () => {
   const canvasWidth = isSideways && isPortrait ? windowDimensions.h : windowDimensions.w;
   const canvasHeight = isSideways && isPortrait ? windowDimensions.w : windowDimensions.h;
 
-  const getVerticalAlignmentStyle = () => {
-    if (anchor === 'center') return { justifyContent: 'center' };
-    if (rotation === 90) {
-      if (anchor === 'start') return { justifyContent: 'flex-end', paddingBottom: '0px' };
-      if (anchor === 'end') return { justifyContent: 'flex-start', paddingTop: '0px' };
-    } else if (rotation === 270) {
-      if (anchor === 'start') return { justifyContent: 'flex-start', paddingTop: '0px' };
-      if (anchor === 'end') return { justifyContent: 'flex-end', paddingBottom: '0px' };
-    } else {
-      if (anchor === 'start') return { justifyContent: 'flex-start', paddingTop: '0px' };
-      if (anchor === 'end') return { justifyContent: 'flex-end', paddingBottom: '0px' };
-    }
-    return { justifyContent: 'center' };
-  };
-
   // Tablet Math
   const { totalWidth, totalHeight, line1Y, horizonY, line2Y } = TABLET_CONFIG;
   const slotWidth = totalWidth / Math.max(1, teamSize);
@@ -268,21 +220,19 @@ export const AsciiSplitterRound: React.FC = () => {
   const renderTabletSlice = (isFullscreenMode: boolean) => {
     return (
       <div
-        className="w-full h-full flex items-center justify-center select-none relative overflow-hidden"
+        className="flex items-center justify-center select-none relative overflow-hidden mx-auto rounded-lg shadow-xl"
         style={{
-          width: isFullscreenMode ? '100%' : '100%',
-          height: isFullscreenMode ? '100%' : '180px',
+          width: isFullscreenMode ? '100%' : '140px',
+          height: isFullscreenMode ? '100%' : '240px',
         }}
       >
         <svg
           viewBox={`${viewBoxX} 0 ${slotWidth} ${totalHeight}`}
-          preserveAspectRatio="none"
+          preserveAspectRatio={isFullscreenMode ? 'none' : 'xMidYMid meet'}
           style={{
             width: '100%',
             height: '100%',
             display: 'block',
-            transform: isFullscreenMode && zoomLevel !== 1 ? `scale(${zoomLevel})` : undefined,
-            transformOrigin: 'center center',
           }}
         >
           <defs>
@@ -472,69 +422,13 @@ export const AsciiSplitterRound: React.FC = () => {
             <span className="text-[#8e95a5]">({getSlotPositionLabel(activeSlot, teamSize)})</span>
           </div>
 
-          {/* Controls Bar - Mobile Friendly Touch Targets (min 44px) */}
-          <div className="flex items-center space-x-1 sm:space-x-1.5 bg-[#10121a]/95 backdrop-blur border border-[#2a2e3d] p-1 rounded-full shadow-2xl shrink-0">
-            {/* Edge Snapping */}
-            <div className="flex items-center bg-[#161922] rounded-full p-0.5 border border-[#2a2e3d]">
-              <button
-                onClick={(e) => handleAnchorSelect(e, 'start')}
-                title={isSideways ? "Align Left (Snap to physical left edge)" : "Align Top (Snap to top edge)"}
-                className={`w-11 h-11 min-w-[44px] min-h-[44px] flex items-center justify-center rounded-full transition-colors ${
-                  anchor === 'start' ? 'bg-[#c4a45a] text-[#08090c]' : 'text-[#8e95a5] hover:text-[#f4f0e8]'
-                }`}
-              >
-                {isSideways ? <AlignLeft className="w-5 h-5" /> : <AlignVerticalJustifyStart className="w-5 h-5" />}
-              </button>
-              <button
-                onClick={(e) => handleAnchorSelect(e, 'center')}
-                title="Center Alignment"
-                className={`w-11 h-11 min-w-[44px] min-h-[44px] flex items-center justify-center rounded-full transition-colors ${
-                  anchor === 'center' ? 'bg-[#c4a45a] text-[#08090c]' : 'text-[#8e95a5] hover:text-[#f4f0e8]'
-                }`}
-              >
-                {isSideways ? <AlignCenter className="w-5 h-5" /> : <AlignVerticalJustifyCenter className="w-5 h-5" />}
-              </button>
-              <button
-                onClick={(e) => handleAnchorSelect(e, 'end')}
-                title={isSideways ? "Align Right (Snap to physical right edge)" : "Align Bottom (Snap to bottom edge)"}
-                className={`w-11 h-11 min-w-[44px] min-h-[44px] flex items-center justify-center rounded-full transition-colors ${
-                  anchor === 'end' ? 'bg-[#c4a45a] text-[#08090c]' : 'text-[#8e95a5] hover:text-[#f4f0e8]'
-                }`}
-              >
-                {isSideways ? <AlignRight className="w-5 h-5" /> : <AlignVerticalJustifyEnd className="w-5 h-5" />}
-              </button>
-            </div>
-
-            {/* Zoom Controls */}
-            <div className="flex items-center bg-[#161922] rounded-full px-1 py-0.5 border border-[#2a2e3d]">
-              <button
-                onClick={(e) => handleZoom(e, -0.1)}
-                title="Zoom Out (Reduce Text Width)"
-                className="w-11 h-11 min-w-[44px] min-h-[44px] flex items-center justify-center rounded-full text-[#8e95a5] hover:text-[#f4f0e8]"
-              >
-                <ZoomOut className="w-5 h-5" />
-              </button>
-              <button
-                onClick={handleResetZoom}
-                title="Reset to 100% Edge-to-Edge"
-                className="min-h-[44px] px-2 flex items-center justify-center text-xs font-mono text-[#c4a45a] font-bold hover:underline"
-              >
-                {Math.round(zoomLevel * 100)}%
-              </button>
-              <button
-                onClick={(e) => handleZoom(e, 0.1)}
-                title="Zoom In (Increase Text Width)"
-                className="w-11 h-11 min-w-[44px] min-h-[44px] flex items-center justify-center rounded-full text-[#8e95a5] hover:text-[#f4f0e8]"
-              >
-                <ZoomIn className="w-5 h-5" />
-              </button>
-            </div>
-
+          {/* Controls Bar - Minimal, focused on table placement */}
+          <div className="flex items-center space-x-2 bg-[#10121a]/95 backdrop-blur border border-[#3a4157] p-1.5 rounded-full shadow-2xl shrink-0">
             {/* Rotate */}
             <button
               onClick={handleRotate}
               title={`Rotate Screen (${rotation}°)`}
-              className="w-11 h-11 min-w-[44px] min-h-[44px] flex items-center justify-center rounded-full bg-[#161922] border border-[#2a2e3d] text-[#c4a45a] hover:bg-[#c4a45a] hover:text-[#08090c] transition-colors"
+              className="w-11 h-11 min-w-[44px] min-h-[44px] flex items-center justify-center rounded-full bg-[#161922] border border-[#3a4157] text-[#e5cb87] hover:bg-[#c4a45a] hover:text-[#08090c] transition-colors"
             >
               <RotateCw className="w-5 h-5" />
             </button>
@@ -563,7 +457,7 @@ export const AsciiSplitterRound: React.FC = () => {
             paddingLeft: 'max(16px, env(safe-area-inset-left))',
             paddingRight: 'max(16px, env(safe-area-inset-right))',
             boxSizing: 'border-box',
-            ...getVerticalAlignmentStyle(),
+            justifyContent: 'center',
           }}
           className="bg-black select-none overflow-hidden transition-all duration-150"
         >

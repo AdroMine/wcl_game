@@ -3,15 +3,14 @@ import {
   Sparkles,
   BookOpen,
   X,
-  ArrowRight,
   Shield,
-  Eye,
   Key,
   Users,
   MessageSquare,
   Vote,
   Compass,
   CheckCircle2,
+  Clock,
 } from 'lucide-react';
 import type { RoundType } from '../types';
 
@@ -43,18 +42,13 @@ const BRIEFINGS: Record<string, BriefingContent> = {
     rules: [
       {
         icon: <Users className="w-4 h-4 text-[#e5cb87]" />,
-        title: '1. Lay Phones in Sequence',
-        desc: 'Check your slot number (#1 to #5) and place your phones side-by-side on your table in order.',
-      },
-      {
-        icon: <Eye className="w-4 h-4 text-[#38bdf8]" />,
-        title: '2. Align Golden Runes',
-        desc: 'Use edge alignment or rotate so the chiseled rune slices connect across screens to reveal two words.',
+        title: '1. Lay Phones in Order',
+        desc: 'Check your slot number (#1 to #5) and place your phones side-by-side across the table in sequence.',
       },
       {
         icon: <Key className="w-4 h-4 text-[#34d399]" />,
-        title: '3. One Member Submits',
-        desc: 'Any crewmate can submit the deciphered codeword. Faster solves earn maximum points!',
+        title: '2. Decipher & Submit Codeword',
+        desc: 'Combine your letters to decipher the 2-word codeword revealed across your screens. Any teammate can submit!',
       },
     ],
     objective: 'Decipher the 2-word ancient codeword to unseal the door (+150 PTS max).',
@@ -124,7 +118,7 @@ interface RoundBriefingModalProps {
   roundType: RoundType | string;
   isOpen: boolean;
   onClose: () => void;
-  secondsRemaining?: number; // Optional countdown for auto-briefing
+  secondsRemaining?: number;
   isAutoBriefing?: boolean;
 }
 
@@ -132,19 +126,30 @@ export const RoundBriefingModal: React.FC<RoundBriefingModalProps> = ({
   roundType,
   isOpen,
   onClose,
-  secondsRemaining,
+  secondsRemaining = 0,
   isAutoBriefing = false,
 }) => {
   const briefing = BRIEFINGS[roundType] || BRIEFINGS.ASCII_SPLITTER;
+
+  // In auto-briefing, if secondsRemaining > 14 show lore story; else show rules.
+  // In manual mode (!isAutoBriefing), allow tab switching between story and rules.
+  const [manualTab, setManualTab] = useState<'story' | 'rules'>('rules');
   const [revealedIndex, setRevealedIndex] = useState(0);
 
-  // Progressive sentence revelation for retro narrative dialogue
+  // Progressive sentence revelation with generous breathing room (2.8s per sentence)
   useEffect(() => {
     if (!isOpen) {
       setRevealedIndex(0);
       return;
     }
 
+    if (!isAutoBriefing) {
+      // Manual rules view: show all sentences immediately, no waiting
+      setRevealedIndex(briefing.sentences.length - 1);
+      return;
+    }
+
+    // Auto-briefing: slow sentence pacing
     setRevealedIndex(0);
     const interval = setInterval(() => {
       setRevealedIndex((prev) => {
@@ -154,26 +159,31 @@ export const RoundBriefingModal: React.FC<RoundBriefingModalProps> = ({
         clearInterval(interval);
         return prev;
       });
-    }, 1400);
+    }, 2800);
 
     return () => clearInterval(interval);
-  }, [isOpen, briefing]);
+  }, [isOpen, isAutoBriefing, briefing]);
 
   if (!isOpen) return null;
 
+  // Decide whether to show Story or Rules
+  const showStory = isAutoBriefing ? secondsRemaining > 14 : manualTab === 'story';
+  const showRules = isAutoBriefing ? secondsRemaining <= 14 : manualTab === 'rules';
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/85 backdrop-blur-md select-none animate-fadeIn">
-      <div className="w-full max-w-[460px] bg-[#10121a] border-2 border-[#c4a45a]/60 rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[92vh] relative">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/90 backdrop-blur-md select-none animate-fadeIn">
+      <div className="w-full max-w-[460px] bg-[#10121a] border-2 border-[#c4a45a]/70 rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[92vh] relative">
         {/* Top Header Banner */}
         <div className="p-4 sm:p-5 bg-gradient-to-r from-[#161922] via-[#1f2433] to-[#161922] border-b border-[#3a4157] flex items-center justify-between">
           <div className="space-y-0.5">
             <div className="flex items-center space-x-2">
               <span className="text-[10px] font-mono uppercase tracking-wider text-[#e5cb87] font-black px-2 py-0.5 rounded bg-[#c4a45a]/20 border border-[#c4a45a]/40">
-                STAGE {briefing.stageNumber} BRIEFING
+                DESCENT STAGE #{briefing.stageNumber}
               </span>
-              {isAutoBriefing && typeof secondsRemaining === 'number' && (
-                <span className="text-[10px] font-mono text-emerald-400 font-bold animate-pulse">
-                  Unsealing in {secondsRemaining}s
+              {isAutoBriefing && (
+                <span className="text-[10px] font-mono text-emerald-400 font-bold flex items-center space-x-1 animate-pulse">
+                  <Clock className="w-3 h-3" />
+                  <span>Unsealing in {secondsRemaining}s</span>
                 </span>
               )}
             </div>
@@ -182,97 +192,143 @@ export const RoundBriefingModal: React.FC<RoundBriefingModalProps> = ({
             </h2>
           </div>
 
-          <button
-            onClick={onClose}
-            className="w-8 h-8 rounded-full bg-[#161922] border border-[#3a4157] text-[#a9b4c7] hover:text-[#f4f0e8] hover:border-[#c4a45a] flex items-center justify-center transition-colors"
-            title="Close Briefing"
-          >
-            <X className="w-4 h-4" />
-          </button>
+          {/* Manual view allows closing; auto-briefing holds all players equally */}
+          {!isAutoBriefing && (
+            <button
+              onClick={onClose}
+              className="w-8 h-8 rounded-full bg-[#161922] border border-[#3a4157] text-[#a9b4c7] hover:text-[#f4f0e8] hover:border-[#c4a45a] flex items-center justify-center transition-colors"
+              title="Close Rules"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          )}
         </div>
 
-        {/* Scrollable Body */}
-        <div className="p-4 sm:p-5 overflow-y-auto space-y-4 font-sans text-[#cbd5e1] text-xs">
-          {/* Retro Narrative Dialogue Box */}
-          <div className="bg-[#08090c] border border-[#3a4157] rounded-2xl p-4 shadow-inner relative space-y-2">
-            <div className="flex items-center justify-between border-b border-[#2a2e3d] pb-1.5 text-[10px] font-mono text-[#a9b4c7]">
-              <div className="flex items-center space-x-1.5 text-[#e5cb87]">
-                <BookOpen className="w-3.5 h-3.5" />
-                <span className="font-bold tracking-widest uppercase">THE CHRONICLES</span>
-              </div>
-              <button
-                onClick={() => setRevealedIndex(briefing.sentences.length - 1)}
-                className="text-[#a9b4c7] hover:text-[#e5cb87] hover:underline"
-              >
-                Skip dialogue
-              </button>
-            </div>
-
-            <div className="min-h-[90px] space-y-1.5 font-serif italic text-xs sm:text-sm text-[#f4f0e8] leading-relaxed">
-              {briefing.sentences.slice(0, revealedIndex + 1).map((sentence, idx) => (
-                <p key={idx} className="transition-opacity duration-300">
-                  {sentence}
-                  {idx === revealedIndex && revealedIndex < briefing.sentences.length - 1 && (
-                    <span className="inline-block w-2 h-3.5 ml-1 bg-[#c4a45a] animate-pulse align-middle" />
-                  )}
-                </p>
-              ))}
-            </div>
+        {/* Manual view tabs */}
+        {!isAutoBriefing && (
+          <div className="flex border-b border-[#3a4157] bg-[#161922]">
+            <button
+              onClick={() => setManualTab('rules')}
+              className={`flex-1 py-2.5 text-xs font-mono font-bold transition-colors ${
+                manualTab === 'rules'
+                  ? 'text-[#e5cb87] border-b-2 border-[#c4a45a] bg-[#1f2433]'
+                  : 'text-[#a9b4c7] hover:text-[#f4f0e8]'
+              }`}
+            >
+              ⚔️ Physical Rules
+            </button>
+            <button
+              onClick={() => setManualTab('story')}
+              className={`flex-1 py-2.5 text-xs font-mono font-bold transition-colors ${
+                manualTab === 'story'
+                  ? 'text-[#e5cb87] border-b-2 border-[#c4a45a] bg-[#1f2433]'
+                  : 'text-[#a9b4c7] hover:text-[#f4f0e8]'
+              }`}
+            >
+              📖 Lore & Story
+            </button>
           </div>
+        )}
 
-          {/* 3 Golden Pub Rules */}
-          <div className="space-y-2">
-            <span className="text-[10px] font-mono uppercase tracking-wider text-[#e5cb87] font-bold block">
-              ⚔️ How Your Crew Plays (Physical Pub Rules)
-            </span>
-            <div className="space-y-2">
-              {briefing.rules.map((rule, idx) => (
-                <div
-                  key={idx}
-                  className="p-2.5 sm:p-3 rounded-xl bg-[#161922] border border-[#3a4157] flex items-start space-x-3"
-                >
-                  <div className="w-7 h-7 rounded-lg bg-[#10121a] border border-[#3a4157] flex items-center justify-center shrink-0 mt-0.5">
-                    {rule.icon}
-                  </div>
-                  <div className="space-y-0.5">
-                    <h4 className="text-xs font-bold text-[#f4f0e8]">{rule.title}</h4>
-                    <p className="text-[11px] text-[#cbd5e1] leading-relaxed">{rule.desc}</p>
+        {/* Body Content */}
+        <div className="p-5 sm:p-6 overflow-y-auto space-y-4 font-sans text-[#cbd5e1] text-xs">
+          {/* STAGE 1: THE LORE / STORY (Centered, generous pacing) */}
+          {showStory && (
+            <div className="space-y-4 py-2 animate-fadeIn text-center">
+              <div className="inline-flex items-center space-x-1.5 px-3 py-1 rounded-full bg-[#c4a45a]/15 border border-[#c4a45a]/30 text-[#e5cb87] text-[10px] font-mono uppercase tracking-widest font-bold">
+                <BookOpen className="w-3.5 h-3.5" />
+                <span>The Underworld Chronicles</span>
+              </div>
+
+              <div className="min-h-[160px] flex flex-col justify-center space-y-3 font-serif italic text-sm sm:text-base text-[#f4f0e8] leading-relaxed max-w-sm mx-auto">
+                {briefing.sentences.slice(0, revealedIndex + 1).map((sentence, idx) => (
+                  <p key={idx} className="transition-all duration-500">
+                    {sentence}
+                    {isAutoBriefing && idx === revealedIndex && revealedIndex < briefing.sentences.length - 1 && (
+                      <span className="inline-block w-2 h-4 ml-1 bg-[#c4a45a] animate-pulse align-middle" />
+                    )}
+                  </p>
+                ))}
+              </div>
+
+              {isAutoBriefing && (
+                <div className="pt-2">
+                  <div className="text-[11px] font-mono text-[#a9b4c7] animate-pulse">
+                    Rules appearing shortly...
                   </div>
                 </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Victory Goal Callout */}
-          <div className="p-3 rounded-xl bg-gradient-to-r from-[#161922] to-[#1e2433] border border-[#c4a45a]/40 flex items-center space-x-2.5">
-            <CheckCircle2 className="w-5 h-5 text-[#e5cb87] shrink-0" />
-            <div>
-              <span className="text-[10px] font-mono text-[#e5cb87] uppercase font-bold block">
-                Victory Objective
-              </span>
-              <p className="text-[11px] text-[#f4f0e8] font-medium leading-snug">
-                {briefing.objective}
-              </p>
-            </div>
-          </div>
-        </div>
-
-        {/* Action Button Footer */}
-        <div className="p-3 sm:p-4 bg-[#161922] border-t border-[#3a4157] flex items-center justify-between gap-3">
-          {isAutoBriefing && typeof secondsRemaining === 'number' && (
-            <div className="text-[11px] font-mono text-[#a9b4c7]">
-              <span>Starting in </span>
-              <strong className="text-[#e5cb87]">{secondsRemaining}s</strong>
+              )}
             </div>
           )}
 
-          <button
-            onClick={onClose}
-            className="flex-1 py-3 px-4 rounded-xl bg-gradient-to-r from-[#c4a45a] to-[#e5cb87] hover:from-[#d8b86e] hover:to-[#f0d89e] text-[#08090c] font-serif font-black text-xs sm:text-sm tracking-wider shadow-gold-glow flex items-center justify-center space-x-2 transition-all ml-auto"
-          >
-            <span>I Am Ready • Enter Chamber</span>
-            <ArrowRight className="w-4 h-4" />
-          </button>
+          {/* STAGE 2: THE PHYSICAL RULES & OBJECTIVE */}
+          {showRules && (
+            <div className="space-y-4 py-1 animate-fadeIn">
+              <div className="text-center space-y-1">
+                <span className="text-[10px] font-mono uppercase tracking-wider text-[#e5cb87] font-bold block">
+                  ⚔️ How Your Crew Plays (Physical Pub Rules)
+                </span>
+              </div>
+
+              {/* Rules List */}
+              <div className="space-y-2.5">
+                {briefing.rules.map((rule, idx) => (
+                  <div
+                    key={idx}
+                    className="p-3 sm:p-3.5 rounded-xl bg-[#161922] border border-[#3a4157] flex items-start space-x-3.5 shadow-sm"
+                  >
+                    <div className="w-8 h-8 rounded-lg bg-[#10121a] border border-[#3a4157] flex items-center justify-center shrink-0 mt-0.5">
+                      {rule.icon}
+                    </div>
+                    <div className="space-y-0.5">
+                      <h4 className="text-xs sm:text-sm font-bold text-[#f4f0e8]">{rule.title}</h4>
+                      <p className="text-[11px] text-[#cbd5e1] leading-relaxed">{rule.desc}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Victory Goal Callout */}
+              <div className="p-3 rounded-xl bg-gradient-to-r from-[#161922] to-[#1e2433] border border-[#c4a45a]/50 flex items-center space-x-3">
+                <CheckCircle2 className="w-5 h-5 text-[#e5cb87] shrink-0" />
+                <div>
+                  <span className="text-[10px] font-mono text-[#e5cb87] uppercase font-bold block">
+                    Victory Objective
+                  </span>
+                  <p className="text-[11px] text-[#f4f0e8] font-medium leading-snug">
+                    {briefing.objective}
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Footer / Progress Bar */}
+        <div className="p-4 bg-[#161922] border-t border-[#3a4157] text-center">
+          {isAutoBriefing ? (
+            /* Auto-briefing countdown holds everyone equally: NO early enter button */
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between text-xs font-mono text-[#a9b4c7]">
+                <span>Preparing the chamber...</span>
+                <span className="text-[#e5cb87] font-bold">Unsealing in {secondsRemaining}s</span>
+              </div>
+              <div className="w-full h-2 bg-[#08090c] rounded-full overflow-hidden border border-[#3a4157]">
+                <div
+                  className="h-full bg-gradient-to-r from-[#c4a45a] to-[#e5cb87] transition-all duration-500 rounded-full"
+                  style={{ width: `${Math.max(0, Math.min(100, ((30 - secondsRemaining) / 30) * 100))}%` }}
+                />
+              </div>
+            </div>
+          ) : (
+            /* Manual view has instant close button */
+            <button
+              onClick={onClose}
+              className="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-[#c4a45a] to-[#e5cb87] text-[#08090c] font-serif font-black text-xs sm:text-sm tracking-wider shadow-gold-glow transition-all"
+            >
+              Return to Descent
+            </button>
+          )}
         </div>
       </div>
     </div>

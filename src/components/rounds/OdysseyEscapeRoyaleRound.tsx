@@ -446,7 +446,7 @@ export const OdysseyEscapeRoyaleRound: React.FC = () => {
 
       {/* PHASE 1: THE BLUFF VIEW */}
       {currentPhase === 'BLUFF' && (
-        <div className="bg-[#10121a] border border-[#2a2e3d] rounded-2xl p-5 shadow-xl space-y-4">
+        <div className="bg-[#10121a] border border-[#3a4157] rounded-2xl p-5 shadow-xl space-y-4">
           <div className="flex items-center space-x-2 text-amber-400">
             <span className="text-base">🗣️</span>
             <h4 className="text-sm font-serif font-black text-[#f4f0e8]">
@@ -454,62 +454,62 @@ export const OdysseyEscapeRoyaleRound: React.FC = () => {
             </h4>
           </div>
 
-          <p className="text-xs text-[#8e95a5] leading-relaxed">
-            Stand up and look across tables! Who is bluffing? Only <strong className="text-amber-300">1 crew</strong> can take the Ghost Ship. Max <strong className="text-sky-300">{maxSailboatsSafe} crews</strong> can sail before the Sailboat capsizes! Coordinate your crew before the secret ballot opens!
+          <p className="text-xs text-[#cbd5e1] leading-relaxed">
+            Stand up and look across tables! The howls of Cerberus echo behind you and the exit portal across the River Styx is slowly sealing shut. Only <strong className="text-amber-300 font-bold">1 crew</strong> can take the Ghost Ship. Max <strong className="text-sky-300 font-bold">{maxSailboatsSafe} crews</strong> can sail before the Sailboat capsizes! Coordinate your crew before the secret ballot opens!
           </p>
 
           {/* 3 Vessels Rules Grid */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-1 text-xs font-mono">
             {/* Rowboat */}
-            <div className="p-3 rounded-xl bg-[#08090c] border border-[#2a2e3d] space-y-1">
+            <div className="p-3 rounded-xl bg-[#08090c] border border-[#3a4157] space-y-1">
               <div className="flex items-center justify-between">
-                <span className="font-bold text-amber-300">🚣 THE ROWBOAT</span>
-                <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-950 text-emerald-400 font-bold">SAFE</span>
+                <span className="font-bold text-emerald-400">🚣 THE ROWBOAT</span>
+                <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-950 text-emerald-400 font-bold border border-emerald-500/40">SAFE</span>
               </div>
-              <p className="text-[11px] text-[#8e95a5]">
+              <p className="text-[11px] text-[#cbd5e1]">
                 Never capsizes. Reliable <strong className="text-[#f4f0e8]">+150m</strong> for all boarding crews.
               </p>
             </div>
 
             {/* Sailboat */}
-            <div className="p-3 rounded-xl bg-[#08090c] border border-[#2a2e3d] space-y-1">
+            <div className="p-3 rounded-xl bg-[#08090c] border border-[#3a4157] space-y-1">
               <div className="flex items-center justify-between">
-                <span className="font-bold text-sky-300">⛵ THE SAILBOAT</span>
-                <span className="text-[10px] px-1.5 py-0.5 rounded bg-sky-950 text-sky-400 font-bold">BALANCED</span>
+                <span className="font-bold text-sky-400">⛵ THE SAILBOAT</span>
+                <span className="text-[10px] px-1.5 py-0.5 rounded bg-sky-950 text-sky-400 font-bold border border-sky-500/40">BALANCED</span>
               </div>
-              <p className="text-[11px] text-[#8e95a5]">
+              <p className="text-[11px] text-[#cbd5e1]">
                 Fast winds (<strong className="text-[#f4f0e8]">+300m</strong>). Capsizes (<strong>0m</strong>) if &gt;{maxSailboatsSafe} crews board!
               </p>
             </div>
 
             {/* Ghost Ship */}
-            <div className="p-3 rounded-xl bg-[#08090c] border border-[#2a2e3d] space-y-1">
+            <div className="p-3 rounded-xl bg-[#08090c] border border-[#3a4157] space-y-1">
               <div className="flex items-center justify-between">
                 <span className="font-bold text-purple-300">⚡ THE GHOST SHIP</span>
-                <span className="text-[10px] px-1.5 py-0.5 rounded bg-purple-950 text-purple-400 font-bold">GAMBLE</span>
+                <span className="text-[10px] px-1.5 py-0.5 rounded bg-purple-950 text-purple-300 font-bold border border-purple-500/40">GAMBLE</span>
               </div>
-              <p className="text-[11px] text-[#8e95a5]">
+              <p className="text-[11px] text-[#cbd5e1]">
                 Mythic surge (<strong className="text-[#f4f0e8]">+450m</strong>) ONLY if 1 crew boards. 2+ crews collide (<strong className="text-rose-400">-50m</strong>)!
               </p>
             </div>
           </div>
 
-          <div className="p-3 rounded-xl bg-[#161922] border border-[#2a2e3d] text-center text-xs font-mono text-[#8e95a5]">
+          <div className="p-3 rounded-xl bg-[#161922] border border-[#3a4157] text-center text-xs font-mono text-[#a9b4c7]">
             <Lock className="w-3.5 h-3.5 inline mr-1 text-amber-400" />
-            Voting buttons unlock when parley ends in <strong>{secondsLeft}s</strong>.
+            Voting buttons unlock when bluffing ends in <strong>{secondsLeft}s</strong>.
           </div>
         </div>
       )}
 
       {/* PHASE 2: SECRET VOTING VIEW */}
       {currentPhase === 'VOTE' && (
-        <div className="bg-[#10121a] border border-[#2a2e3d] rounded-2xl p-5 shadow-xl space-y-4">
-          <div className="flex items-center justify-between border-b border-[#2a2e3d] pb-2">
+        <div className="bg-[#10121a] border border-[#3a4157] rounded-2xl p-5 shadow-xl space-y-4">
+          <div className="flex items-center justify-between border-b border-[#3a4157] pb-2">
             <div>
               <h4 className="text-sm font-serif font-black text-[#f4f0e8]">
                 Select Your Escape Route
               </h4>
-              <p className="text-xs text-[#8e95a5]">
+              <p className="text-xs text-[#cbd5e1]">
                 Majority of your crew decides your vessel. Negotiator breaks ties.
               </p>
             </div>
@@ -535,7 +535,7 @@ export const OdysseyEscapeRoyaleRound: React.FC = () => {
               className={`w-full min-h-[64px] p-4 rounded-xl border text-left flex items-center justify-between transition-all active:scale-[0.99] ${
                 playerVote === 'ROWBOAT'
                   ? 'bg-emerald-950/70 border-emerald-400 shadow-lg text-white ring-2 ring-emerald-400/50'
-                  : 'bg-[#161922] border-[#2a2e3d] hover:border-emerald-500/60 text-[#f4f0e8]'
+                  : 'bg-[#161922] border-[#3a4157] hover:border-emerald-500/60 text-[#f4f0e8]'
               }`}
             >
               <div className="flex items-center space-x-3">
@@ -543,11 +543,11 @@ export const OdysseyEscapeRoyaleRound: React.FC = () => {
                 <div>
                   <div className="font-serif font-black text-sm text-[#f4f0e8] flex items-center space-x-1.5">
                     <span>THE ROWBOAT</span>
-                    <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-emerald-950 border border-emerald-500/40 text-emerald-300">
+                    <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-emerald-950 border border-emerald-500/40 text-emerald-300 font-bold">
                       SAFE
                     </span>
                   </div>
-                  <div className="text-xs text-[#8e95a5]">
+                  <div className="text-xs text-[#cbd5e1]">
                     Steady oars • Never capsizes • Guaranteed +150m
                   </div>
                 </div>
@@ -564,7 +564,7 @@ export const OdysseyEscapeRoyaleRound: React.FC = () => {
               className={`w-full min-h-[64px] p-4 rounded-xl border text-left flex items-center justify-between transition-all active:scale-[0.99] ${
                 playerVote === 'SAILBOAT'
                   ? 'bg-sky-950/70 border-sky-400 shadow-lg text-white ring-2 ring-sky-400/50'
-                  : 'bg-[#161922] border-[#2a2e3d] hover:border-sky-500/60 text-[#f4f0e8]'
+                  : 'bg-[#161922] border-[#3a4157] hover:border-sky-500/60 text-[#f4f0e8]'
               }`}
             >
               <div className="flex items-center space-x-3">
@@ -572,12 +572,12 @@ export const OdysseyEscapeRoyaleRound: React.FC = () => {
                 <div>
                   <div className="font-serif font-black text-sm text-[#f4f0e8] flex items-center space-x-1.5">
                     <span>THE SAILBOAT</span>
-                    <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-sky-950 border border-sky-500/40 text-sky-300">
+                    <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-sky-950 border border-sky-500/40 text-sky-300 font-bold">
                       BALANCED
                     </span>
                   </div>
-                  <div className="text-xs text-[#8e95a5]">
-                    Fast winds • Capsizes if &gt;{maxSailboatsSafe} crews board
+                  <div className="text-xs text-[#cbd5e1]">
+                    Fast winds • Capsizes if &gt;{maxSailboatsSafe} crews board (0m)
                   </div>
                 </div>
               </div>
@@ -593,7 +593,7 @@ export const OdysseyEscapeRoyaleRound: React.FC = () => {
               className={`w-full min-h-[64px] p-4 rounded-xl border text-left flex items-center justify-between transition-all active:scale-[0.99] ${
                 playerVote === 'GHOST_SHIP'
                   ? 'bg-purple-950/70 border-purple-400 shadow-lg text-white ring-2 ring-purple-400/50'
-                  : 'bg-[#161922] border-[#2a2e3d] hover:border-purple-500/60 text-[#f4f0e8]'
+                  : 'bg-[#161922] border-[#3a4157] hover:border-purple-500/60 text-[#f4f0e8]'
               }`}
             >
               <div className="flex items-center space-x-3">
@@ -601,12 +601,12 @@ export const OdysseyEscapeRoyaleRound: React.FC = () => {
                 <div>
                   <div className="font-serif font-black text-sm text-[#f4f0e8] flex items-center space-x-1.5">
                     <span>THE GHOST SHIP</span>
-                    <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-purple-950 border border-purple-500/40 text-purple-300">
+                    <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-purple-950 border border-purple-500/40 text-purple-300 font-bold">
                       SOLO GAMBLE
                     </span>
                   </div>
-                  <div className="text-xs text-[#8e95a5]">
-                    Mythic phantom • Succeeds ONLY if 1 crew boards (2+ collide for -50m)
+                  <div className="text-xs text-[#cbd5e1]">
+                    Mythic surge (+450m) ONLY if 1 crew boards. 2+ collide (-50m)
                   </div>
                 </div>
               </div>
@@ -616,28 +616,28 @@ export const OdysseyEscapeRoyaleRound: React.FC = () => {
             </button>
           </div>
 
-          {/* CERBERUS REVENGE CARD (IF ELIGIBLE FROM ROUND 2) */}
+          {/* CERBERUS HONEY-CAKE TREAT REVENGE CARD (IF ELIGIBLE FROM ROUND 2) */}
           {canUseCerberus && nemesisTeam && (
-            <div className="p-4 rounded-xl bg-gradient-to-r from-red-950/50 via-[#10121a] to-red-950/50 border border-red-500/50 space-y-2.5">
+            <div className="p-4 rounded-xl bg-gradient-to-r from-red-950/60 via-[#10121a] to-red-950/60 border border-red-500/60 space-y-2.5">
               <div className="flex items-center justify-between">
                 <div className="flex items-center space-x-1.5 text-xs font-mono font-bold text-red-400">
-                  <Skull className="w-4 h-4 text-red-400" />
-                  <span>UNLEASH CERBERUS ON {nemesisTeam.name}</span>
+                  <span className="text-base">🦴</span>
+                  <span>TOSS HONEY-CAKE TREAT TO CERBERUS</span>
                 </div>
-                <span className="text-[10px] font-mono text-amber-400">
-                  ONE-TIME STRIKE
+                <span className="text-[10px] font-mono text-amber-300 font-bold px-2 py-0.5 rounded bg-amber-950/80 border border-amber-500/40">
+                  1-TIME TREAT
                 </span>
               </div>
-              <p className="text-[11px] text-[#8e95a5]">
-                {nemesisTeam.name} betrayed you in the Mist! Guess which vessel they will board. If you guess right, Cerberus drags them back -150m and surges your crew forward +150m!
+              <p className="text-[11px] text-[#cbd5e1] leading-relaxed">
+                Because <strong className="text-red-300 font-bold">{nemesisTeam.name}</strong> betrayed you in the Mist, you salvaged an Underworld Honey-Cake treat. Tossing it to Cerberus directs the three-headed hound to hunt them down! Guess their vessel correctly: they are dragged back <strong className="text-red-300 font-bold">-150m</strong> and your crew surges forward <strong className="text-emerald-300 font-bold">+150m</strong>!
               </p>
 
               <div className="flex items-center space-x-2 pt-1">
-                <span className="text-xs font-mono text-[#f4f0e8]">Guess their boat:</span>
+                <span className="text-xs font-mono text-[#f4f0e8] font-bold">Guess their vessel:</span>
                 <select
                   value={cerberusGuess}
                   onChange={(e) => setCerberusGuess(e.target.value as Round3Vessel)}
-                  className="bg-[#161922] border border-[#2a2e3d] text-xs font-mono text-[#c4a45a] rounded-lg px-3 py-1.5 outline-none focus:border-red-400"
+                  className="bg-[#161922] border border-[#3a4157] text-xs font-mono text-[#e5cb87] rounded-lg px-3 py-1.5 outline-none focus:border-red-400 font-bold"
                 >
                   <option value="ROWBOAT">🚣 The Rowboat</option>
                   <option value="SAILBOAT">⛵ The Sailboat</option>

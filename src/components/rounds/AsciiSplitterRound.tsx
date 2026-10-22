@@ -582,11 +582,11 @@ export const AsciiSplitterRound: React.FC = () => {
   return (
     <div className="space-y-4">
       {/* Ancient Tablet Intro Banner */}
-      <div className="bg-[#10121a] border border-[#2a2e3d] rounded-2xl p-5 shadow-xl relative overflow-hidden space-y-4">
+      <div className="bg-[#10121a] border border-[#3a4157] rounded-2xl p-5 shadow-xl relative overflow-hidden space-y-4">
         <div className="flex items-start justify-between">
-          <div className="space-y-1">
+          <div className="space-y-1.5">
             <div className="flex items-center space-x-2">
-              <span className="text-[10px] font-mono uppercase tracking-wider text-[#c4a45a] font-bold">
+              <span className="text-[10px] font-mono uppercase tracking-wider text-[#e5cb87] font-bold">
                 The Shattered Tablet • Round 1
               </span>
               <span
@@ -601,19 +601,19 @@ export const AsciiSplitterRound: React.FC = () => {
               </span>
             </div>
             <h3 className="text-lg font-serif font-black text-[#f4f0e8]">
-              Reconstruct the Ancient Tomb Tablet
+              Assemble the Chiseled Codeword
             </h3>
-            <p className="text-xs text-[#8e95a5] leading-relaxed">
-              You have unearthed an ancient stone tablet engraved with the password to the forbidden tomb door. But the tablet has been shattered into pieces, scattered across your five phones! Align your screens side-by-side to assemble the broken tablet, reveal the two-word incantation, and open the ancient door.
+            <p className="text-xs text-[#cbd5e1] leading-relaxed">
+              Place your phones side-by-side on your pub table in order (Slot 1 to {teamSize}) to align the golden chisel runes and reveal the 2-word codeword.
             </p>
           </div>
         </div>
 
         {/* Vector Slice Preview Box */}
-        <div className="bg-[#08090c] border border-[#2a2e3d] rounded-xl p-3 overflow-hidden relative shadow-inner space-y-2">
-          <div className="flex items-center justify-between pb-2 border-b border-[#2a2e3d]/80 text-[10px] font-mono text-[#8e95a5]">
+        <div className="bg-[#08090c] border border-[#3a4157] rounded-xl p-3 overflow-hidden relative shadow-inner space-y-2">
+          <div className="flex items-center justify-between pb-2 border-b border-[#2a2e3d] text-[10px] font-mono text-[#a9b4c7]">
             <span className="font-bold text-[#f4f0e8]">YOUR TABLET PIECE</span>
-            <span style={{ color: currentSlotRole?.color || '#c4a45a' }}>
+            <span style={{ color: currentSlotRole?.color || '#c4a45a' }} className="font-bold">
               Position: {getSlotPositionLabel(activeSlot, teamSize)}
             </span>
           </div>
@@ -623,7 +623,7 @@ export const AsciiSplitterRound: React.FC = () => {
             {renderTabletSlice(false)}
           </div>
 
-          <div className="flex items-center justify-between pt-1 border-t border-[#2a2e3d]/40 text-[10px] font-mono text-[#8e95a5]">
+          <div className="flex items-center justify-between pt-1 border-t border-[#2a2e3d] text-[10px] font-mono text-[#a9b4c7]">
             <span>Left-to-Right tablet slice • Interlocking rune seams • 100% vector fit</span>
           </div>
         </div>
@@ -632,24 +632,24 @@ export const AsciiSplitterRound: React.FC = () => {
         <div>
           <button
             onClick={toggleFullscreen}
-            className="w-full py-3.5 px-4 rounded-xl bg-gradient-to-r from-[#161922] via-[#242b3b] to-[#161922] hover:border-[#c4a45a] border border-[#2a2e3d] text-[#f4f0e8] font-mono font-bold text-xs flex items-center justify-center space-x-2.5 transition-all shadow-md group"
+            className="w-full py-3.5 px-4 rounded-xl bg-gradient-to-r from-[#161922] via-[#242b3b] to-[#161922] hover:border-[#c4a45a] border border-[#3a4157] text-[#f4f0e8] font-mono font-bold text-xs flex items-center justify-center space-x-2.5 transition-all shadow-md group"
           >
-            <Maximize2 className="w-4 h-4 text-[#c4a45a] group-hover:scale-110 transition-transform" />
-            <span className="tracking-wide">Launch Fullscreen To Aid Alignment</span>
+            <Maximize2 className="w-4 h-4 text-[#e5cb87] group-hover:scale-110 transition-transform" />
+            <span className="tracking-wide">Launch Fullscreen For Table Alignment</span>
           </button>
         </div>
       </div>
 
-      {/* CODEWORD SUBMISSION CARD (PLACED ABOVE HINTS) */}
-      <div className="bg-[#10121a] border border-[#2a2e3d] rounded-2xl p-5 shadow-xl space-y-4">
+      {/* CODEWORD SUBMISSION CARD */}
+      <div className="bg-[#10121a] border border-[#3a4157] rounded-2xl p-5 shadow-xl space-y-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-2">
-            <Sparkles className="w-4 h-4 text-[#c4a45a]" />
+            <Sparkles className="w-4 h-4 text-[#e5cb87]" />
             <h4 className="text-sm font-serif font-bold text-[#f4f0e8]">
-              Submit Deciphered Word
+              Submit Deciphered Codeword
             </h4>
           </div>
-          <span className="text-[10px] font-mono text-[#c4a45a]">
+          <span className="text-[10px] font-mono text-[#e5cb87] font-semibold">
             Any crew member can submit
           </span>
         </div>
@@ -678,7 +678,7 @@ export const AsciiSplitterRound: React.FC = () => {
                 onChange={(e) => setCodewordInput(e.target.value.toUpperCase())}
                 placeholder="ENTER 2-WORD CODEWORD (E.G. CRIMSON SHADOW)..."
                 maxLength={30}
-                className="w-full bg-[#161922] border border-[#2a2e3d] focus:border-[#c4a45a] focus:ring-1 focus:ring-[#c4a45a] rounded-xl px-4 py-3 text-center text-sm sm:text-base font-mono font-black tracking-widest text-[#f4f0e8] placeholder-[#8e95a5]/40 outline-none uppercase"
+                className="w-full bg-[#161922] border border-[#3a4157] focus:border-[#c4a45a] focus:ring-1 focus:ring-[#c4a45a] rounded-xl px-4 py-3 text-center text-sm sm:text-base font-mono font-black tracking-widest text-[#f4f0e8] placeholder-[#a9b4c7]/40 outline-none uppercase"
               />
             </div>
 

@@ -539,12 +539,12 @@ export const ShadesInTheMistRound: React.FC = () => {
       </div>
 
       {/* 4-Phase Progress Indicator Bar */}
-      <div className="grid grid-cols-4 gap-1.5 bg-[#10121a] p-1.5 rounded-xl border border-[#2a2e3d]">
+      <div className="grid grid-cols-4 gap-1.5 bg-[#10121a] p-1.5 rounded-xl border border-[#3a4157]">
         <div
           className={`py-1.5 px-1 rounded-lg text-center transition-all ${
             currentPhase === 'HUDDLE'
               ? 'bg-[#c4a45a] text-[#08090c] font-black'
-              : 'text-[#8e95a5] bg-[#161922]/50'
+              : 'text-[#a9b4c7] bg-[#161922]/50'
           }`}
         >
           <span className="text-[9px] font-mono block">PHASE 1</span>
@@ -554,17 +554,17 @@ export const ShadesInTheMistRound: React.FC = () => {
           className={`py-1.5 px-1 rounded-lg text-center transition-all ${
             currentPhase === 'PARLEY'
               ? 'bg-cyan-500 text-[#08090c] font-black shadow-lg shadow-cyan-900/40'
-              : 'text-[#8e95a5] bg-[#161922]/50'
+              : 'text-[#a9b4c7] bg-[#161922]/50'
           }`}
         >
           <span className="text-[9px] font-mono block">PHASE 2</span>
-          <span className="text-[10px] font-serif font-bold uppercase block truncate">Parley</span>
+          <span className="text-[10px] font-serif font-bold uppercase block truncate">Dialogue</span>
         </div>
         <div
           className={`py-1.5 px-1 rounded-lg text-center transition-all ${
             currentPhase === 'VOTE'
               ? 'bg-purple-500 text-[#08090c] font-black shadow-lg shadow-purple-900/40 animate-pulse'
-              : 'text-[#8e95a5] bg-[#161922]/50'
+              : 'text-[#a9b4c7] bg-[#161922]/50'
           }`}
         >
           <span className="text-[9px] font-mono block">PHASE 3</span>
@@ -574,7 +574,7 @@ export const ShadesInTheMistRound: React.FC = () => {
           className={`py-1.5 px-1 rounded-lg text-center transition-all ${
             currentPhase === 'DEBRIEF'
               ? 'bg-emerald-500 text-[#08090c] font-black'
-              : 'text-[#8e95a5] bg-[#161922]/50'
+              : 'text-[#a9b4c7] bg-[#161922]/50'
           }`}
         >
           <span className="text-[9px] font-mono block">PHASE 4</span>
@@ -583,13 +583,13 @@ export const ShadesInTheMistRound: React.FC = () => {
       </div>
 
       {/* Stakes Preview Pill dynamically read from config.round2 */}
-      <div className="bg-[#10121a] border border-[#c4a45a]/30 rounded-xl px-3 py-2 flex items-center justify-between text-[11px] font-mono">
-        <span className="text-[#8e95a5] font-bold">CLASH {currentClash} STAKES:</span>
+      <div className="bg-[#10121a] border border-[#3a4157] rounded-xl px-3 py-2 flex items-center justify-between text-[11px] font-mono">
+        <span className="text-[#e5cb87] font-bold">CLASH {currentClash} STAKES:</span>
         <div className="flex items-center space-x-2 text-[10px]">
           <span className="text-emerald-400 font-bold">Truce: +{scoringTier.both_truce}</span>
-          <span className="text-[#8e95a5]">|</span>
+          <span className="text-[#3a4157]">|</span>
           <span className="text-amber-400 font-bold">Ambush Win: +{scoringTier.ambush_win}</span>
-          <span className="text-[#8e95a5]">|</span>
+          <span className="text-[#3a4157]">|</span>
           <span className="text-red-400 font-bold">Both Ambush: +{scoringTier.both_ambush}</span>
         </div>
       </div>
@@ -606,17 +606,17 @@ export const ShadesInTheMistRound: React.FC = () => {
             <h3 className="text-lg font-serif font-black text-[#f4f0e8] uppercase tracking-wide">
               🛡️ Private Crew Huddle
             </h3>
-            <p className="text-xs text-[#c4a45a] font-mono mt-0.5">
+            <p className="text-xs text-[#e5cb87] font-mono mt-0.5">
               Duration: {phaseSecondsLeft}s remaining
             </p>
           </div>
 
-          <p className="text-xs text-[#f4f0e8]/90 font-serif leading-relaxed max-w-sm mx-auto">
-            Huddle with your teammates only. Do <strong className="text-red-400">NOT</strong> speak to the other table yet. What is our plan for Clash {currentClash}? Will we honour peace or strike in secret?
+          <p className="text-xs text-[#cbd5e1] font-serif leading-relaxed max-w-sm mx-auto">
+            Huddle with your teammates only. Do <strong className="text-red-400 font-bold">NOT</strong> speak to the other table yet. Are they trustworthy friends or enemies who will betray you? What is our strategy for Clash {currentClash}?
           </p>
 
-          <div className="p-3 rounded-xl bg-[#08090c]/80 border border-[#2a2e3d] text-left space-y-1.5 text-[11px]">
-            <span className="text-[10px] font-mono text-[#8e95a5] uppercase font-bold block">
+          <div className="p-3 rounded-xl bg-[#08090c] border border-[#3a4157] text-left space-y-1.5 text-[11px]">
+            <span className="text-[10px] font-mono text-[#e5cb87] uppercase font-bold block">
               Crew Roster & Strategy
             </span>
             <div className="grid grid-cols-2 gap-1.5">
@@ -626,20 +626,20 @@ export const ShadesInTheMistRound: React.FC = () => {
                     className="w-2 h-2 rounded-full flex-shrink-0"
                     style={{ backgroundColor: m.roleColor }}
                   />
-                  <span className="text-[#f4f0e8] truncate text-[10px]">{m.name}</span>
+                  <span className="text-[#f4f0e8] truncate text-[10px] font-medium">{m.name}</span>
                 </div>
               ))}
             </div>
           </div>
 
-          <div className="text-[10px] font-mono text-[#8e95a5] italic">
+          <div className="text-[10px] font-mono text-[#a9b4c7] italic">
             🔒 Voting buttons remain locked until Phase 3.
           </div>
         </div>
       )}
 
       {/* ==================================================== */}
-      {/* PHASE 2: THE PARLEY */}
+      {/* PHASE 2: THE DIALOGUE */}
       {/* ==================================================== */}
       {currentPhase === 'PARLEY' && (
         <div className="bg-[#161922] border-2 border-cyan-400 rounded-2xl p-6 shadow-beacon space-y-4 text-center animate-fadeIn" style={{ '--beacon-glow': 'rgba(56, 189, 248, 0.35)' } as React.CSSProperties}>
@@ -648,15 +648,15 @@ export const ShadesInTheMistRound: React.FC = () => {
           </div>
           <div>
             <h3 className="text-lg font-serif font-black text-cyan-300 uppercase tracking-wide">
-              🗣️ The Parley: Face The Opposing Crew
+              🗣️ The Dialogue: Negotiate with Opponents
             </h3>
             <p className="text-xs text-cyan-400 font-mono mt-0.5">
-              Negotiation Window: {phaseSecondsLeft}s remaining
+              Dialogue Window: {phaseSecondsLeft}s remaining
             </p>
           </div>
 
-          <p className="text-xs text-[#f4f0e8]/95 font-serif leading-relaxed max-w-sm mx-auto">
-            Turn to the other table. Look them in the eye. Negotiate your pact, demand promises, or feed them false confidence.
+          <p className="text-xs text-[#cbd5e1] font-serif leading-relaxed max-w-sm mx-auto">
+            Turn to the other table. Look them in the eye. Are they trustworthy friends or enemies who will betray you? Negotiate your pact, demand promises, or feed them false confidence.
           </p>
 
           <div className="p-3.5 rounded-xl bg-cyan-950/40 border border-cyan-500/40 text-left space-y-2 text-xs">
@@ -664,12 +664,12 @@ export const ShadesInTheMistRound: React.FC = () => {
               <span>Rival Crew: {opponentName}</span>
               <span>Table Code [{opponentBattleCode}]</span>
             </div>
-            <p className="text-[11px] text-[#f4f0e8]/80 italic">
-              Remember: When the parley ends, every player casts a secret blind vote on their own phone.
+            <p className="text-[11px] text-[#cbd5e1] italic">
+              Remember: When the dialogue timer ends, every player casts a secret blind vote on their own phone.
             </p>
           </div>
 
-          <div className="text-[10px] font-mono text-[#8e95a5]">
+          <div className="text-[10px] font-mono text-[#a9b4c7]">
             Secret blind voting begins automatically when this timer expires.
           </div>
         </div>

@@ -26,11 +26,11 @@ export const Navbar: React.FC = () => {
 
   return (
     <>
-      <header className="sticky top-0 z-40 bg-[#08090c]/95 backdrop-blur-md border-b border-[#2a2e3d] px-4 py-2.5 transition-colors">
+      <header className="sticky top-0 z-40 bg-[#08090c]/95 backdrop-blur-md border-b border-[#3a4157] px-4 py-2.5 transition-colors">
         <div className="max-w-[480px] mx-auto flex items-center justify-between">
           {/* Logo / Event Title */}
           <div className="flex items-center space-x-2">
-            <div className="w-7 h-7 rounded border border-[#c4a45a]/60 bg-[#10121a] flex items-center justify-center text-[#c4a45a] font-serif font-black text-xs shadow-gold-glow">
+            <div className="w-7 h-7 rounded border border-[#c4a45a]/80 bg-[#161922] flex items-center justify-center text-[#e5cb87] font-serif font-black text-xs shadow-gold-glow">
               Ω
             </div>
             <div>
@@ -47,11 +47,11 @@ export const Navbar: React.FC = () => {
                       : 'bg-red-400'
                   }`}
                 />
-                <span className="text-[10px] text-[#8e95a5] font-mono tracking-tight">
+                <span className="text-[10px] text-[#a9b4c7] font-mono tracking-tight">
                   {connectionStatus === 'connected'
-                    ? 'LIVE SSE'
+                    ? 'LIVE'
                     : connectionStatus === 'polling-fallback'
-                    ? '10s POLL'
+                    ? 'POLL'
                     : 'OFFLINE'}
                 </span>
               </div>
@@ -67,7 +67,7 @@ export const Navbar: React.FC = () => {
               className={`p-1.5 rounded border text-xs flex items-center space-x-1 transition-all ${
                 lowDataMode
                   ? 'bg-[#c4a45a] text-[#08090c] border-[#c4a45a] font-bold'
-                  : 'bg-[#161922] text-[#8e95a5] border-[#2a2e3d] hover:text-[#f4f0e8]'
+                  : 'bg-[#161922] text-[#a9b4c7] border-[#3a4157] hover:text-[#f4f0e8]'
               }`}
             >
               <Zap className="w-3.5 h-3.5" />
@@ -78,7 +78,7 @@ export const Navbar: React.FC = () => {
             <button
               onClick={() => setIsLeaderboardOpen(!isLeaderboardOpen)}
               title="Open Leaderboard"
-              className="p-1.5 rounded border border-[#2a2e3d] bg-[#161922] text-[#c4a45a] hover:bg-[#202533] transition-colors relative"
+              className="p-1.5 rounded border border-[#3a4157] bg-[#161922] text-[#e5cb87] hover:bg-[#202533] transition-colors relative"
             >
               <Trophy className="w-4 h-4" />
             </button>
@@ -104,7 +104,7 @@ export const Navbar: React.FC = () => {
                 <button
                   onClick={() => setShowLeaveModal(true)}
                   title="Leave Game Session"
-                  className="p-1.5 rounded border border-[#2a2e3d] bg-[#161922] text-[#8e95a5] hover:text-red-400 hover:border-red-900/50 transition-colors"
+                  className="p-1.5 rounded border border-[#3a4157] bg-[#161922] text-[#a9b4c7] hover:text-red-400 hover:border-red-900/50 transition-colors"
                 >
                   <LogOut className="w-3.5 h-3.5" />
                 </button>

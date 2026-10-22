@@ -97,10 +97,10 @@ export const LobbyTeamFormation: React.FC = () => {
     return (
       <div className="space-y-5 py-4">
         {/* Crew Header Card */}
-        <div className="bg-[#10121a] border border-[#2a2e3d] rounded-2xl p-5 shadow-xl relative overflow-hidden">
+        <div className="bg-[#10121a] border border-[#3a4157] rounded-2xl p-5 shadow-xl relative overflow-hidden">
           <div className="flex items-start justify-between">
             <div>
-              <span className="text-[10px] font-mono uppercase tracking-wider text-[#c4a45a] font-bold">
+              <span className="text-[10px] font-mono uppercase tracking-wider text-[#e5cb87] font-bold">
                 Your Formed Crew
               </span>
               {isEditingName ? (
@@ -115,7 +115,7 @@ export const LobbyTeamFormation: React.FC = () => {
                   <button type="submit" className="text-xs bg-[#c4a45a] text-[#08090c] font-bold px-2 py-1 rounded">
                     Save
                   </button>
-                  <button type="button" onClick={() => setIsEditingName(false)} className="text-xs text-[#8e95a5]">
+                  <button type="button" onClick={() => setIsEditingName(false)} className="text-xs text-[#a9b4c7]">
                     Cancel
                   </button>
                 </form>
@@ -127,7 +127,7 @@ export const LobbyTeamFormation: React.FC = () => {
                       setEditNameInput(team.name);
                       setIsEditingName(true);
                     }}
-                    className="text-[#8e95a5] hover:text-[#c4a45a] transition-colors"
+                    className="text-[#a9b4c7] hover:text-[#e5cb87] transition-colors"
                   >
                     <Edit2 className="w-3.5 h-3.5" />
                   </button>
@@ -136,14 +136,14 @@ export const LobbyTeamFormation: React.FC = () => {
             </div>
 
             <div className="text-right">
-              <span className="text-[10px] font-mono text-[#8e95a5]">CREW SCORE</span>
-              <p className="text-xl font-mono font-bold text-[#c4a45a]">{team.score} PTS</p>
+              <span className="text-[10px] font-mono text-[#a9b4c7]">CREW SCORE</span>
+              <p className="text-xl font-mono font-bold text-[#e5cb87]">{team.score} PTS</p>
             </div>
           </div>
 
           {/* Members Roster */}
           <div className="mt-5 space-y-2">
-            <p className="text-[10px] font-mono uppercase tracking-wider text-[#8e95a5]">
+            <p className="text-[10px] font-mono uppercase tracking-wider text-[#a9b4c7]">
               Crew Roster ({team.player_ids.length} of {teamSize} Shades)
             </p>
             <div className="space-y-1.5">
@@ -162,7 +162,7 @@ export const LobbyTeamFormation: React.FC = () => {
                     className={`flex items-center justify-between p-2.5 rounded-xl border transition-all ${
                       isYou
                         ? 'bg-[#161922] border-[#c4a45a]/50 shadow-sm'
-                        : 'bg-[#161922]/50 border-[#2a2e3d]'
+                        : 'bg-[#161922]/50 border-[#3a4157]'
                     }`}
                   >
                     <div className="flex items-center space-x-2.5">
@@ -184,20 +184,20 @@ export const LobbyTeamFormation: React.FC = () => {
                         </div>
                         <span
                           className="text-[10px] font-medium"
-                          style={{ color: memberRole?.color || '#8e95a5' }}
+                          style={{ color: memberRole?.color || '#a9b4c7' }}
                         >
                           {memberRole?.name || 'Underworld Traveler'}
                         </span>
                       </div>
                     </div>
                     {isYou ? (
-                      <span className="text-[10px] font-mono text-emerald-400 bg-emerald-950/40 border border-emerald-500/30 px-2 py-0.5 rounded-full">
+                      <span className="text-[10px] font-mono text-emerald-400 bg-emerald-950/40 border border-emerald-500/30 px-2 py-0.5 rounded-full font-bold">
                         You (Active)
                       </span>
                     ) : (
                       <button
                         onClick={() => switchPlayer(pid)}
-                        className="text-[10px] font-mono text-[#c4a45a] hover:bg-[#c4a45a]/20 border border-[#c4a45a]/40 px-2 py-0.5 rounded-full transition-colors"
+                        className="text-[10px] font-mono text-[#e5cb87] hover:bg-[#c4a45a]/20 border border-[#c4a45a]/40 px-2 py-0.5 rounded-full transition-colors"
                         title="Solo Testing: Switch your screen to view this teammate"
                       >
                         👁️ Switch View
@@ -210,13 +210,13 @@ export const LobbyTeamFormation: React.FC = () => {
           </div>
 
           {/* Waiting for Round 1 Banner */}
-          <div className="mt-5 p-4 rounded-xl bg-gradient-to-b from-[#161922] to-[#08090c] border border-[#c4a45a]/30 text-center space-y-2">
-            <div className="inline-flex items-center space-x-1.5 text-xs font-mono text-[#c4a45a]">
+          <div className="mt-5 p-4 rounded-xl bg-gradient-to-b from-[#161922] to-[#08090c] border border-[#c4a45a]/40 text-center space-y-2">
+            <div className="inline-flex items-center space-x-1.5 text-xs font-mono text-[#e5cb87] font-bold">
               <Sparkles className="w-3.5 h-3.5 animate-spin" style={{ animationDuration: '4s' }} />
               <span>THE DESCENT IS APPROACHING</span>
             </div>
-            <p className="text-xs text-[#8e95a5] leading-relaxed">
-              Stand together at your pub table. Keep this screen active — Round 1 will materialize synchronously across all devices.
+            <p className="text-xs text-[#cbd5e1] leading-relaxed">
+              Stand together at your pub table. Keep this screen active — when the descent begins, a brief story and rules overview will guide your crew into Round 1.
             </p>
           </div>
         </div>

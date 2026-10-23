@@ -279,6 +279,41 @@ export interface RoundSubmission {
   solveTimeSeconds?: number;
 }
 
+// --------------------------------------------------------------------------
+// EMOJI TEAM CODES
+// --------------------------------------------------------------------------
+export const TEAM_EMOJI_POOL = ['🔥', '💀', '⚡', '🌊', '🛡️'] as const;
+export type TeamEmoji = typeof TEAM_EMOJI_POOL[number];
+
+export const TEAM_EMOJI_LABELS: Record<TeamEmoji, string> = {
+  '🔥': 'Fire',
+  '💀': 'Skull',
+  '⚡': 'Bolt',
+  '🌊': 'Wave',
+  '🛡️': 'Shield',
+};
+
+export interface TeamMemberPreview {
+  id: string;
+  name: string;
+  roleId: string;
+  roleName: string;
+  roleColor?: string;
+}
+
+export interface TeamPreviewInfo {
+  id: string;
+  name: string;
+  emojiCode: string;
+  memberCount: number;
+  maxMembers: number;
+  isFull: boolean;
+  leaderName: string;
+  members: TeamMemberPreview[];
+  hasRoleConflict: boolean;
+  conflictingRoleName?: string;
+}
+
 export interface Team {
   id: string;
   name: string;
@@ -287,6 +322,7 @@ export interface Team {
   assignedCodeword?: string; // specific word assigned for ASCII splitter
   round_submissions: Record<string, RoundSubmission>;
   battle_code?: string; // 2-digit battle code (e.g. "49")
+  emoji_code?: string; // 3-emoji team code (e.g. "💀⚡🛡️")
   nemesis_team_id?: string | null;
   hints_taken?: number[]; // indices of hints taken [1, 2, 3]
 }
@@ -312,6 +348,7 @@ export interface SyncPayload {
     score: number;
     player_count: number;
     battle_code?: string;
+    emoji_code?: string;
     nemesis_team_id?: string | null;
     members: { id?: string; name: string; roleName: string; roleColor: string }[];
     recentDelta?: number;

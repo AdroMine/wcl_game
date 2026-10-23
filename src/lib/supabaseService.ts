@@ -19,6 +19,8 @@ import type {
   Round3Config,
   Round3TeamState,
   Round3SuddenDeathState,
+  TeamPreviewInfo,
+  TeamMemberPreview,
 } from '../types';
 import {
   generateBattleCode,
@@ -40,6 +42,11 @@ import {
   resolveSuddenDeath,
 } from './round3Engine';
 import { DEFAULT_ROUND1_CODEWORDS } from './tabletEngine';
+import {
+  generateTeamEmojiCode,
+  normalizeEmojiCode,
+  checkTeamRoleCompatibility,
+} from './teamCodeEngine';
 
 const JOIN_CODE_CHARS = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
 
@@ -126,6 +133,7 @@ function mapDbTeam(row: any): Team {
   const hintsTaken = Array.isArray(row.hints_taken)
     ? row.hints_taken
     : (Array.isArray(submissions._active_hints) ? submissions._active_hints : []);
+  const emojiCode = submissions._emoji_code || row.emoji_code || undefined;
 
   return {
     id: row.id,
@@ -135,6 +143,7 @@ function mapDbTeam(row: any): Team {
     player_ids: Array.isArray(row.player_ids) ? row.player_ids : [],
     round_submissions: submissions,
     battle_code: row.battle_code || undefined,
+    emoji_code: emojiCode,
     nemesis_team_id: row.nemesis_team_id || null,
     hints_taken: hintsTaken,
   };
@@ -441,6 +450,28 @@ export async function fetchFullSyncPayloadFromSupabase(forPlayerId?: string, for
     supabase.from('teams').update({ battle_code: code }).eq('id', tRow.id).then();
   }
 
+  // Ensure all teams have a unique 3-emoji team code
+  const existingEmojiCodes = new Set<string>();
+  const teamsMissingEmoji: any[] = [];
+  for (const tRow of (teamsRes.data || [])) {
+    const sub = (tRow.round_submissions && typeof tRow.round_submissions === 'object') ? tRow.round_submissions : {};
+    const ec = sub._emoji_code || tRow.emoji_code;
+    if (ec) {
+      existingEmojiCodes.add(normalizeEmojiCode(ec));
+    } else {
+      teamsMissingEmoji.push(tRow);
+    }
+  }
+
+  for (const tRow of teamsMissingEmoji) {
+    const code = generateTeamEmojiCode(existingEmojiCodes);
+    existingEmojiCodes.add(normalizeEmojiCode(code));
+    const sub = (tRow.round_submissions && typeof tRow.round_submissions === 'object') ? { ...tRow.round_submissions } : {};
+    sub._emoji_code = code;
+    tRow.round_submissions = sub;
+    supabase.from('teams').update({ round_submissions: sub }).eq('id', tRow.id).then();
+  }
+
   const players: Player[] = (playersRes.data || []).map(mapDbPlayer);
   const teams: Team[] = (teamsRes.data || []).map(mapDbTeam);
 
@@ -533,6 +564,7 @@ export async function fetchFullSyncPayloadFromSupabase(forPlayerId?: string, for
         score: t.score,
         player_count: t.player_ids.length,
         battle_code: t.battle_code,
+        emoji_code: t.emoji_code,
         nemesis_team_id: t.nemesis_team_id,
         members,
         roundCompleted,
@@ -803,6 +835,277 @@ export async function supabaseRenameTeam(teamId: string, name: string): Promise<
   if (!supabase) return { success: false };
   const { error } = await supabase.from('teams').update({ name: name.trim() }).eq('id', teamId);
   return { success: !error, error: error?.message };
+}
+
+/**
+ * Create a new team anchored by a leader player.
+ * Automatically generates a unique 3-emoji code (from { 🔥, 💀, ⚡, 🌊, 🛡️ }).
+ */
+export async function supabaseCreateTeam(
+  leaderPlayerId: string,
+  customName?: string
+): Promise<{ success: boolean; team?: Team; error?: string }> {
+  if (!supabase) return { success: false, error: 'Database disconnected' };
+
+  // 1. Fetch leader player
+  const { data: leaderRow } = await supabase.from('players').select('*').eq('id', leaderPlayerId).maybeSingle();
+  if (!leaderRow) return { success: false, error: 'Player record not found' };
+  const leader = mapDbPlayer(leaderRow);
+
+  if (leader.teamId) {
+    return { success: false, error: 'You are already in a team. Leave your current team first.' };
+  }
+
+  // 2. Read existing teams to collect existing emoji codes & battle codes
+  const { data: allTeamsData } = await supabase.from('teams').select('*');
+  const existingEmojiCodes = new Set<string>();
+  const existingBattleCodes = new Set<string>();
+  for (const tRow of (allTeamsData || [])) {
+    const sub = (tRow.round_submissions && typeof tRow.round_submissions === 'object') ? tRow.round_submissions : {};
+    const ec = sub._emoji_code || tRow.emoji_code;
+    if (ec) existingEmojiCodes.add(normalizeEmojiCode(ec));
+    if (tRow.battle_code) existingBattleCodes.add(tRow.battle_code);
+  }
+
+  const emojiCode = generateTeamEmojiCode(existingEmojiCodes);
+  const battleCode = generateBattleCode(existingBattleCodes);
+
+  const { row: stateData } = await getGameStateRow();
+  const config = (stateData?.config && Object.keys(stateData.config).length > 0) ? stateData.config : DEFAULT_CONFIG;
+  const round1Data = config.rounds?.[0]?.data as any;
+  const words = (round1Data?.codewords && round1Data.codewords.length > 0)
+    ? round1Data.codewords
+    : DEFAULT_ROUND1_CODEWORDS;
+  const assignedCodeword = words[Math.floor(Math.random() * words.length)] || 'CRIMSON SHADOW';
+
+  const teamId = `team_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+  const teamName = customName?.trim() || `${leader.name}'s Crew`;
+
+  const teamData = {
+    id: teamId,
+    name: teamName,
+    score: 0,
+    assigned_codeword: assignedCodeword,
+    player_ids: [leader.id],
+    round_submissions: { _emoji_code: emojiCode },
+    battle_code: battleCode,
+  };
+
+  const { data: insertedTeam, error: teamErr } = await supabase.from('teams').insert(teamData).select().single();
+  if (teamErr) return { success: false, error: teamErr.message };
+
+  await supabase.from('players').update({ team_id: teamId }).eq('id', leader.id);
+
+  return { success: true, team: mapDbTeam(insertedTeam) };
+}
+
+/**
+ * Preview team info by 3-emoji code before locking in a join.
+ * Used for the confirmation modal: "Join Elena's Crew? (2/5 members: Elena, Sam)".
+ */
+export async function supabasePreviewTeamByEmoji(
+  emojiCode: string,
+  requestingPlayerId?: string
+): Promise<{ success: boolean; preview?: TeamPreviewInfo; error?: string }> {
+  if (!supabase) return { success: false, error: 'Database disconnected' };
+  const targetCode = normalizeEmojiCode(emojiCode);
+  if (!targetCode) return { success: false, error: 'Please enter a 3-emoji team code' };
+
+  const [{ data: teamsData }, { data: playersData }, { row: stateData }] = await Promise.all([
+    supabase.from('teams').select('*'),
+    supabase.from('players').select('*'),
+    getGameStateRow(),
+  ]);
+
+  const config = (stateData?.config && Object.keys(stateData.config).length > 0) ? stateData.config : DEFAULT_CONFIG;
+  const maxMembers = config.team_size || 5;
+
+  const allTeams = (teamsData || []).map(mapDbTeam);
+  const matchedTeam = allTeams.find(t => {
+    const code = t.emoji_code || ((t.round_submissions?._emoji_code as unknown) as string);
+    return code && normalizeEmojiCode(code) === targetCode;
+  });
+
+  if (!matchedTeam) {
+    return { success: false, error: `No active team found with code "${emojiCode}". Check the code on your teammate's screen.` };
+  }
+
+  const allPlayers = (playersData || []).map(mapDbPlayer);
+  const playersMap = new Map(allPlayers.map(p => [p.id, p]));
+  const roleMap: Record<string, string> = {};
+  const roleColorMap: Record<string, string> = {};
+  for (const r of (config.roles || [])) {
+    roleMap[r.id] = r.name;
+    roleColorMap[r.id] = r.color;
+  }
+
+  const members: TeamMemberPreview[] = matchedTeam.player_ids.map(pid => {
+    const p = playersMap.get(pid);
+    const rId = p?.roleId || '';
+    return {
+      id: pid,
+      name: p?.name || 'Teammate',
+      roleId: rId,
+      roleName: roleMap[rId] || 'Underworld Traveler',
+      roleColor: roleColorMap[rId] || '#c4a45a',
+    };
+  });
+
+  const leaderName = members[0]?.name || 'Captain';
+  const memberCount = members.length;
+  const isFull = memberCount >= maxMembers;
+
+  let hasRoleConflict = false;
+  let conflictingRoleName: string | undefined = undefined;
+
+  if (requestingPlayerId) {
+    const reqPlayer = playersMap.get(requestingPlayerId);
+    if (reqPlayer && reqPlayer.roleId) {
+      const existingRoles = members.map(m => m.roleId);
+      const compat = checkTeamRoleCompatibility(existingRoles, reqPlayer.roleId, roleMap);
+      if (!compat.compatible) {
+        hasRoleConflict = true;
+        conflictingRoleName = compat.conflictingRoleName;
+      }
+    }
+  }
+
+  const preview: TeamPreviewInfo = {
+    id: matchedTeam.id,
+    name: matchedTeam.name,
+    emojiCode: matchedTeam.emoji_code || emojiCode,
+    memberCount,
+    maxMembers,
+    isFull,
+    leaderName,
+    members,
+    hasRoleConflict,
+    conflictingRoleName,
+  };
+
+  return { success: true, preview };
+}
+
+/**
+ * Join an existing team by tapping its 3-emoji code.
+ * Validates capacity and unique Underworld role constraints.
+ */
+export async function supabaseJoinTeamByEmoji(
+  playerId: string,
+  emojiCode: string
+): Promise<{ success: boolean; team?: Team; error?: string }> {
+  if (!supabase) return { success: false, error: 'Database disconnected' };
+  const targetCode = normalizeEmojiCode(emojiCode);
+  if (!targetCode) return { success: false, error: 'Please enter a 3-emoji team code' };
+
+  // 1. Fetch player
+  const { data: playerRow } = await supabase.from('players').select('*').eq('id', playerId).maybeSingle();
+  if (!playerRow) return { success: false, error: 'Player record not found' };
+  const player = mapDbPlayer(playerRow);
+
+  if (player.teamId) {
+    return { success: false, error: 'You are already in a team. Leave your current team first.' };
+  }
+
+  // 2. Fetch all teams
+  const { data: teamsData } = await supabase.from('teams').select('*');
+  const allTeams = (teamsData || []).map(mapDbTeam);
+  const matchedTeam = allTeams.find(t => {
+    const code = t.emoji_code || ((t.round_submissions?._emoji_code as unknown) as string);
+    return code && normalizeEmojiCode(code) === targetCode;
+  });
+
+  if (!matchedTeam) {
+    return { success: false, error: `No active team found with code "${emojiCode}". Check with your team creator.` };
+  }
+
+  const { row: stateData } = await getGameStateRow();
+  const config = (stateData?.config && Object.keys(stateData.config).length > 0) ? stateData.config : DEFAULT_CONFIG;
+  const maxMembers = config.team_size || 5;
+
+  if (matchedTeam.player_ids.length >= maxMembers) {
+    return { success: false, error: `Team "${matchedTeam.name}" is already full (${maxMembers}/${maxMembers} members)!` };
+  }
+
+  // Check role uniqueness
+  if (player.roleId) {
+    const { data: memberRows } = await supabase.from('players').select('role_id, name').in('id', matchedTeam.player_ids);
+    const existingRoles = (memberRows || []).map(r => r.role_id);
+    const roleMap: Record<string, string> = {};
+    for (const r of (config.roles || [])) {
+      roleMap[r.id] = r.name;
+    }
+    const compat = checkTeamRoleCompatibility(existingRoles, player.roleId, roleMap);
+    if (!compat.compatible) {
+      return {
+        success: false,
+        error: `Team "${matchedTeam.name}" already has a ${compat.conflictingRoleName}! Re-roll your role or join another team.`,
+      };
+    }
+  }
+
+  // Add player to team
+  const updatedPlayerIds = Array.from(new Set([...matchedTeam.player_ids, player.id]));
+  const { error: teamUpdateErr } = await supabase
+    .from('teams')
+    .update({ player_ids: updatedPlayerIds })
+    .eq('id', matchedTeam.id);
+
+  if (teamUpdateErr) return { success: false, error: teamUpdateErr.message };
+
+  await supabase.from('players').update({ team_id: matchedTeam.id }).eq('id', player.id);
+
+  const updatedTeam: Team = {
+    ...matchedTeam,
+    player_ids: updatedPlayerIds,
+  };
+
+  return { success: true, team: updatedTeam };
+}
+
+/**
+ * Leave current team.
+ * If this player was the only member, the team is automatically DISBANDED and deleted!
+ */
+export async function supabaseLeaveTeam(
+  playerId: string
+): Promise<{ success: boolean; disbanded?: boolean; error?: string }> {
+  if (!supabase) return { success: false, error: 'Database disconnected' };
+
+  const { data: playerRow } = await supabase.from('players').select('*').eq('id', playerId).maybeSingle();
+  if (!playerRow) return { success: false, error: 'Player record not found' };
+  const player = mapDbPlayer(playerRow);
+
+  if (!player.teamId) {
+    return { success: true, disbanded: false };
+  }
+
+  const teamId = player.teamId;
+  const { data: teamRow } = await supabase.from('teams').select('*').eq('id', teamId).maybeSingle();
+
+  if (!teamRow) {
+    await supabase.from('players').update({ team_id: null }).eq('id', player.id);
+    return { success: true, disbanded: true };
+  }
+
+  const team = mapDbTeam(teamRow);
+  const remainingPlayerIds = team.player_ids.filter(id => id !== player.id);
+
+  if (remainingPlayerIds.length === 0) {
+    // Last member left: Disband and remove the empty team from database
+    await Promise.all([
+      supabase.from('teams').delete().eq('id', teamId),
+      supabase.from('players').update({ team_id: null }).eq('id', player.id),
+    ]);
+    return { success: true, disbanded: true };
+  } else {
+    // Remaining members stay in the team
+    await Promise.all([
+      supabase.from('teams').update({ player_ids: remainingPlayerIds }).eq('id', teamId),
+      supabase.from('players').update({ team_id: null }).eq('id', player.id),
+    ]);
+    return { success: true, disbanded: false };
+  }
 }
 
 export async function supabaseSubmitRoundAnswer(
@@ -1316,12 +1619,18 @@ export async function supabaseAdminSpawnDemoCrew(): Promise<{ success: boolean; 
   try {
     const [{ data: existingPlayers }, { data: existingTeams }] = await Promise.all([
       supabase.from('players').select('name, join_code'),
-      supabase.from('teams').select('name, battle_code'),
+      supabase.from('teams').select('name, battle_code, round_submissions'),
     ]);
 
     const usedPlayerNames = new Set((existingPlayers || []).map(p => p.name.toLowerCase()));
     const existingCodes = new Set<string>((existingPlayers || []).map(p => p.join_code).filter(Boolean));
     const existingBattleCodes = new Set<string>((existingTeams || []).map(t => t.battle_code).filter(Boolean));
+    const existingEmojiCodes = new Set<string>();
+    for (const t of (existingTeams || [])) {
+      const sub = (t.round_submissions && typeof t.round_submissions === 'object') ? t.round_submissions : {};
+      if (sub._emoji_code) existingEmojiCodes.add(normalizeEmojiCode(sub._emoji_code));
+    }
+    const emojiCode = generateTeamEmojiCode(existingEmojiCodes);
     const teamCount = (existingTeams || []).length;
 
     const roles = ['navigator', 'oracle', 'scholar', 'torchbearer', 'negotiator'];
@@ -1377,7 +1686,7 @@ export async function supabaseAdminSpawnDemoCrew(): Promise<{ success: boolean; 
       score: 0,
       assigned_codeword: assignedCodeword,
       player_ids: playerIds,
-      round_submissions: {},
+      round_submissions: { _emoji_code: emojiCode },
       battle_code: battleCode,
     };
     const { data: insertedTeam, error: tErr } = await supabase.from('teams').insert(teamRow).select().single();

@@ -1,9 +1,13 @@
 import React, { createContext, useContext, useEffect, useState, useRef, useCallback } from 'react';
-import type { SyncPayload, Player, Team, RoleConfig, RoundConfig, Round2Match, Round3Session, Round3Vessel, Round3SuddenDeathAction } from '../types';
+import type { SyncPayload, Player, Team, RoleConfig, RoundConfig, Round2Match, Round3Session, Round3Vessel, Round3SuddenDeathAction, TeamPreviewInfo } from '../types';
 import {
   joinPlayer,
   leavePlayer,
   formTeamApi,
+  createTeamApi,
+  previewTeamByEmojiApi,
+  joinTeamByEmojiApi,
+  leaveTeamApi,
   renameTeamApi,
   submitRoundAnswerApi,
   pollSyncApi,
@@ -33,6 +37,10 @@ interface GameContextType {
   join: (name: string) => Promise<void>;
   leave: () => Promise<void>;
   formTeam: (joinCodes: string[], customName?: string) => Promise<{ success: boolean; error?: string }>;
+  createTeam: (customName?: string) => Promise<{ success: boolean; error?: string; team?: Team }>;
+  previewTeamByEmoji: (emojiCode: string) => Promise<{ success: boolean; preview?: TeamPreviewInfo; error?: string }>;
+  joinTeamByEmoji: (emojiCode: string) => Promise<{ success: boolean; error?: string }>;
+  leaveTeam: () => Promise<{ success: boolean; error?: string }>;
   renameTeam: (name: string) => Promise<{ success: boolean; error?: string }>;
   submitAnswer: (answer: string) => Promise<{ success: boolean; message: string; points?: number; isCorrect?: boolean }>;
   requestHint: (hintIndex: number) => Promise<{ success: boolean; hint?: string; error?: string }>;
@@ -281,6 +289,48 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  const createTeam = async (customName?: string) => {
+    if (!player) return { success: false, error: 'Not joined in game' };
+    try {
+      const res = await createTeamApi(player.id, customName);
+      await runPoll();
+      return { success: true, team: res.team };
+    } catch (err: any) {
+      return { success: false, error: err.message || 'Failed to create team' };
+    }
+  };
+
+  const previewTeamByEmoji = async (emojiCode: string) => {
+    try {
+      const res = await previewTeamByEmojiApi(emojiCode, player?.id);
+      return res;
+    } catch (err: any) {
+      return { success: false, error: err.message || 'Failed to preview team' };
+    }
+  };
+
+  const joinTeamByEmoji = async (emojiCode: string) => {
+    if (!player) return { success: false, error: 'Not joined in game' };
+    try {
+      await joinTeamByEmojiApi(player.id, emojiCode);
+      await runPoll();
+      return { success: true };
+    } catch (err: any) {
+      return { success: false, error: err.message || 'Failed to join team' };
+    }
+  };
+
+  const leaveTeam = async () => {
+    if (!player) return { success: false, error: 'Not joined in game' };
+    try {
+      await leaveTeamApi(player.id);
+      await runPoll();
+      return { success: true };
+    } catch (err: any) {
+      return { success: false, error: err.message || 'Failed to leave team' };
+    }
+  };
+
   const renameTeam = async (name: string) => {
     if (!team) return { success: false, error: 'No crew to rename' };
     try {
@@ -421,6 +471,10 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         join,
         leave,
         formTeam,
+        createTeam,
+        previewTeamByEmoji,
+        joinTeamByEmoji,
+        leaveTeam,
         renameTeam,
         submitAnswer,
         requestHint,

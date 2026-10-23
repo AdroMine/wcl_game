@@ -1477,6 +1477,12 @@ export const AdminControlPanel: React.FC<AdminProps> = ({ payload, onClose }) =>
                             [{t.battle_code || '--'}]
                           </span>
 
+                          {t.emoji_code && (
+                            <span className="text-xs px-1.5 py-0.5 rounded bg-[#10121a] border border-[#2a2e3d] tracking-widest" title={`Emoji Join Code: ${t.emoji_code}`}>
+                              {t.emoji_code}
+                            </span>
+                          )}
+
                           <span className="px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-[#10121a] text-[#c4a45a] border border-[#2a2e3d]">
                             {t.score || 0} pts
                           </span>

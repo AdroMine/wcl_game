@@ -4,6 +4,10 @@ import {
   supabaseJoinPlayer,
   supabaseLeavePlayer,
   supabaseFormTeam,
+  supabaseCreateTeam,
+  supabasePreviewTeamByEmoji,
+  supabaseJoinTeamByEmoji,
+  supabaseLeaveTeam,
   supabaseRenameTeam,
   supabaseSubmitRoundAnswer,
   supabaseAdminSetState,
@@ -135,6 +139,62 @@ export async function formTeamApi(leaderPlayerId: string, joinCodes: string[], c
   });
   const data = await res.json();
   if (!res.ok) throw new Error(data.error || 'Failed to form crew');
+  return data;
+}
+
+export async function createTeamApi(leaderPlayerId: string, customName?: string) {
+  if (isSupabaseConfigured) {
+    const res = await supabaseCreateTeam(leaderPlayerId, customName);
+    if (!res.success) throw new Error(res.error || 'Failed to create team');
+    return res;
+  }
+  const res = await fetch(`${API_BASE}/team/create`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ leaderPlayerId, customName }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || 'Failed to create team');
+  return data;
+}
+
+export async function previewTeamByEmojiApi(emojiCode: string, requestingPlayerId?: string) {
+  if (isSupabaseConfigured) {
+    return supabasePreviewTeamByEmoji(emojiCode, requestingPlayerId);
+  }
+  const res = await fetch(`${API_BASE}/team/preview?code=${encodeURIComponent(emojiCode)}&player=${requestingPlayerId || ''}`);
+  return res.json();
+}
+
+export async function joinTeamByEmojiApi(playerId: string, emojiCode: string) {
+  if (isSupabaseConfigured) {
+    const res = await supabaseJoinTeamByEmoji(playerId, emojiCode);
+    if (!res.success) throw new Error(res.error || 'Failed to join team');
+    return res;
+  }
+  const res = await fetch(`${API_BASE}/team/join-emoji`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ playerId, emojiCode }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || 'Failed to join team');
+  return data;
+}
+
+export async function leaveTeamApi(playerId: string) {
+  if (isSupabaseConfigured) {
+    const res = await supabaseLeaveTeam(playerId);
+    if (!res.success) throw new Error(res.error || 'Failed to leave team');
+    return res;
+  }
+  const res = await fetch(`${API_BASE}/team/leave`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ playerId }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || 'Failed to leave team');
   return data;
 }
 

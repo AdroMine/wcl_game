@@ -14,6 +14,7 @@ export const Navbar: React.FC = () => {
   const {
     player,
     role,
+    team,
     connectionStatus,
     lowDataMode,
     toggleLowDataMode,
@@ -88,7 +89,7 @@ export const Navbar: React.FC = () => {
               <>
                 {role && (
                   <div
-                    className="flex items-center space-x-1 px-2 py-1 rounded text-xs font-medium border"
+                    className="flex items-center space-x-1.5 px-2.5 py-1 rounded-lg text-xs font-medium border"
                     style={{
                       borderColor: role.color,
                       backgroundColor: `${role.color}15`,
@@ -97,7 +98,11 @@ export const Navbar: React.FC = () => {
                   >
                     {ROLE_ICONS[role.icon] || <Users className="w-3.5 h-3.5" />}
                     <span className="font-semibold text-[11px] hidden xs:inline">{role.name}</span>
-                    <span className="font-mono text-[10px] opacity-80">[{player.join_code}]</span>
+                    {team?.emoji_code && (
+                      <span className="text-xs tracking-wider ml-0.5" title={`Team Code: ${team.emoji_code}`}>
+                        {team.emoji_code}
+                      </span>
+                    )}
                   </div>
                 )}
 

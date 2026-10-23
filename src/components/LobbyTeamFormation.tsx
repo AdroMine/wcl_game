@@ -47,7 +47,6 @@ export const LobbyTeamFormation: React.FC = () => {
     joinTeamByEmoji,
     leaveTeam,
     renameTeam,
-    switchPlayer,
     rerollRole,
   } = useGameSession();
 
@@ -341,16 +340,12 @@ export const LobbyTeamFormation: React.FC = () => {
                     </div>
                     {isYou ? (
                       <span className="text-[10px] font-mono text-emerald-400 bg-emerald-950/40 border border-emerald-500/30 px-2 py-0.5 rounded-full font-bold">
-                        You (Active)
+                        You
                       </span>
                     ) : (
-                      <button
-                        onClick={() => switchPlayer(pid)}
-                        className="text-[10px] font-mono text-[#e5cb87] hover:bg-[#c4a45a]/20 border border-[#c4a45a]/40 px-2 py-0.5 rounded-full transition-colors"
-                        title="Solo Testing: Switch your screen to view this teammate"
-                      >
-                        👁️ Switch View
-                      </button>
+                      <span className="text-[10px] font-mono text-[#a9b4c7] bg-[#10121a] border border-[#2a2e3d] px-2 py-0.5 rounded-full">
+                        Ready
+                      </span>
                     )}
                   </div>
                 );

@@ -44,6 +44,9 @@ export const DEFAULT_ROUND3_CONFIG: Round3Config = {
     cerberus_penalty_meters: -150,
     cerberus_bonus_meters: 150,
   },
+  honor: {
+    honor_bonus_meters: 75,
+  },
 };
 
 export const DEFAULT_ROUND2_CONFIG: Round2Config = {

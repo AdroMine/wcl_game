@@ -28,7 +28,8 @@ import {
   adminRound3TriggerSuddenDeath,
   adminRound3ResetSession,
 } from '../lib/api';
-import type { SyncPayload } from '../types';
+import { evaluateTeamRound2MoralStatus } from '../lib/round3Engine';
+import type { SyncPayload, TeamMoralReport } from '../types';
 import {
   ShieldAlert,
   Play,
@@ -60,6 +61,51 @@ import {
 interface AdminProps {
   payload: SyncPayload | null;
   onClose?: () => void;
+}
+
+function renderMoralBadge(report: TeamMoralReport, isHonourableOverride?: boolean) {
+  const isHonourable = isHonourableOverride || report.status === 'HONOURABLE';
+  if (isHonourable) {
+    return (
+      <span
+        className="px-2 py-0.5 rounded text-[10px] font-mono font-bold shrink-0 bg-emerald-950/80 border border-emerald-500/80 text-emerald-300"
+        title="🕊️ Winds of Olympus (+75m)"
+      >
+        🕊️ +75m Winds
+      </span>
+    );
+  }
+  if (report.status === 'BETRAYED') {
+    return (
+      <span
+        className="px-2 py-0.5 rounded text-[10px] font-mono font-bold shrink-0 bg-rose-950/80 border border-rose-500/80 text-rose-300"
+        title={report.label}
+      >
+        🩸 Betrayed (Cerberus)
+      </span>
+    );
+  }
+  if (report.status === 'AGGRESSOR') {
+    return (
+      <span
+        className="px-2 py-0.5 rounded text-[10px] font-mono font-bold shrink-0 bg-amber-950/80 border border-amber-500/80 text-amber-300"
+        title={report.label}
+      >
+        🗡️ Aggressor (Hunted)
+      </span>
+    );
+  }
+  if (report.status === 'MUTUAL_BRAWL') {
+    return (
+      <span
+        className="px-2 py-0.5 rounded text-[10px] font-mono font-bold shrink-0 bg-purple-950/80 border border-purple-500/80 text-purple-300"
+        title={report.label}
+      >
+        ⚔️ Blood Feud
+      </span>
+    );
+  }
+  return null;
 }
 
 export const AdminControlPanel: React.FC<AdminProps> = ({ payload, onClose }) => {
@@ -1033,6 +1079,10 @@ export const AdminControlPanel: React.FC<AdminProps> = ({ payload, onClose }) =>
                     {round2Matches.map((m, idx) => {
                       const tA = teams.find(t => t.id === m.team_a_id);
                       const tB = teams.find(t => t.id === m.team_b_id);
+                      const isCompleted = m.completed || (m.clash_data && m.clash_data.length >= 3);
+                      const moralA = evaluateTeamRound2MoralStatus(m.team_a_id, round2Matches, teams);
+                      const moralB = evaluateTeamRound2MoralStatus(m.team_b_id, round2Matches, teams);
+
                       return (
                         <div
                           key={m.id || idx}
@@ -1043,18 +1093,32 @@ export const AdminControlPanel: React.FC<AdminProps> = ({ payload, onClose }) =>
                               {tA?.name || 'Squad A'} <span className="text-[#8e95a5]">vs</span> {tB?.name || 'Squad B'}
                             </span>
                             <span className="px-1.5 py-0.5 rounded text-[10px] bg-purple-950 border border-purple-500/40 text-purple-300 font-bold">
-                              Clash {m.current_clash} • {m.current_phase}
+                              {isCompleted ? 'Match Concluded' : `Clash ${m.current_clash} • ${m.current_phase}`}
                             </span>
                           </div>
                           <div className="flex items-center justify-between text-[10px] text-[#8e95a5]">
                             <span>Battle Codes: [{tA?.battle_code || '--'}] vs [{tB?.battle_code || '--'}]</span>
-                            <button
-                              onClick={() => handleR2SkipPhase(m.id)}
-                              className="text-purple-300 hover:underline"
-                            >
-                              Skip Phase ⏭️
-                            </button>
+                            {!isCompleted && (
+                              <button
+                                onClick={() => handleR2SkipPhase(m.id)}
+                                className="text-purple-300 hover:underline"
+                              >
+                                Skip Phase ⏭️
+                              </button>
+                            )}
                           </div>
+                          {isCompleted && (
+                            <div className="pt-2 border-t border-[#2a2e3d]/60 flex flex-wrap items-center justify-between gap-1 text-[10px]">
+                              <div className="flex items-center space-x-1.5">
+                                <span className="text-[#8e95a5]">{tA?.name || 'Squad A'}:</span>
+                                {renderMoralBadge(moralA)}
+                              </div>
+                              <div className="flex items-center space-x-1.5">
+                                <span className="text-[#8e95a5]">{tB?.name || 'Squad B'}:</span>
+                                {renderMoralBadge(moralB)}
+                              </div>
+                            </div>
+                          )}
                         </div>
                       );
                     })}
@@ -1148,6 +1212,7 @@ export const AdminControlPanel: React.FC<AdminProps> = ({ payload, onClose }) =>
                     const escaped = state?.has_escaped;
                     const targetDist = payload?.config?.round3?.target_distance_meters || 1000;
                     const pct = Math.min(100, Math.max(0, Math.round((dist / targetDist) * 100)));
+                    const moral = evaluateTeamRound2MoralStatus(t.id, round2Matches, teams);
 
                     return (
                       <div
@@ -1162,6 +1227,7 @@ export const AdminControlPanel: React.FC<AdminProps> = ({ payload, onClose }) =>
                                 {state?.escape_rank === 1 ? '🥇 GOLD' : state?.escape_rank === 2 ? '🥈 SILVER' : '🥉 BRONZE'}
                               </span>
                             )}
+                            {renderMoralBadge(moral, state?.honor_bonus_granted)}
                             <span className="text-[10px] text-[#c4a45a] ml-auto">
                               {dist}m / {targetDist}m ({pct}%)
                             </span>
@@ -1394,6 +1460,7 @@ export const AdminControlPanel: React.FC<AdminProps> = ({ payload, onClose }) =>
                 .map((t) => {
                   const isExpanded = expandedCrewIds.has(t.id);
                   const isFull = t.members.length >= targetCrewSize;
+                  const moral = evaluateTeamRound2MoralStatus(t.id, round2Matches, teams);
 
                   return (
                     <div
@@ -1409,6 +1476,12 @@ export const AdminControlPanel: React.FC<AdminProps> = ({ payload, onClose }) =>
                           <span className="font-mono font-bold text-xs text-[#c4a45a]">
                             [{t.battle_code || '--'}]
                           </span>
+
+                          <span className="px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-[#10121a] text-[#c4a45a] border border-[#2a2e3d]">
+                            {t.score || 0} pts
+                          </span>
+
+                          {renderMoralBadge(moral)}
 
                           {editingCrewId === t.id ? (
                             <div className="flex items-center space-x-1" onClick={e => e.stopPropagation()}>

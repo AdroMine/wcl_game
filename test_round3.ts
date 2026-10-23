@@ -1,5 +1,7 @@
 import {
   calculateHeadstartMeters,
+  checkRound2MutualHonor,
+  calculateRound3StartingDistance,
   resolveTeamVesselChoice,
   calculateVoteUnanimity,
   getVesselBoldnessRank,
@@ -9,7 +11,7 @@ import {
   CrossingCandidate,
 } from './src/lib/round3Engine';
 import { DEFAULT_ROUND3_CONFIG } from './src/lib/defaultConfig';
-import type { Team, Player, Round3TeamWaveVote, Round3TeamState } from './src/types';
+import type { Team, Player, Round3TeamWaveVote, Round3TeamState, Round2Match } from './src/types';
 
 function assert(condition: boolean, message: string) {
   if (!condition) {
@@ -331,6 +333,100 @@ console.log('\nTest 6: Sudden Death Maneuver Resolution');
 
   const r5 = resolveSuddenDeath('SHIELDS', 'SHIELDS');
   assert(r5.winner === 'tie', `Identical maneuvers -> tie (${r5.description})`);
+}
+
+// --------------------------------------------------------------------------
+// TEST 7: Winds of Olympus Mutual Honor Boost (+75m)
+// --------------------------------------------------------------------------
+console.log('\nTest 7: Winds of Olympus Mutual Honor Boost (+75m)');
+{
+  const matchMutualTruce: Round2Match = {
+    id: 'm1',
+    session_id: 'main',
+    team_a_id: 'teamHonorA',
+    team_b_id: 'teamHonorB',
+    current_clash: 3,
+    current_phase: 'RESULTS',
+    phase_ends_at: 0,
+    completed: true,
+    clash_data: [
+      { clash: 1, team_a_votes: {}, team_b_votes: {}, team_a_stance: 'TRUCE', team_b_stance: 'TRUCE', team_a_pts: 75, team_b_pts: 75 },
+      { clash: 2, team_a_votes: {}, team_b_votes: {}, team_a_stance: 'TRUCE', team_b_stance: 'TRUCE', team_a_pts: 75, team_b_pts: 75 },
+      { clash: 3, team_a_votes: {}, team_b_votes: {}, team_a_stance: 'TRUCE', team_b_stance: 'TRUCE', team_a_pts: 75, team_b_pts: 75 },
+    ],
+  };
+
+  const matchWithAmbush: Round2Match = {
+    id: 'm2',
+    session_id: 'main',
+    team_a_id: 'teamAmbushA',
+    team_b_id: 'teamAmbushB',
+    current_clash: 3,
+    current_phase: 'RESULTS',
+    phase_ends_at: 0,
+    completed: true,
+    clash_data: [
+      { clash: 1, team_a_votes: {}, team_b_votes: {}, team_a_stance: 'TRUCE', team_b_stance: 'TRUCE', team_a_pts: 75, team_b_pts: 75 },
+      { clash: 2, team_a_votes: {}, team_b_votes: {}, team_a_stance: 'AMBUSH', team_b_stance: 'TRUCE', team_a_pts: 150, team_b_pts: 0 },
+      { clash: 3, team_a_votes: {}, team_b_votes: {}, team_a_stance: 'TRUCE', team_b_stance: 'TRUCE', team_a_pts: 75, team_b_pts: 75 },
+    ],
+  };
+
+  const matchIncomplete: Round2Match = {
+    id: 'm3',
+    session_id: 'main',
+    team_a_id: 'teamIncA',
+    team_b_id: 'teamIncB',
+    current_clash: 2,
+    current_phase: 'VOTE',
+    phase_ends_at: 0,
+    completed: false,
+    clash_data: [
+      { clash: 1, team_a_votes: {}, team_b_votes: {}, team_a_stance: 'TRUCE', team_b_stance: 'TRUCE', team_a_pts: 75, team_b_pts: 75 },
+      { clash: 2, team_a_votes: {}, team_b_votes: {}, team_a_stance: 'TRUCE', team_b_stance: 'TRUCE', team_a_pts: 75, team_b_pts: 75 },
+    ],
+  };
+
+  const matches = [matchMutualTruce, matchWithAmbush, matchIncomplete];
+
+  // 1. checkRound2MutualHonor validations:
+  // Returns true for 3 mutual TRUCE clashes
+  const honorA = checkRound2MutualHonor('teamHonorA', matches);
+  assert(honorA === true, 'checkRound2MutualHonor returns true for teamHonorA with 3 mutual TRUCE clashes');
+
+  const honorB = checkRound2MutualHonor('teamHonorB', matches);
+  assert(honorB === true, 'checkRound2MutualHonor returns true for teamHonorB with 3 mutual TRUCE clashes');
+
+  // Returns false if any AMBUSH occurred
+  const ambushA = checkRound2MutualHonor('teamAmbushA', matches);
+  assert(ambushA === false, 'checkRound2MutualHonor returns false for teamAmbushA because AMBUSH occurred');
+
+  const ambushB = checkRound2MutualHonor('teamAmbushB', matches);
+  assert(ambushB === false, 'checkRound2MutualHonor returns false for teamAmbushB because rival AMBUSH occurred');
+
+  const incompleteA = checkRound2MutualHonor('teamIncA', matches);
+  assert(incompleteA === false, 'checkRound2MutualHonor returns false for incomplete match (< 3 clashes)');
+
+  const missingTeam = checkRound2MutualHonor('unknownTeam', matches);
+  assert(missingTeam === false, 'checkRound2MutualHonor returns false for unknown team not in matches');
+
+  // 2. calculateRound3StartingDistance validations:
+  // Accurately combines score head-start + 75m bonus
+  // Score 250 (50m head-start) + Honor (75m) = 125m
+  const startWithHonor = calculateRound3StartingDistance(250, true, DEFAULT_ROUND3_CONFIG);
+  assert(startWithHonor.headstartMeters === 50, `Score 250 yields 50m head-start (got ${startWithHonor.headstartMeters})`);
+  assert(startWithHonor.honorBonusMeters === 75, `Honor bonus yields 75m (got ${startWithHonor.honorBonusMeters})`);
+  assert(startWithHonor.startingMeters === 125, `50m headstart + 75m honor bonus = 125m starting distance (got ${startWithHonor.startingMeters})`);
+
+  // Score 500 (100m head-start) without Honor (0m) = 100m
+  const startWithoutHonor = calculateRound3StartingDistance(500, false, DEFAULT_ROUND3_CONFIG);
+  assert(startWithoutHonor.headstartMeters === 100, `Score 500 yields 100m head-start (got ${startWithoutHonor.headstartMeters})`);
+  assert(startWithoutHonor.honorBonusMeters === 0, `Without honor bonus yields 0m (got ${startWithoutHonor.honorBonusMeters})`);
+  assert(startWithoutHonor.startingMeters === 100, `100m headstart + 0m bonus = 100m starting distance (got ${startWithoutHonor.startingMeters})`);
+
+  // Max score 2000 (capped at 200m) + Honor (+75m) = 275m
+  const startMaxHonor = calculateRound3StartingDistance(2000, true, DEFAULT_ROUND3_CONFIG);
+  assert(startMaxHonor.startingMeters === 275, `200m capped headstart + 75m honor bonus = 275m starting distance (got ${startMaxHonor.startingMeters})`);
 }
 
 console.log('\n====================================================');

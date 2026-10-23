@@ -71,6 +71,25 @@ export interface Round3VengeanceConfig {
   cerberus_bonus_meters: number;
 }
 
+export interface Round3HonorConfig {
+  honor_bonus_meters: number; // default: 75 (Winds of Olympus bonus for 3 mutual truces)
+}
+
+export type Round2MoralLegacy = 'HONOURABLE' | 'BETRAYED' | 'AGGRESSOR' | 'MUTUAL_BRAWL' | 'PENDING';
+
+export interface TeamMoralReport {
+  status: Round2MoralLegacy;
+  label: string;
+  shortBadge: string;
+  badgeClass: string;
+  rivalTeamId?: string | null;
+  rivalTeamName?: string | null;
+  mutualTruceCount: number;
+  myAmbushCount: number;
+  enemyAmbushCount: number;
+  mutualAmbushCount: number;
+}
+
 export interface Round3Config {
   target_distance_meters: number;
   headstart_point_divisor: number;
@@ -83,6 +102,7 @@ export interface Round3Config {
   };
   vessels: Record<Round3Vessel, Round3VesselConfig>;
   vengeance: Round3VengeanceConfig;
+  honor: Round3HonorConfig;
 }
 
 export interface Round3TeamState {
@@ -92,6 +112,8 @@ export interface Round3TeamState {
   escape_rank: number | null; // 1 for Gold, 2 for Silver, 3 for Bronze
   escaped_in_wave: number | null;
   cerberus_used: boolean;
+  honor_bonus_granted?: boolean; // True if Winds of Olympus awarded (+75m)
+  honor_bonus_meters?: number;   // e.g. 75
 }
 
 export interface Round3TeamWaveVote {

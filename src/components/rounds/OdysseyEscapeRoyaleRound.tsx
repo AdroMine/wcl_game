@@ -348,6 +348,21 @@ export const OdysseyEscapeRoyaleRound: React.FC = () => {
   // --------------------------------------------------------------------------
   return (
     <div className="space-y-4">
+      {/* Winds of Olympus Honor Announcement Banner */}
+      {teamState?.honor_bonus_granted && (
+        <div className="bg-gradient-to-r from-emerald-950/90 via-teal-950/80 to-emerald-950/90 border border-emerald-500/60 rounded-2xl p-4 shadow-xl text-emerald-100 space-y-1">
+          <div className="flex items-center space-x-2 text-emerald-300 font-bold text-xs uppercase tracking-wider font-mono">
+            <span>🕊️ WINDS OF OLYMPUS ACTIVATED</span>
+          </div>
+          <p className="text-xs text-emerald-200/90 leading-relaxed font-serif">
+            Your crew kept your word in the dark cavern.
+          </p>
+          <div className="text-xs sm:text-sm font-bold text-emerald-300 font-mono">
+            Athena rewards your honour: +{teamState.honor_bonus_meters || 75}m Wind Boost granted!
+          </div>
+        </div>
+      )}
+
       {/* Wave Header Banner */}
       <div className="bg-[#10121a] border border-[#2a2e3d] rounded-2xl p-4 shadow-xl flex items-center justify-between">
         <div>
@@ -431,7 +446,18 @@ export const OdysseyEscapeRoyaleRound: React.FC = () => {
         {/* Your Distance Callout */}
         <div className="flex items-center justify-between text-xs font-mono pt-1 text-[#8e95a5]">
           <span>
-            Your Crew: <strong className="text-[#c4a45a]">{myDistance}m / {targetDistance}m</strong>
+            {teamState?.honor_bonus_granted ? (
+              <>
+                Your Crew: <strong className="text-[#c4a45a]">{myDistance}m / {targetDistance}m</strong>{' '}
+                <span className="text-emerald-400">
+                  ({myDistance - 75}m points + 75m 🕊️ Winds of Olympus)
+                </span>
+              </>
+            ) : (
+              <>
+                Your Crew: <strong className="text-[#c4a45a]">{myDistance}m / {targetDistance}m</strong>
+              </>
+            )}
           </span>
           {hasMyTeamEscaped ? (
             <span className="text-emerald-400 font-bold flex items-center space-x-1">

@@ -39,6 +39,7 @@ import {
   supabaseAdminRound3NextPhase,
   supabaseAdminRound3ForceNextWave,
   supabaseAdminRound3AdjustDistance,
+  supabaseAdminRound3ToggleHonorBonus,
   supabaseAdminRound3TriggerSuddenDeath,
   supabaseAdminRound3SaveConfig,
   supabaseAdminRound3ResetSession,
@@ -664,6 +665,21 @@ export async function adminRound3AdjustDistance(passcode: string, teamId: string
       'x-admin-passcode': passcode,
     },
     body: JSON.stringify({ teamId, deltaMeters }),
+  });
+  return res.json();
+}
+
+export async function adminRound3ToggleHonorBonus(passcode: string, teamId: string) {
+  if (isSupabaseConfigured) {
+    return supabaseAdminRound3ToggleHonorBonus(teamId);
+  }
+  const res = await fetch(`${API_BASE}/admin/round3/toggle-honor-bonus`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-admin-passcode': passcode,
+    },
+    body: JSON.stringify({ teamId }),
   });
   return res.json();
 }

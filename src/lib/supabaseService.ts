@@ -33,7 +33,8 @@ import {
   ROUND1_HINTS,
 } from './round1Engine';
 import {
-  calculateHeadstartMeters,
+  checkRound2MutualHonor,
+  calculateRound3StartingDistance,
   resolveTeamVesselChoice,
   evaluateWaveCongestion,
   resolveSuddenDeath,
@@ -1818,7 +1819,7 @@ export function mapDbRound3Session(row: any): Round3Session {
   };
 }
 
-export async function supabaseInitRound3(
+export async function supabaseInitOrGetRound3Session(
   config: GameConfig,
   teams: Team[],
   forceReset: boolean = false
@@ -1836,27 +1837,37 @@ export async function supabaseInitRound3(
     }
   }
 
-  // Calculate starting head-start for each active team
+  // Read all Round 2 matches to evaluate moral legacy and Winds of Olympus honor boost
+  const { data: matchesData } = await supabase.from('round2_matches').select('*');
+  const matches: Round2Match[] = (matchesData || []).map(mapDbMatch);
+
+  // Calculate starting distance & Winds of Olympus honor boost for each active team
   const teamStates: Record<string, Round3TeamState> = {};
   for (const team of teams) {
-    const startingMeters = calculateHeadstartMeters(team.score, r3Config);
+    const hasMutualHonor = checkRound2MutualHonor(team.id, matches);
+    const starting = calculateRound3StartingDistance(team.score, hasMutualHonor, r3Config);
+
     teamStates[team.id] = {
       team_id: team.id,
-      current_distance_meters: startingMeters,
+      current_distance_meters: starting.startingMeters,
       has_escaped: false,
       escape_rank: null,
       escaped_in_wave: null,
       cerberus_used: false,
+      honor_bonus_granted: hasMutualHonor,
+      honor_bonus_meters: starting.honorBonusMeters,
     };
 
     // Upsert into round3_team_state table
     await supabase.from('round3_team_state').upsert({
       team_id: team.id,
-      current_distance_meters: startingMeters,
+      current_distance_meters: starting.startingMeters,
       has_escaped: false,
       escape_rank: null,
       escaped_in_wave: null,
       cerberus_used: false,
+      honor_bonus_granted: hasMutualHonor,
+      honor_bonus_meters: starting.honorBonusMeters,
       updated_at: new Date().toISOString(),
     });
   }
@@ -1898,6 +1909,8 @@ export async function supabaseInitRound3(
 
   return initialSession;
 }
+
+export const supabaseInitRound3 = supabaseInitOrGetRound3Session;
 
 function resolveSuddenDeathStance(
   votes: Record<string, Round3SuddenDeathAction>,
@@ -2106,6 +2119,8 @@ export async function processRound3WaveAdvance(
         escape_rank: curState.escape_rank,
         escaped_in_wave: curState.escaped_in_wave,
         cerberus_used: curState.cerberus_used,
+        honor_bonus_granted: curState.honor_bonus_granted,
+        honor_bonus_meters: curState.honor_bonus_meters,
         updated_at: new Date().toISOString(),
       });
     }
@@ -2358,11 +2373,79 @@ export async function supabaseAdminRound3AdjustDistance(teamId: string, deltaMet
       escape_rank: curState.escape_rank,
       escaped_in_wave: curState.escaped_in_wave,
       cerberus_used: curState.cerberus_used,
+      honor_bonus_granted: curState.honor_bonus_granted,
+      honor_bonus_meters: curState.honor_bonus_meters,
       updated_at: new Date().toISOString(),
     }),
   ]);
 
   return { success: true };
+}
+
+export async function supabaseAdminRound3ToggleHonorBonus(teamId: string): Promise<{ success: boolean; granted?: boolean; error?: string }> {
+  if (!supabase) return { success: false, error: 'Database disconnected' };
+
+  let { data: sessionRow } = await supabase.from('round3_session').select('*').limit(1).maybeSingle();
+  if (!sessionRow) {
+    const { data: teamsData } = await supabase.from('teams').select('*');
+    const teams = (teamsData || []).map(mapDbTeam);
+    await supabaseInitOrGetRound3Session(DEFAULT_CONFIG, teams, false);
+    const { data: createdRow } = await supabase.from('round3_session').select('*').limit(1).maybeSingle();
+    sessionRow = createdRow;
+  }
+
+  if (!sessionRow) return { success: false, error: 'Round 3 session not active' };
+
+  const session = mapDbRound3Session(sessionRow);
+  if (!session.team_states[teamId]) {
+    session.team_states[teamId] = {
+      team_id: teamId,
+      current_distance_meters: 0,
+      has_escaped: false,
+      escape_rank: null,
+      escaped_in_wave: null,
+      cerberus_used: false,
+      honor_bonus_granted: false,
+      honor_bonus_meters: 0,
+    };
+  }
+
+  const curState = session.team_states[teamId];
+  const nextGranted = !curState.honor_bonus_granted;
+  const deltaMeters = nextGranted ? 75 : -75;
+
+  curState.honor_bonus_granted = nextGranted;
+  curState.honor_bonus_meters = nextGranted ? 75 : 0;
+  curState.current_distance_meters = Math.max(0, curState.current_distance_meters + deltaMeters);
+
+  if (curState.current_distance_meters >= 1000) {
+    curState.has_escaped = true;
+    curState.escaped_in_wave = session.current_wave;
+  } else {
+    curState.has_escaped = false;
+    curState.escape_rank = null;
+    curState.escaped_in_wave = null;
+  }
+
+  await Promise.all([
+    supabase.from('round3_session').update({
+      team_states: session.team_states,
+      updated_at: new Date().toISOString(),
+    }).eq('id', session.id),
+    supabase.from('round3_team_state').upsert({
+      team_id: teamId,
+      current_distance_meters: curState.current_distance_meters,
+      has_escaped: curState.has_escaped,
+      escape_rank: curState.escape_rank,
+      escaped_in_wave: curState.escaped_in_wave,
+      cerberus_used: curState.cerberus_used,
+      honor_bonus_granted: curState.honor_bonus_granted,
+      honor_bonus_meters: curState.honor_bonus_meters,
+      updated_at: new Date().toISOString(),
+    }),
+  ]);
+
+  return { success: true, granted: nextGranted };
 }
 
 export async function supabaseAdminRound3TriggerSuddenDeath(teamAId: string, teamBId: string): Promise<{ success: boolean; error?: string }> {

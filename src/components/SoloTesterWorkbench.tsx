@@ -27,6 +27,7 @@ import {
   adminRound3NextPhase,
   adminRound3ForceNextWave,
   adminRound3AdjustDistance,
+  adminRound3ToggleHonorBonus,
   adminRound3TriggerSuddenDeath,
   adminRound3ResetSession,
 } from '../lib/api';
@@ -292,6 +293,17 @@ export const SoloTesterWorkbench: React.FC = () => {
     for (const m of teamB.members) {
       if (m.id) await round3SuddenDeathVoteApi(teamB.id, m.id, actionB);
     }
+    await refresh();
+  };
+
+  const actingTeam = team || payload?.teams_leaderboard?.[0];
+  const isActingTeamHonorBonus = Boolean(
+    actingTeam && round3Session?.team_states?.[actingTeam.id]?.honor_bonus_granted
+  );
+
+  const handleToggleWindsOfOlympus = async () => {
+    if (!actingTeam) return;
+    await adminRound3ToggleHonorBonus(adminPass, actingTeam.id);
     await refresh();
   };
 
@@ -1036,6 +1048,17 @@ export const SoloTesterWorkbench: React.FC = () => {
                 <span>Force Wave 🌊</span>
               </button>
               <button
+                onClick={handleToggleWindsOfOlympus}
+                className={`py-1.5 px-3 rounded-xl border text-xs font-mono font-bold flex items-center space-x-1 transition-all ${
+                  isActingTeamHonorBonus
+                    ? 'bg-emerald-950/80 border-emerald-500/80 text-emerald-300 shadow-sm ring-1 ring-emerald-500/50'
+                    : 'bg-[#161922] border-emerald-500/40 text-emerald-400 hover:bg-emerald-950/40'
+                }`}
+                title="Toggle Winds of Olympus (+75m) for chosen acting crew"
+              >
+                <span>🕊️ Toggle Winds of Olympus (+75m)</span>
+              </button>
+              <button
                 onClick={async () => {
                   await adminRound3ResetSession(adminPass);
                   await refresh();
@@ -1188,6 +1211,11 @@ export const SoloTesterWorkbench: React.FC = () => {
                           {state?.has_escaped && (
                             <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-[#c4a45a] text-[#08090c]">
                               {state.escape_rank === 1 ? '🥇 GOLD' : state.escape_rank === 2 ? '🥈 SILVER' : '🥉 BRONZE'}
+                            </span>
+                          )}
+                          {state?.honor_bonus_granted && (
+                            <span className="px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-emerald-950/80 border border-emerald-500/80 text-emerald-300">
+                              🕊️ +75m Winds
                             </span>
                           )}
                           <span className="text-[10px] font-mono text-[#c4a45a] ml-auto">

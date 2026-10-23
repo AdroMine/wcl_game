@@ -6,6 +6,8 @@ import type {
   Round3TeamWaveVote,
   Round3WaveReport,
   Round3CerberusEvent,
+  Round2Match,
+  TeamMoralReport,
   Team,
   Player,
 } from '../types';
@@ -24,6 +26,156 @@ export function calculateHeadstartMeters(
   const maxCap = config.max_headstart_meters || 200;
   const rawMeters = Math.floor(Math.max(0, cumulativeScore) / divisor);
   return Math.min(maxCap, rawMeters);
+}
+
+/**
+ * Check if a team achieved unbroken mutual honor in Round 2.
+ * Requires:
+ * 1. A completed match with at least 3 clash results.
+ * 2. In ALL clashes, BOTH the team and their rival chose 'TRUCE'.
+ */
+export function checkRound2MutualHonor(teamId: string, round2Matches: Round2Match[]): boolean {
+  const match = round2Matches.find(m => m.team_a_id === teamId || m.team_b_id === teamId);
+  if (!match || !match.clash_data || match.clash_data.length < 3) return false;
+
+  for (const clash of match.clash_data) {
+    if (clash.team_a_stance !== 'TRUCE' || clash.team_b_stance !== 'TRUCE') {
+      return false;
+    }
+  }
+  return true;
+}
+
+/**
+ * Calculate total starting distance for Round 3 including score head-start AND Winds of Olympus honor boost.
+ */
+export function calculateRound3StartingDistance(
+  cumulativeScore: number,
+  hasMutualHonor: boolean,
+  config: Round3Config = DEFAULT_ROUND3_CONFIG
+): { startingMeters: number; headstartMeters: number; honorBonusMeters: number } {
+  const headstartMeters = calculateHeadstartMeters(cumulativeScore, config);
+  const honorBonusMeters = hasMutualHonor ? (config.honor?.honor_bonus_meters ?? 75) : 0;
+  const startingMeters = headstartMeters + honorBonusMeters;
+  return { startingMeters, headstartMeters, honorBonusMeters };
+}
+
+/**
+ * Evaluates a team's complete moral legacy from Round 2 for Admin & Floor Facilitators.
+ * Produces actionable color-coded badges:
+ * - HONOURABLE: Unbroken peace (3 mutual truces) -> 🕊️ Winds of Olympus (+75m)
+ * - BETRAYED: Victim of backstabbing -> 🩸 Cerberus Vengeance token ready
+ * - AGGRESSOR: Backstabbed their rival -> 🗡️ Hunted as Nemesis
+ * - MUTUAL_BRAWL: Both sides traded ambushes
+ * - PENDING: Match unfinished or not yet paired
+ */
+export function evaluateTeamRound2MoralStatus(
+  teamId: string,
+  round2Matches: Round2Match[],
+  teamsList: { id: string; name: string }[] = []
+): TeamMoralReport {
+  const match = round2Matches.find(m => m.team_a_id === teamId || m.team_b_id === teamId);
+  if (!match || !match.clash_data || match.clash_data.length === 0) {
+    return {
+      status: 'PENDING',
+      label: 'Pending Clash',
+      shortBadge: '⏳ Pending',
+      badgeClass: 'bg-[#161922] border-[#3a4157] text-[#a9b4c7]',
+      rivalTeamId: null,
+      rivalTeamName: null,
+      mutualTruceCount: 0,
+      myAmbushCount: 0,
+      enemyAmbushCount: 0,
+      mutualAmbushCount: 0,
+    };
+  }
+
+  const isTeamA = match.team_a_id === teamId;
+  const rivalId = isTeamA ? match.team_b_id : match.team_a_id;
+  const rivalTeam = teamsList.find(t => t.id === rivalId);
+  const rivalName = rivalTeam?.name || 'Rival Crew';
+
+  let mutualTruceCount = 0;
+  let myAmbushCount = 0;
+  let enemyAmbushCount = 0;
+  let mutualAmbushCount = 0;
+
+  for (const c of match.clash_data) {
+    const myStance = isTeamA ? c.team_a_stance : c.team_b_stance;
+    const enemyStance = isTeamA ? c.team_b_stance : c.team_a_stance;
+
+    if (myStance === 'TRUCE' && enemyStance === 'TRUCE') {
+      mutualTruceCount++;
+    } else if (myStance === 'AMBUSH' && enemyStance === 'TRUCE') {
+      myAmbushCount++;
+    } else if (myStance === 'TRUCE' && enemyStance === 'AMBUSH') {
+      enemyAmbushCount++;
+    } else if (myStance === 'AMBUSH' && enemyStance === 'AMBUSH') {
+      mutualAmbushCount++;
+    }
+  }
+
+  // 1. Unbroken peace across all 3 clashes
+  if (mutualTruceCount === 3) {
+    return {
+      status: 'HONOURABLE',
+      label: `🕊️ Honourable (+75m Winds)`,
+      shortBadge: '🕊️ +75m Winds',
+      badgeClass: 'bg-emerald-950/80 border-emerald-500/80 text-emerald-300 font-bold',
+      rivalTeamId: rivalId,
+      rivalTeamName: rivalName,
+      mutualTruceCount,
+      myAmbushCount,
+      enemyAmbushCount,
+      mutualAmbushCount,
+    };
+  }
+
+  // 2. Betrayed by rival (victim holds Cerberus vengeance token)
+  if (enemyAmbushCount > myAmbushCount) {
+    return {
+      status: 'BETRAYED',
+      label: `🩸 Betrayed by ${rivalName} (Cerberus Token)`,
+      shortBadge: '🩸 Betrayed (Cerberus)',
+      badgeClass: 'bg-rose-950/80 border-rose-500/80 text-rose-300 font-bold',
+      rivalTeamId: rivalId,
+      rivalTeamName: rivalName,
+      mutualTruceCount,
+      myAmbushCount,
+      enemyAmbushCount,
+      mutualAmbushCount,
+    };
+  }
+
+  // 3. Aggressor (backstabbed rival)
+  if (myAmbushCount > enemyAmbushCount) {
+    return {
+      status: 'AGGRESSOR',
+      label: `🗡️ Aggressor (Betrayed ${rivalName})`,
+      shortBadge: '🗡️ Aggressor (Hunted)',
+      badgeClass: 'bg-amber-950/80 border-amber-500/80 text-amber-300 font-bold',
+      rivalTeamId: rivalId,
+      rivalTeamName: rivalName,
+      mutualTruceCount,
+      myAmbushCount,
+      enemyAmbushCount,
+      mutualAmbushCount,
+    };
+  }
+
+  // 4. Mutual brawl (both ambushed equally)
+  return {
+    status: 'MUTUAL_BRAWL',
+    label: `⚔️ Blood Feud with ${rivalName}`,
+    shortBadge: '⚔️ Blood Feud',
+    badgeClass: 'bg-purple-950/80 border-purple-500/80 text-purple-300 font-bold',
+    rivalTeamId: rivalId,
+    rivalTeamName: rivalName,
+    mutualTruceCount,
+    myAmbushCount,
+    enemyAmbushCount,
+    mutualAmbushCount,
+  };
 }
 
 /**

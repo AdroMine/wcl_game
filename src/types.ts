@@ -67,8 +67,10 @@ export interface Round3VesselConfig {
 }
 
 export interface Round3VengeanceConfig {
-  cerberus_penalty_meters: number;
-  cerberus_bonus_meters: number;
+  anchor_siphon_meters: number; // default: 50 (if target floats, target loses 50m, hunter gains 50m)
+  wreck_bonus_meters: number;   // default: 100 (if target crashes, target loses 100m, hunter gains 100m)
+  cerberus_penalty_meters?: number; // legacy backwards compat
+  cerberus_bonus_meters?: number;   // legacy backwards compat
 }
 
 export interface Round3HonorConfig {
@@ -131,8 +133,14 @@ export interface Round3CerberusEvent {
   attacker_team_name: string;
   target_team_id: string;
   target_team_name: string;
-  guessed_vessel: Round3Vessel;
-  actual_vessel: Round3Vessel;
+  attacker_vessel?: Round3Vessel;
+  target_vessel?: Round3Vessel;
+  attacker_crashed?: boolean;
+  target_crashed?: boolean;
+  leash_snapped?: boolean;
+  event_type?: 'ANCHOR_SIPHON' | 'WRECK_DRAG' | 'LEASH_SNAPPED';
+  guessed_vessel?: Round3Vessel; // legacy compat
+  actual_vessel?: Round3Vessel;  // legacy compat
   success: boolean;
   attacker_bonus: number;
   target_penalty: number;

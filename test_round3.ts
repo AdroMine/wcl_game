@@ -244,14 +244,14 @@ console.log('\nTest 5: Wave Congestion Evaluation & Capacity Rules');
   assert(reportCollideGhost.team_outcomes['tA'].new_total_distance === 50, 'tA dropped to 50m (100 - 50)');
   assert(reportCollideGhost.team_outcomes['tB'].new_total_distance === 50, 'tB dropped to 50m (100 - 50)');
 
-  // Scenario 5C: Cerberus Vengeance Strike
-  // tA targets tB and correctly predicts tB is taking 'GHOST_SHIP'
-  const votesCerberus: Record<string, Round3TeamWaveVote> = {
+  // Scenario 5C: Stygian Leash (Cerberus High-Risk Leech)
+  // Case 1: Target (tB) floats on Ghost Ship solo, Hunter (tA) on Rowboat floats
+  // -> Anchor Siphon: tB loses -50m, tA steals +50m
+  const votesAnchor: Record<string, Round3TeamWaveVote> = {
     tA: {
       team_id: 'tA',
       resolved_vessel: 'ROWBOAT',
       cerberus_target_team_id: 'tB',
-      cerberus_guessed_vessel: 'GHOST_SHIP',
       player_votes: {},
       meters_gained: 0,
     },
@@ -260,9 +260,9 @@ console.log('\nTest 5: Wave Congestion Evaluation & Capacity Rules');
     tD: { team_id: 'tD', resolved_vessel: 'ROWBOAT', player_votes: {}, meters_gained: 0 },
   };
 
-  const reportCerberus = evaluateWaveCongestion({
+  const reportAnchor = evaluateWaveCongestion({
     activeTeams: teams,
-    teamVotes: votesCerberus,
+    teamVotes: votesAnchor,
     currentTeamStates: teamStates,
     config: DEFAULT_ROUND3_CONFIG,
     waveNumber: 1,
@@ -270,14 +270,76 @@ console.log('\nTest 5: Wave Congestion Evaluation & Capacity Rules');
     teamsMap,
   });
 
-  assert(reportCerberus.cerberus_events.length === 1, '1 Cerberus strike registered');
-  assert(reportCerberus.cerberus_events[0].success === true, 'Cerberus strike succeeded (guess was GHOST_SHIP)');
-  assert(reportCerberus.cerberus_events[0].target_penalty === -150, 'Target penalty is -150m');
-  assert(reportCerberus.cerberus_events[0].attacker_bonus === 150, 'Hunter bonus is +150m');
-  // tA: 100 + 150 (Rowboat) + 150 (Cerberus bonus) = 400m
-  assert(reportCerberus.team_outcomes['tA'].new_total_distance === 400, `tA got +150 Rowboat and +150 Cerberus bonus = 400m (got ${reportCerberus.team_outcomes['tA'].new_total_distance})`);
-  // tB: 100 + 450 (Ghost Ship solo) - 150 (Cerberus penalty) = 400m
-  assert(reportCerberus.team_outcomes['tB'].new_total_distance === 400, `tB got +450 Ghost Ship and -150 Cerberus penalty = 400m (got ${reportCerberus.team_outcomes['tB'].new_total_distance})`);
+  assert(reportAnchor.cerberus_events.length === 1, '1 Cerberus strike registered');
+  assert(reportAnchor.cerberus_events[0].event_type === 'ANCHOR_SIPHON', 'Event type is ANCHOR_SIPHON');
+  assert(reportAnchor.cerberus_events[0].target_penalty === -50, 'Target penalty is -50m');
+  assert(reportAnchor.cerberus_events[0].attacker_bonus === 50, 'Hunter bonus is +50m');
+  // tA: 100 + 150 (Rowboat) + 50 (Siphon) = 300m
+  assert(reportAnchor.team_outcomes['tA'].new_total_distance === 300, `tA got +150 Rowboat and +50 Siphon = 300m (got ${reportAnchor.team_outcomes['tA'].new_total_distance})`);
+  // tB: 100 + 450 (Ghost Ship solo) - 50 (Anchor) = 500m
+  assert(reportAnchor.team_outcomes['tB'].new_total_distance === 500, `tB got +450 Ghost Ship and -50 Anchor = 500m (got ${reportAnchor.team_outcomes['tB'].new_total_distance})`);
+
+  // Case 2: Target (tB) and tC both board Ghost Ship and COLLIDE! Hunter (tA) on Rowboat floats
+  // -> Wreck Drag: tB suffers -100m wreck penalty (in addition to -50m collision), tA earns +100m Vengeance Bonus
+  const votesWreck: Record<string, Round3TeamWaveVote> = {
+    tA: {
+      team_id: 'tA',
+      resolved_vessel: 'ROWBOAT',
+      cerberus_target_team_id: 'tB',
+      player_votes: {},
+      meters_gained: 0,
+    },
+    tB: { team_id: 'tB', resolved_vessel: 'GHOST_SHIP', player_votes: {}, meters_gained: 0 },
+    tC: { team_id: 'tC', resolved_vessel: 'GHOST_SHIP', player_votes: {}, meters_gained: 0 },
+    tD: { team_id: 'tD', resolved_vessel: 'ROWBOAT', player_votes: {}, meters_gained: 0 },
+  };
+
+  const reportWreck = evaluateWaveCongestion({
+    activeTeams: teams,
+    teamVotes: votesWreck,
+    currentTeamStates: teamStates,
+    config: DEFAULT_ROUND3_CONFIG,
+    waveNumber: 1,
+    existingPodium: { gold_team_id: null, silver_team_id: null, bronze_team_id: null },
+    teamsMap,
+  });
+
+  assert(reportWreck.cerberus_events[0].event_type === 'WRECK_DRAG', 'Event type is WRECK_DRAG');
+  assert(reportWreck.cerberus_events[0].target_penalty === -100, 'Target wreck drag penalty is -100m');
+  assert(reportWreck.cerberus_events[0].attacker_bonus === 100, 'Hunter vengeance bonus is +100m');
+  // tA: 100 + 150 (Rowboat) + 100 (Vengeance) = 350m
+  assert(reportWreck.team_outcomes['tA'].new_total_distance === 350, `tA got +150 Rowboat and +100 Vengeance = 350m (got ${reportWreck.team_outcomes['tA'].new_total_distance})`);
+  // tB: 100 - 50 (Ghost collision) - 100 (Wreck drag) = 0m (floored at 0)
+  assert(reportWreck.team_outcomes['tB'].new_total_distance === 0, `tB dropped to 0m floor (got ${reportWreck.team_outcomes['tB'].new_total_distance})`);
+
+  // Case 3: Hunter (tA) gets greedy on Ghost Ship with tC and COLLIDES!
+  // -> Leash Snaps: tA gets 0m bonus, curse wasted
+  const votesBackfire: Record<string, Round3TeamWaveVote> = {
+    tA: {
+      team_id: 'tA',
+      resolved_vessel: 'GHOST_SHIP',
+      cerberus_target_team_id: 'tB',
+      player_votes: {},
+      meters_gained: 0,
+    },
+    tB: { team_id: 'tB', resolved_vessel: 'ROWBOAT', player_votes: {}, meters_gained: 0 },
+    tC: { team_id: 'tC', resolved_vessel: 'GHOST_SHIP', player_votes: {}, meters_gained: 0 },
+    tD: { team_id: 'tD', resolved_vessel: 'ROWBOAT', player_votes: {}, meters_gained: 0 },
+  };
+
+  const reportBackfire = evaluateWaveCongestion({
+    activeTeams: teams,
+    teamVotes: votesBackfire,
+    currentTeamStates: teamStates,
+    config: DEFAULT_ROUND3_CONFIG,
+    waveNumber: 1,
+    existingPodium: { gold_team_id: null, silver_team_id: null, bronze_team_id: null },
+    teamsMap,
+  });
+
+  assert(reportBackfire.cerberus_events[0].event_type === 'LEASH_SNAPPED', 'Event type is LEASH_SNAPPED');
+  assert(reportBackfire.cerberus_events[0].attacker_bonus === 0, 'Hunter gets 0m bonus on leash snap');
+  assert(reportBackfire.cerberus_events[0].leash_snapped === true, 'Leash is flagged as snapped');
 
   // Scenario 5D: Podium Allocation upon crossing 1,000m
   const teamStatesNearPortal: Record<string, Round3TeamState> = {

@@ -29,7 +29,7 @@ export const OdysseyEscapeRoyaleRound: React.FC = () => {
   } = useGameSession();
 
   const [selectedVessel, setSelectedVessel] = useState<Round3Vessel | null>(null);
-  const [cerberusGuess, setCerberusGuess] = useState<Round3Vessel>('SAILBOAT');
+  const [useCerberusLeash, setUseCerberusLeash] = useState(false);
   const [isSubmittingVote, setIsSubmittingVote] = useState(false);
   const [voteNotice, setVoteNotice] = useState<string | null>(null);
 
@@ -92,18 +92,18 @@ export const OdysseyEscapeRoyaleRound: React.FC = () => {
   const secondsLeft = Math.max(0, Math.ceil((phaseEndsAt - now) / 1000));
 
   // Cast Vessel Vote
-  const handleCastVesselVote = async (vessel: Round3Vessel) => {
+  const handleCastVesselVote = async (vessel: Round3Vessel, activateLeash?: boolean) => {
     setSelectedVessel(vessel);
     setIsSubmittingVote(true);
     setVoteNotice(null);
+    const shouldLeash = activateLeash !== undefined ? activateLeash : useCerberusLeash;
     try {
       const res = await voteRound3(
         vessel,
-        canUseCerberus && nemesisTeamId ? nemesisTeamId : undefined,
-        canUseCerberus ? cerberusGuess : undefined
+        canUseCerberus && shouldLeash && nemesisTeamId ? nemesisTeamId : undefined
       );
       if (res.success) {
-        setVoteNotice(`Locked vote for ${vessel}!`);
+        setVoteNotice(`Locked vote for ${vessel}!${shouldLeash ? ' (🐕‍🦺 Stygian Leash Active)' : ''}`);
       } else {
         setVoteNotice(res.error || 'Failed to submit vote');
       }
@@ -642,33 +642,51 @@ export const OdysseyEscapeRoyaleRound: React.FC = () => {
             </button>
           </div>
 
-          {/* CERBERUS HONEY-CAKE TREAT REVENGE CARD (IF ELIGIBLE FROM ROUND 2) */}
+          {/* STYGIAN LEASH (CERBERUS REVENGE) */}
           {canUseCerberus && nemesisTeam && (
-            <div className="p-4 rounded-xl bg-gradient-to-r from-red-950/60 via-[#10121a] to-red-950/60 border border-red-500/60 space-y-2.5">
-              <div className="flex items-center justify-between">
+            <div className={`p-4 rounded-xl border transition-all ${
+              useCerberusLeash
+                ? 'bg-gradient-to-r from-red-950/80 via-[#16121f] to-red-950/80 border-red-500 shadow-xl'
+                : 'bg-[#10121a] border-[#3a4157]/80'
+            }`}>
+              <div className="flex items-center justify-between mb-2">
                 <div className="flex items-center space-x-1.5 text-xs font-mono font-bold text-red-400">
-                  <span className="text-base">🦴</span>
-                  <span>TOSS HONEY-CAKE TREAT TO CERBERUS</span>
+                  <span className="text-base">🐕‍🦺</span>
+                  <span>STYGIAN LEASH</span>
+                  <span className="text-[#8e95a5]">➔</span>
+                  <span className="text-[#f4f0e8] underline decoration-red-500 font-bold">{nemesisTeam.name}</span>
                 </div>
-                <span className="text-[10px] font-mono text-amber-300 font-bold px-2 py-0.5 rounded bg-amber-950/80 border border-amber-500/40">
-                  1-TIME TREAT
-                </span>
-              </div>
-              <p className="text-[11px] text-[#cbd5e1] leading-relaxed">
-                Because <strong className="text-red-300 font-bold">{nemesisTeam.name}</strong> betrayed you in the Mist, you salvaged an Underworld Honey-Cake treat. Tossing it to Cerberus directs the three-headed hound to hunt them down! Guess their vessel correctly: they are dragged back <strong className="text-red-300 font-bold">-150m</strong> and your crew surges forward <strong className="text-emerald-300 font-bold">+150m</strong>!
-              </p>
-
-              <div className="flex items-center space-x-2 pt-1">
-                <span className="text-xs font-mono text-[#f4f0e8] font-bold">Guess their vessel:</span>
-                <select
-                  value={cerberusGuess}
-                  onChange={(e) => setCerberusGuess(e.target.value as Round3Vessel)}
-                  className="bg-[#161922] border border-[#3a4157] text-xs font-mono text-[#e5cb87] rounded-lg px-3 py-1.5 outline-none focus:border-red-400 font-bold"
+                <button
+                  type="button"
+                  onClick={() => {
+                    const next = !useCerberusLeash;
+                    setUseCerberusLeash(next);
+                    if (selectedVessel) {
+                      handleCastVesselVote(selectedVessel, next);
+                    }
+                  }}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-mono font-bold transition-all active:scale-95 ${
+                    useCerberusLeash
+                      ? 'bg-red-600 text-white shadow-lg shadow-red-900/50'
+                      : 'bg-[#1e2330] border border-[#3a4157] text-[#8e95a5] hover:text-white'
+                  }`}
                 >
-                  <option value="ROWBOAT">🚣 The Rowboat</option>
-                  <option value="SAILBOAT">⛵ The Sailboat</option>
-                  <option value="GHOST_SHIP">⚡ The Ghost Ship</option>
-                </select>
+                  {useCerberusLeash ? '✓ LEASH ARMED' : 'ARM STYGIAN LEASH'}
+                </button>
+              </div>
+
+              <div className="text-[11px] space-y-1 font-mono text-[#cbd5e1] bg-black/40 p-2.5 rounded-lg border border-red-500/20">
+                <div className="flex items-center space-x-1 text-[#f4f0e8]">
+                  <span className="text-emerald-400">• If they Float:</span>
+                  <span>Steal <strong>50m</strong> from their hull</span>
+                </div>
+                <div className="flex items-center space-x-1 text-[#f4f0e8]">
+                  <span className="text-amber-400">• If they Crash:</span>
+                  <span>Drag them down & get <strong>+100m bonus</strong>!</span>
+                </div>
+                <div className="text-[10px] text-rose-300 pt-1 border-t border-white/10">
+                  ⚠️ <strong>Don't crash:</strong> If your own ship sinks, the leash snaps (0m).
+                </div>
               </div>
             </div>
           )}
@@ -735,21 +753,30 @@ export const OdysseyEscapeRoyaleRound: React.FC = () => {
                   </div>
                 </div>
 
-                {/* Cerberus Events */}
+                {/* Stygian Leash Events */}
                 {report?.cerberus_events && report.cerberus_events.length > 0 && (
-                  <div className="p-3 rounded-xl bg-red-950/40 border border-red-500/50 space-y-1">
+                  <div className="p-3 rounded-xl bg-red-950/40 border border-red-500/50 space-y-2">
                     {report.cerberus_events.map((evt, idx) => (
-                      <div key={idx} className="flex items-center justify-between text-[11px]">
-                        <span className="text-[#f4f0e8]">
-                          🐕 {evt.attacker_team_name} guessed {evt.guessed_vessel} on {evt.target_team_name}!
-                        </span>
-                        {evt.success ? (
-                          <span className="text-emerald-400 font-bold">
-                            ⚡ AMBUSH HIT! (+150m / -150m)
+                      <div key={idx} className="text-[11px] font-mono p-2 rounded-lg bg-black/40 border border-red-500/20 space-y-0.5">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[#f4f0e8] font-bold">
+                            🐕‍🦺 {evt.attacker_team_name} leashed {evt.target_team_name}!
                           </span>
-                        ) : (
-                          <span className="text-[#8e95a5]">Missed</span>
-                        )}
+                          {evt.leash_snapped ? (
+                            <span className="text-rose-400 font-bold">⚡ LEASH SNAPPED (0m)</span>
+                          ) : evt.event_type === 'WRECK_DRAG' ? (
+                            <span className="text-amber-400 font-bold">💥 WRECK DRAG! (+100m / -100m)</span>
+                          ) : (
+                            <span className="text-emerald-400 font-bold">⚓ ANCHOR BIT! (+50m / -50m)</span>
+                          )}
+                        </div>
+                        <div className="text-[10px] text-[#8e95a5]">
+                          {evt.leash_snapped
+                            ? `${evt.attacker_team_name}'s own boat crashed! Curse wasted.`
+                            : evt.event_type === 'WRECK_DRAG'
+                            ? `${evt.target_team_name} crashed on ${evt.target_vessel}! Dragged down into the deep.`
+                            : `${evt.target_team_name} floated safely on ${evt.target_vessel}. 50m siphoned from their hull.`}
+                        </div>
                       </div>
                     ))}
                   </div>

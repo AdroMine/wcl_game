@@ -41,6 +41,8 @@ export const DEFAULT_ROUND3_CONFIG: Round3Config = {
     },
   },
   vengeance: {
+    anchor_siphon_meters: 50,
+    wreck_bonus_meters: 100,
     cerberus_penalty_meters: -150,
     cerberus_bonus_meters: 150,
   },

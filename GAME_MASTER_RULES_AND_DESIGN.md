@@ -162,12 +162,16 @@ flowchart TD
 | ⛵ **The Sailboat** | **BALANCED** | Max **30% of active fleet** (e.g. max 2 crews in a 7-crew room) | **+300m** | **0m** | Fast advance, but capsizes into freezing waters if crowded. |
 | ⚡ **The Ghost Ship** | **SOLO GAMBLE** | **Exactly 1 crew** in the entire room | **+450m** | **-50m** | Huge leap forward. But if 2 or more crews board, they crash into each other (-50m penalty). |
 
-### 5. Cerberus Treat Attack (Revenge Mechanic)
-- A crew holding the `🩸 Betrayed` status can toss their honey-cake treat to Cerberus **once per game**.
-- They designate their **Nemesis** (the crew that betrayed them in Round 2) and guess what vessel they will pick.
-- **If the guess is correct**: Cerberus intercepts the Nemesis on the river!
-  - **Nemesis Penalty**: **-150m** dragged backward.
-  - **Hunter Bonus**: **+150m** surged forward.
+### 5. Stygian Leash: Cerberus as a High-Risk Leech (Revenge Mechanic)
+A crew holding the `🩸 Betrayed` status can arm the **Stygian Leash** on their Nemesis **once per game**:
+
+- **No Guessing Games**: You tether Cerberus directly to your rival's boat for the wave.
+- **If Rival Floats (Rowboat or uncapped vessel)**:
+  - ⚓ **Anchor Siphon**: Cerberus acts like an anchor on their hull. They lose **-50m**, and your crew steals **+50m** (100m net swing).
+- **If Rival Crashes / Capsizes (Overloaded Sailboat or Collided Ghost Ship)**:
+  - 💥 **Wreck Drag**: Cerberus drags them down with the wreck! They suffer an extra **-100m penalty**, and your crew earns a **+100m Vengeance Bonus** (200m net swing!).
+- **The Backfire Risk (Counterweight)**:
+  - ⚡ **If your own crew's boat crashes that wave**: The leash snaps back! You gain **0m**, and your one-time curse is wasted. Target suffers no penalty. Don't be reckless while seeking revenge!
 
 ### 6. Sudden Death Duel (The Narrow Gate Standoff)
 If two crews cross the 1,000m portal line on the same wave or tie for a podium medal, a **40-second Sudden Death Standoff** triggers:

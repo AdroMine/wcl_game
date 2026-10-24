@@ -2520,10 +2520,10 @@ export async function supabaseRound3CastVote(
   const teamVote = session.wave_votes[curWave][teamId];
   teamVote.player_votes[playerId] = vessel;
 
-  // Cerberus guess (if eligible)
-  if (cerberusTargetTeamId && cerberusGuessedVessel && !session.team_states[teamId]?.cerberus_used) {
+  // Stygian Leash Cerberus revenge (if eligible)
+  if (cerberusTargetTeamId && !session.team_states[teamId]?.cerberus_used) {
     teamVote.cerberus_target_team_id = cerberusTargetTeamId;
-    teamVote.cerberus_guessed_vessel = cerberusGuessedVessel;
+    teamVote.cerberus_guessed_vessel = cerberusGuessedVessel || null;
   }
 
   await supabase.from('round3_session').update({

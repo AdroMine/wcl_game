@@ -359,9 +359,18 @@ export function evaluateWaveCongestion(args: {
   const ghostShipCollided = ghostShipTeams.length >= 2;
   const ghostShipSoloTeamId = ghostShipTeams.length === 1 ? ghostShipTeams[0] : null;
 
-  // 3. Cerberus Vengeance Evaluation
+  // 3. Stygian Leash (Cerberus Vengeance) Evaluation
   const cerberusEvents: Round3CerberusEvent[] = [];
   const cerberusDeltas: Record<string, number> = {};
+
+  const didVesselCrash = (vessel: Round3Vessel): boolean => {
+    if (vessel === 'SAILBOAT') return sailboatCapsized;
+    if (vessel === 'GHOST_SHIP') return ghostShipCollided;
+    return false; // ROWBOAT never crashes
+  };
+
+  const anchorSiphon = config.vengeance.anchor_siphon_meters ?? 50;
+  const wreckBonus = config.vengeance.wreck_bonus_meters ?? 100;
 
   for (const team of participatingTeams) {
     const vote = teamVotes[team.id];
@@ -369,33 +378,56 @@ export function evaluateWaveCongestion(args: {
 
     if (
       vote?.cerberus_target_team_id &&
-      vote?.cerberus_guessed_vessel &&
       !state?.cerberus_used
     ) {
       const targetTeamId = vote.cerberus_target_team_id;
-      const guessedVessel = vote.cerberus_guessed_vessel;
       const targetVote = teamVotes[targetTeamId];
-      const targetActualVessel: Round3Vessel = targetVote?.resolved_vessel || 'ROWBOAT';
+      const hunterVessel: Round3Vessel = vote?.resolved_vessel || 'ROWBOAT';
+      const targetVessel: Round3Vessel = targetVote?.resolved_vessel || 'ROWBOAT';
 
-      const isSuccess = targetActualVessel === guessedVessel;
-      const bonus = isSuccess ? (config.vengeance.cerberus_bonus_meters || 150) : 0;
-      const penalty = isSuccess ? (config.vengeance.cerberus_penalty_meters || -150) : 0;
+      const hunterCrashed = didVesselCrash(hunterVessel);
+      const targetCrashed = didVesselCrash(targetVessel);
 
-      if (isSuccess) {
-        cerberusDeltas[team.id] = (cerberusDeltas[team.id] || 0) + bonus;
-        cerberusDeltas[targetTeamId] = (cerberusDeltas[targetTeamId] || 0) + penalty;
+      let eventType: 'ANCHOR_SIPHON' | 'WRECK_DRAG' | 'LEASH_SNAPPED';
+      let attackerBonus = 0;
+      let targetPenalty = 0;
+
+      if (hunterCrashed) {
+        // Backfire: Hunter's own boat crashed/capsized! Leash snaps, 0m gained, curse wasted
+        eventType = 'LEASH_SNAPPED';
+        attackerBonus = 0;
+        targetPenalty = 0;
+      } else if (targetCrashed) {
+        // Wreck Drag: Target's boat crashed/capsized! Dragged down into the deep
+        eventType = 'WRECK_DRAG';
+        attackerBonus = wreckBonus;
+        targetPenalty = -wreckBonus;
+      } else {
+        // Anchor Siphon: Target's boat floated safely! Cerberus siphons 50m from their hull
+        eventType = 'ANCHOR_SIPHON';
+        attackerBonus = anchorSiphon;
+        targetPenalty = -anchorSiphon;
       }
+
+      cerberusDeltas[team.id] = (cerberusDeltas[team.id] || 0) + attackerBonus;
+      cerberusDeltas[targetTeamId] = (cerberusDeltas[targetTeamId] || 0) + targetPenalty;
 
       cerberusEvents.push({
         attacker_team_id: team.id,
         attacker_team_name: teamsMap.get(team.id)?.name || 'Challenger',
         target_team_id: targetTeamId,
         target_team_name: teamsMap.get(targetTeamId)?.name || 'Nemesis',
-        guessed_vessel: guessedVessel,
-        actual_vessel: targetActualVessel,
-        success: isSuccess,
-        attacker_bonus: bonus,
-        target_penalty: penalty,
+        attacker_vessel: hunterVessel,
+        target_vessel: targetVessel,
+        attacker_crashed: hunterCrashed,
+        target_crashed: targetCrashed,
+        leash_snapped: hunterCrashed,
+        event_type: eventType,
+        success: !hunterCrashed,
+        guessed_vessel: vote.cerberus_guessed_vessel || targetVessel,
+        actual_vessel: targetVessel,
+        attacker_bonus: attackerBonus,
+        target_penalty: targetPenalty,
       });
     }
   }

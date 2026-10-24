@@ -106,8 +106,8 @@ const BRIEFINGS: Record<string, BriefingContent> = {
       },
       {
         icon: <Sparkles className="w-4 h-4 text-[#f43f5e]" />,
-        title: '3. Toss Cerberus Treat',
-        desc: 'If betrayed in Round 2, toss your honey-cake treat to Cerberus to drag your rival back -150m! 🕊️ Winds of Olympus: Crews who kept unbroken peace in the Mist ride divine winds (+75m starting boost)!',
+        title: '3. Stygian Leash (Cerberus)',
+        desc: 'If betrayed in Round 2, tether your rival: steal 50m if they float, or drag them down for +100m if they crash! 🕊️ Winds of Olympus: Unbroken truces grant a +75m starting boost!',
       },
     ],
     objective: 'First 3 crews to cross the 1,000m threshold escape and claim Gold, Silver & Bronze medals!',

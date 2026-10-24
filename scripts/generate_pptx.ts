@@ -447,8 +447,8 @@ slide4.addText([
   { text: "Total points accumulated in Rounds 1 & 2 convert directly into starting river meters.\n\n", options: { color: C.muted } },
   { text: "• The Victory Gate: ", options: { bold: true, color: C.text } },
   { text: "First 3 crews to reach 1,000 meters win Gold, Silver & Bronze medals!\n\n", options: { color: C.gold } },
-  { text: "• Cerberus Revenge: ", options: { bold: true, color: C.text } },
-  { text: "Crews betrayed in R2 can guess their nemesis's vessel to drag them back -150m and surge +150m!\n\n", options: { color: C.rose } },
+  { text: "• 🐕‍🦺 Stygian Leash (Cerberus Revenge): ", options: { bold: true, color: C.rose } },
+  { text: "Tether your rival's boat. If they float: steal 50m. If they crash: drag them down & get +100m! (If your own boat crashes, leash snaps: 0m).\n\n", options: { color: C.text } },
   { text: "• Sudden Death Standoff: ", options: { bold: true, color: C.text } },
   { text: "Tie-breaker duel (Shields vs Ram vs Sails) if crews cross the portal simultaneously.", options: { color: C.muted } }
 ], {

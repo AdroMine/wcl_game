@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Underworld: Game Explainer & Team Briefing</title>
   
   <!-- Reveal.js styles -->
@@ -18,28 +18,56 @@
     :root {
       --gold: #f59e0b;
       --gold-light: #fef3c7;
-      --gold-dim: #78350f;
-      --bg-dark: #0a0d14;
-      --card-bg: rgba(23, 28, 42, 0.75);
+      --card-bg: rgba(20, 26, 42, 0.85);
       --card-border: rgba(245, 158, 11, 0.25);
       --cyan: #06b6d4;
       --emerald: #10b981;
       --rose: #f43f5e;
-      --amber: #f59e0b;
+      --purple: #a855f7;
     }
 
     body, .reveal {
-      background: radial-gradient(circle at 50% 20%, #151b2e 0%, #080a10 70%, #030407 100%);
+      background: radial-gradient(circle at 50% 15%, #161e33 0%, #080a12 65%, #030408 100%);
       color: #e2e8f0;
       font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
     }
 
+    .reveal .slides {
+      text-align: left;
+    }
+
     .reveal h1, .reveal h2, .reveal h3, .reveal h4 {
       font-family: 'Cinzel', serif;
-      letter-spacing: 0.05em;
+      letter-spacing: 0.04em;
       text-transform: uppercase;
       font-weight: 800;
       color: #fff;
+      margin: 0;
+    }
+
+    .slide-header {
+      margin-bottom: 16px;
+    }
+
+    .slide-tag {
+      display: inline-block;
+      font-size: 0.65rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      padding: 2px 10px;
+      border-radius: 9999px;
+      margin-bottom: 4px;
+    }
+
+    .tag-gold { background: rgba(245, 158, 11, 0.15); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.35); }
+    .tag-cyan { background: rgba(6, 182, 212, 0.15); color: #22d3ee; border: 1px solid rgba(6, 182, 212, 0.35); }
+    .tag-rose { background: rgba(244, 63, 94, 0.15); color: #fb7185; border: 1px solid rgba(244, 63, 94, 0.35); }
+    .tag-purple { background: rgba(168, 85, 247, 0.15); color: #c084fc; border: 1px solid rgba(168, 85, 247, 0.35); }
+
+    .slide-title {
+      font-size: 1.85rem !important;
+      line-height: 1.15;
     }
 
     .gold-gradient {
@@ -48,165 +76,166 @@
       -webkit-text-fill-color: transparent;
     }
 
-    .subtitle {
-      font-size: 0.55em !important;
+    .slide-subtitle {
+      font-size: 0.85rem !important;
       color: #94a3b8;
       font-weight: 500;
-      letter-spacing: 0.08em;
-      text-transform: uppercase;
-      margin-top: -10px;
-      margin-bottom: 30px;
+      margin: 3px 0 0 0;
+    }
+
+    /* Cards & Grids */
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
     }
 
     .grid-3 {
       display: grid;
       grid-template-columns: repeat(3, 1fr);
-      gap: 20px;
-      margin-top: 25px;
-    }
-
-    .grid-2 {
-      display: grid;
-      grid-template-columns: repeat(2, 1fr);
-      gap: 24px;
-      margin-top: 25px;
-      align-items: stretch;
+      gap: 14px;
     }
 
     .card {
       background: var(--card-bg);
       border: 1px solid var(--card-border);
-      border-radius: 14px;
-      padding: 24px;
-      text-align: left;
-      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
-      backdrop-filter: blur(8px);
+      border-radius: 10px;
+      padding: 14px 18px;
+      box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
     }
 
     .card h4 {
-      font-size: 1.15em;
-      margin: 0 0 12px 0;
+      font-size: 0.95rem;
+      margin: 0 0 8px 0;
+      color: var(--gold-light);
       display: flex;
       align-items: center;
-      gap: 10px;
+      gap: 6px;
     }
 
     .card p, .card li {
-      font-size: 0.72em;
-      line-height: 1.55;
+      font-size: 0.78rem;
+      line-height: 1.45;
       color: #cbd5e1;
-      margin-bottom: 8px;
+      margin: 0 0 6px 0;
     }
 
-    .card ul {
+    .card ul, .card ol {
       margin: 0;
       padding-left: 18px;
     }
 
-    .badge {
-      display: inline-block;
-      padding: 3px 10px;
-      font-size: 0.6em;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-      border-radius: 9999px;
-      margin-bottom: 10px;
+    .card li {
+      margin-bottom: 5px;
     }
 
-    .badge-gold { background: rgba(245, 158, 11, 0.2); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.4); }
-    .badge-cyan { background: rgba(6, 182, 212, 0.2); color: #22d3ee; border: 1px solid rgba(6, 182, 212, 0.4); }
-    .badge-rose { background: rgba(244, 63, 94, 0.2); color: #fb7185; border: 1px solid rgba(244, 63, 94, 0.4); }
-    .badge-emerald { background: rgba(16, 185, 129, 0.2); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.4); }
-
-    .callout-box {
-      background: rgba(245, 158, 11, 0.08);
-      border-left: 4px solid var(--gold);
-      padding: 14px 20px;
-      border-radius: 0 10px 10px 0;
-      margin-top: 20px;
-      text-align: left;
-    }
-
-    .callout-box p {
-      margin: 0;
-      font-size: 0.7em;
-      line-height: 1.5;
+    .callout {
+      background: rgba(245, 158, 11, 0.09);
+      border-left: 3px solid var(--gold);
+      padding: 8px 14px;
+      border-radius: 0 8px 8px 0;
+      margin-top: 12px;
+      font-size: 0.75rem;
       color: #fef3c7;
+      line-height: 1.4;
     }
 
-    .vessel-card {
-      border-radius: 12px;
-      padding: 18px;
-      text-align: left;
-    }
-
-    .vessel-row { background: rgba(16, 185, 129, 0.12); border: 1px solid rgba(16, 185, 129, 0.35); }
-    .vessel-sail { background: rgba(245, 158, 11, 0.12); border: 1px solid rgba(245, 158, 11, 0.35); }
-    .vessel-ghost { background: rgba(168, 85, 247, 0.12); border: 1px solid rgba(168, 85, 247, 0.35); }
-
-    .role-pill {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      background: rgba(255, 255, 255, 0.07);
-      padding: 4px 10px;
-      border-radius: 8px;
-      font-size: 0.65em;
-      margin: 3px;
-      border: 1px solid rgba(255, 255, 255, 0.12);
-    }
-
-    .flow-steps {
+    /* Visual Flow Pipeline */
+    .flow-bar {
       display: flex;
-      justify-content: space-between;
       align-items: center;
-      gap: 12px;
-      margin: 30px 0;
+      gap: 8px;
+      margin-bottom: 14px;
     }
 
-    .flow-step {
+    .flow-item {
       flex: 1;
-      background: var(--card-bg);
-      border: 1px solid var(--card-border);
-      border-radius: 12px;
-      padding: 16px 10px;
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid rgba(245, 158, 11, 0.25);
+      border-radius: 8px;
+      padding: 8px 6px;
       text-align: center;
-      position: relative;
     }
 
-    .flow-step .num {
-      font-size: 1.2em;
+    .flow-item .f-num {
+      font-size: 0.65rem;
       font-weight: 800;
       color: var(--gold);
       font-family: 'Cinzel', serif;
     }
 
-    .flow-step .name {
-      font-size: 0.75em;
+    .flow-item .f-name {
+      font-size: 0.75rem;
       font-weight: 700;
       color: #fff;
-      margin: 4px 0;
     }
 
-    .flow-step .desc {
-      font-size: 0.6em;
+    .flow-item .f-sub {
+      font-size: 0.62rem;
       color: #94a3b8;
     }
 
-    .flow-arrow {
+    .flow-sep {
       color: var(--gold);
-      font-size: 1.2em;
+      font-size: 0.9rem;
       opacity: 0.6;
     }
 
-    .footer-tip {
-      font-size: 0.55em;
-      color: #64748b;
-      position: absolute;
-      bottom: -40px;
+    .role-tag {
+      display: inline-block;
+      background: rgba(255, 255, 255, 0.07);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 6px;
+      padding: 2px 7px;
+      font-size: 0.68rem;
+      margin: 2px;
+      color: #e2e8f0;
+    }
+
+    /* Vessel cards */
+    .vessel-card {
+      border-radius: 10px;
+      padding: 12px 14px;
+    }
+    .v-row { background: rgba(16, 185, 129, 0.1); border: 1px solid rgba(16, 185, 129, 0.35); }
+    .v-sail { background: rgba(245, 158, 11, 0.1); border: 1px solid rgba(245, 158, 11, 0.35); }
+    .v-ghost { background: rgba(168, 85, 247, 0.1); border: 1px solid rgba(168, 85, 247, 0.35); }
+
+    .vessel-title {
+      font-size: 0.92rem;
+      font-weight: 700;
+      margin: 0 0 4px 0;
+    }
+    .v-tag {
+      font-size: 0.62rem;
+      text-transform: uppercase;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      margin-bottom: 6px;
+    }
+
+    /* Summary Table */
+    .summary-table {
       width: 100%;
-      text-align: center;
+      border-collapse: collapse;
+      font-size: 0.72rem;
+    }
+    .summary-table th {
+      background: rgba(245, 158, 11, 0.12);
+      color: var(--gold);
+      padding: 8px 10px;
+      border-bottom: 1px solid rgba(245, 158, 11, 0.3);
+      font-weight: 700;
+      text-align: left;
+    }
+    .summary-table td {
+      padding: 7px 10px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+      color: #cbd5e1;
+      vertical-align: middle;
+    }
+    .summary-table tr:last-child td {
+      border-bottom: none;
     }
   </style>
 </head>
@@ -216,276 +245,275 @@
 
       <!-- SLIDE 1: OVERVIEW & FLOW -->
       <section>
-        <span class="badge badge-gold">Underworld Engine • Team Briefing</span>
-        <h2 style="font-size: 2.2em; margin-bottom: 0;">ESCAPE FROM <span class="gold-gradient">TARTARUS</span></h2>
-        <p class="subtitle">Complete Game Overview & 3-Round Journey</p>
+        <div class="slide-header">
+          <span class="slide-tag tag-gold">Underworld Engine • Team Briefing</span>
+          <h2 class="slide-title">ESCAPE FROM <span class="gold-gradient">TARTARUS</span></h2>
+          <p class="slide-subtitle">Complete Game Overview & 3-Round Journey</p>
+        </div>
 
-        <!-- Visual Flow Pipeline -->
-        <div class="flow-steps">
-          <div class="flow-step">
-            <div class="num">0</div>
-            <div class="name">Lobby</div>
-            <div class="desc">3-Emoji Keypad & 5 Roles</div>
+        <!-- 4-Step Pipeline -->
+        <div class="flow-bar">
+          <div class="flow-item">
+            <div class="f-num">0. LOBBY</div>
+            <div class="f-name">Crew Assembly</div>
+            <div class="f-sub">3-Emoji Keypad & Roles</div>
           </div>
-          <div class="flow-arrow">➔</div>
-          <div class="flow-step">
-            <div class="num">1</div>
-            <div class="name">Shattered Tablet</div>
-            <div class="desc">Physical Phone Alignment</div>
+          <div class="flow-sep">➔</div>
+          <div class="flow-item">
+            <div class="f-num">1. ROUND 1</div>
+            <div class="f-name">Shattered Tablet</div>
+            <div class="f-sub">Physical Phone Puzzle</div>
           </div>
-          <div class="flow-arrow">➔</div>
-          <div class="flow-step">
-            <div class="num">2</div>
-            <div class="name">Shades in Mist</div>
-            <div class="desc">Social Dilemma & Bluffing</div>
+          <div class="flow-sep">➔</div>
+          <div class="flow-item">
+            <div class="f-num">2. ROUND 2</div>
+            <div class="f-name">Shades in Mist</div>
+            <div class="f-sub">Social Dilemma & Bluffing</div>
           </div>
-          <div class="flow-arrow">➔</div>
-          <div class="flow-step">
-            <div class="num">3</div>
-            <div class="name">Styx Escape</div>
-            <div class="desc">1,000m Vessel Royale</div>
+          <div class="flow-sep">➔</div>
+          <div class="flow-item">
+            <div class="f-num">3. ROUND 3</div>
+            <div class="f-name">Styx Escape</div>
+            <div class="f-sub">1,000m Vessel Royale</div>
           </div>
         </div>
 
-        <div class="grid-2" style="margin-top: 15px;">
+        <div class="grid-2">
           <div class="card">
             <h4>👥 The 5-Player Crews</h4>
-            <p>Every table forms a crew of 5 members with distinct flavor roles:</p>
-            <div>
-              <span class="role-pill">🧭 Navigator</span>
-              <span class="role-pill">👁️ Oracle</span>
-              <span class="role-pill">📖 Scholar</span>
-              <span class="role-pill">🔥 Torchbearer</span>
-              <span class="role-pill">🛡️ Negotiator</span>
+            <p>Every table forms a 5-player crew with unique flavor roles:</p>
+            <div style="margin-bottom: 6px;">
+              <span class="role-tag">🧭 Navigator</span>
+              <span class="role-tag">👁️ Oracle</span>
+              <span class="role-tag">📖 Scholar</span>
+              <span class="role-tag">🔥 Torchbearer</span>
+              <span class="role-tag">🛡️ Negotiator</span>
             </div>
-            <p style="margin-top: 10px; font-size: 0.65em; color: #94a3b8;">
-              • <strong>Simple & Accessible:</strong> Roles are identities and tablet slice markers (no complicated power management).<br>
-              • <strong>Instant Join:</strong> 1 player creates the crew; others tap 3 emojis (e.g. <code>💀 ⚡ 🛡️</code>) on screen. No typing, no camera permissions.
-            </p>
+            <ul>
+              <li><strong>Zero Friction:</strong> Roles identify members and tablet puzzle slots; no complex powers to memorize.</li>
+              <li><strong>Instant Join:</strong> 1 player creates team; others tap a 3-emoji code (e.g. <code>💀 ⚡ 🛡️</code>). No typing or cameras.</li>
+            </ul>
           </div>
 
           <div class="card">
             <h4>🏆 The Ultimate Objective</h4>
             <ul>
-              <li><strong>Rounds 1 & 2:</strong> Earn points through teamwork, deduction, and tactical diplomacy.</li>
-              <li><strong>Round 3:</strong> Points convert into a starting <strong>distance head-start</strong> on the River Styx!</li>
-              <li><strong>Victory:</strong> First 3 crews to cross the 1,000-meter portal claim <strong>Gold, Silver & Bronze</strong>.</li>
+              <li><strong>Rounds 1 & 2 (Points Pool):</strong> Earn points through physical teamwork, visual puzzle-solving, and negotiation.</li>
+              <li><strong>Round 3 (Head-Start):</strong> Points directly convert into a starting distance advantage on the River Styx!</li>
+              <li><strong>Victory:</strong> First 3 crews to cross the 1,000-meter exit portal win <strong>Gold, Silver & Bronze medals</strong>.</li>
             </ul>
           </div>
         </div>
 
         <aside class="notes">
           Talking points:
-          - Fast intro: Welcome to Underworld.
-          - 5 people per crew. Everyone gets their own phone, no app download needed.
-          - Joining is as easy as tapping 3 emojis shown on the crew leader's phone.
-          - 3 rounds, ~25 minutes total. Each round tests a completely different skill.
+          - Quick welcome. Event runtime is ~25 minutes across 3 distinct rounds.
+          - 5 players per crew. Joining is as simple as tapping 3 emojis shown on the captain's phone.
+          - Roles are just identities and physical tablet slots.
+          - Points from R1 & R2 convert into a head-start in R3.
         </aside>
       </section>
 
       <!-- SLIDE 2: ROUND 1 -->
       <section>
-        <span class="badge badge-cyan">Round 1 • Physical Puzzle</span>
-        <h2 style="font-size: 2.1em; margin-bottom: 0;">THE <span class="gold-gradient">SHATTERED TABLET</span></h2>
-        <p class="subtitle">Physical Screen Alignment • ~5 Minutes</p>
+        <div class="slide-header">
+          <span class="slide-tag tag-cyan">Round 1 • Physical Cooperation Puzzle</span>
+          <h2 class="slide-title">THE <span class="gold-gradient">SHATTERED TABLET</span></h2>
+          <p class="slide-subtitle">Tomb Gate Alignment • Duration: ~5 Minutes</p>
+        </div>
 
         <div class="grid-2">
           <div class="card">
             <h4>🧩 The Story & Mechanic</h4>
             <ul>
-              <li><strong>The Setup:</strong> You reach a sealed ancient tomb door in Tartarus. A cracked stone tablet lies on the ground.</li>
-              <li><strong>5 Phone Slices:</strong> The tablet is split into 5 vertical slices across your crew's 5 phones (#1 to #5).</li>
-              <li><strong>Physical Cooperation:</strong> Players must place their 5 phones side-by-side in numerical order across the pub table.</li>
-              <li><strong>The Discovery:</strong> Golden fracture lines connect across screens to reveal a hidden <strong>2-word ancient codeword</strong>.</li>
+              <li><strong>The Premise:</strong> An ancient tomb gate blocks Tartarus. A cracked stone tablet lies on the ground.</li>
+              <li><strong>5 Slices on 5 Phones:</strong> The tablet is split into 5 vertical slices distributed across the crew's phones (#1 to #5).</li>
+              <li><strong>Physical Alignment:</strong> Players must place their 5 phones side-by-side in numerical order across the pub table.</li>
+              <li><strong>The Codeword:</strong> Carved fracture lines align across screen borders to reveal a 2-word codeword (e.g., <code>CRIMSON SHADOW</code>).</li>
             </ul>
           </div>
 
           <div class="card">
-            <h4>⏱️ How It Works & Scores</h4>
+            <h4>⏱️ Points & Progressive Hints</h4>
             <ul>
-              <li><strong>Speed Wins:</strong> Faster solves yield higher points (Legendary $\rightarrow$ Swift $\rightarrow$ Steady).</li>
-              <li><strong>Any Teammate Can Submit:</strong> Once you read the codeword, type it in on any phone in the crew.</li>
-              <li><strong>Stuck? Progressive Hints:</strong> Hints unlock at 2m, 3m, and 4m revealing who holds the left, right, and center pieces (small -30 PTS deduction each).</li>
-              <li><strong>Safety Net:</strong> 50 PTS guaranteed floor—everyone gets through the door!</li>
+              <li><strong>Speed Rewards:</strong> Faster team solves earn maximum points (Legendary $\rightarrow$ Swift $\rightarrow$ Steady).</li>
+              <li><strong>Anyone Can Submit:</strong> Any teammate can type and submit the answer on their screen.</li>
+              <li><strong>Progressive Hints:</strong> Automatic hints unlock at 2m, 3m, and 4m pinpointing left, right, and center pieces (-30 PTS penalty).</li>
+              <li><strong>Safety Floor:</strong> 50 PTS guaranteed floor ensures every crew makes it through the gate.</li>
             </ul>
           </div>
         </div>
 
-        <div class="callout-box">
-          <p><strong>💡 Key Takeaway for Players:</strong> "Don't just stare at your own screen—physically stand up, arrange your phones on the table in order 1 through 5, and read the tablet together!"</p>
+        <div class="callout">
+          💡 <strong>Key Facilitator Prompt:</strong> "Don't sit and stare at your own phone—stand up, line up your 5 phones in order 1 through 5 on the table, and read the tablet together!"
         </div>
 
         <aside class="notes">
           Talking points:
-          - This gets people off their individual screens and physically cooperating immediately.
+          - Gets everyone active and physically cooperating immediately.
           - Phones go on the table: 1, 2, 3, 4, 5.
-          - The cracks match up like a jigsaw puzzle across borders.
-          - Hints exist so nobody gets stuck forever.
+          - The cracks match up like a jigsaw across phone bezels.
+          - Guaranteed floor so no one gets stuck or eliminated.
         </aside>
       </section>
 
       <!-- SLIDE 3: ROUND 2 -->
       <section>
-        <span class="badge badge-rose">Round 2 • Social Dilemma</span>
-        <h2 style="font-size: 2.1em; margin-bottom: 0;">SHADES IN THE <span class="gold-gradient">MIST</span></h2>
-        <p class="subtitle">3 Clashes • Face-to-Face Negotiation • Bluffing Allowed</p>
+        <div class="slide-header">
+          <span class="slide-tag tag-rose">Round 2 • Social Dilemma & Bluffing</span>
+          <h2 class="slide-title">SHADES IN THE <span class="gold-gradient">MIST</span></h2>
+          <p class="slide-subtitle">3 Clashes vs Rival Table • Face-to-Face Negotiation • Bluffing Allowed</p>
+        </div>
 
         <div class="grid-2">
           <div class="card">
             <h4>⚔️ How Each Clash Runs</h4>
-            <p>Your crew is paired against a rival table for <strong>3 escalating clashes</strong>:</p>
-            <ol style="font-size: 0.7em; padding-left: 20px; line-height: 1.6; color: #cbd5e1;">
+            <p style="margin-bottom: 6px;">Your crew faces a rival table across <strong>3 escalating clashes</strong>:</p>
+            <ol style="font-size: 0.74rem;">
               <li><strong>Private Huddle (50s):</strong> Whisper at your table. Truce or Ambush?</li>
-              <li><strong>The Dialogue (40s):</strong> Turn to the rival table, look them in the eye, and negotiate. (Bluffing is 100% permitted!).</li>
-              <li><strong>Secret Vote (25s):</strong> Every player votes privately on their phone (Majority rules; 🛡️ Negotiator breaks ties).</li>
-              <li><strong>The Reveal (40s):</strong> Both tables' choices unmask simultaneously!</li>
+              <li><strong>The Dialogue (40s):</strong> Turn to rival table, look them in the eyes, and negotiate. (Bluffing is 100% allowed!).</li>
+              <li><strong>Secret Vote (25s):</strong> Every player votes secretly on phone. Majority rules (Negotiator breaks ties).</li>
+              <li><strong>The Reveal (40s):</strong> Stances unmask simultaneously on screen!</li>
             </ol>
           </div>
 
           <div class="card">
-            <h4>⚖️ The Stances & Stakes (Triples in Clash 3!)</h4>
+            <h4>⚖️ Stances & Long-Term Legacy</h4>
             <ul>
-              <li>🤝 <strong>Mutual Truce:</strong> Both crews play peaceful $\rightarrow$ <strong>Both win solid points</strong>.</li>
-              <li>🗡️ <strong>The Backstab (Ambush vs Truce):</strong> The betrayer <strong>steals maximum points</strong>; the peaceful victim gets <strong>0</strong>!</li>
-              <li>💥 <strong>Mutual Brawl (Ambush vs Ambush):</strong> Both try to backstab $\rightarrow$ <strong>Both walk away with scraps</strong>.</li>
+              <li>🤝 <strong>Mutual Truce:</strong> Both play peaceful $\rightarrow$ <strong>Both win solid, safe points</strong>.</li>
+              <li>🗡️ <strong>The Backstab:</strong> Ambush beats Truce $\rightarrow$ Betrayer steals <strong>huge points</strong>; victim gets <strong>0</strong>!</li>
+              <li>💥 <strong>Mutual Ambush:</strong> Both attack $\rightarrow$ <strong>Both get scraps</strong>.</li>
+              <li>📈 <strong>Escalating Stakes:</strong> Points DOUBLE in Clash 2, TRIPLE in Clash 3!</li>
             </ul>
-
-            <div style="margin-top: 15px; padding: 12px; background: rgba(0,0,0,0.3); border-radius: 8px;">
-              <span class="badge badge-emerald" style="margin: 0;">🕊️ Moral Legacy</span>
-              <p style="margin: 6px 0 0 0; font-size: 0.65em; color: #94a3b8;">
-                • <strong>Honourable (3 Truces):</strong> +75m head-start boost in Round 3!<br>
-                • <strong>Betrayed:</strong> Receives a <strong>Cerberus revenge token</strong> for Round 3!
-              </p>
+            <div style="margin-top: 8px; padding: 6px 10px; background: rgba(0,0,0,0.3); border-radius: 6px; font-size: 0.72rem;">
+              <strong>🕊️ Legacy Bonus for R3:</strong> Unbroken peace grants a <strong>+75m head-start</strong> in R3; betrayed teams get a <strong>Cerberus revenge token</strong>!
             </div>
           </div>
         </div>
 
-        <div class="callout-box" style="border-left-color: var(--rose);">
-          <p><strong>💡 Key Takeaway for Players:</strong> "Promises made across the room are not binding. Will you build trust for guaranteed points, or cash in on a brutal backstab?"</p>
+        <div class="callout" style="border-left-color: var(--rose);">
+          💡 <strong>Key Dynamic:</strong> "Promises made across the room are not binding. Will you build trust for reliable points, or cash in on a brutal betrayal?"
         </div>
 
         <aside class="notes">
           Talking points:
-          - Classic Prisoner's Dilemma, but team vs team in a loud pub.
+          - Prisoner's Dilemma adapted for pub teams.
           - People can lie to each other's faces during The Dialogue.
-          - Voting is secret on the phone so nobody knows who voted what until the team total is locked.
+          - Voting is secret on the phone so nobody knows who voted what until team total locks.
           - Stakes triple in clash 3, making betrayal very tempting!
         </aside>
       </section>
 
       <!-- SLIDE 4: ROUND 3 -->
       <section>
-        <span class="badge badge-gold">Round 3 • The Climax</span>
-        <h2 style="font-size: 2.1em; margin-bottom: 0;">ESCAPE FROM <span class="gold-gradient">TARTARUS</span></h2>
-        <p class="subtitle">River Styx Congestion Royale • 1,000m Race to the Portal</p>
+        <div class="slide-header">
+          <span class="slide-tag tag-purple">Round 3 • The Climax & Escape Royale</span>
+          <h2 class="slide-title">ESCAPE FROM <span class="gold-gradient">TARTARUS</span></h2>
+          <p class="slide-subtitle">River Styx Congestion Race • 1,000m to the Exit Portal</p>
+        </div>
 
-        <div class="grid-3" style="margin-top: 20px;">
-          <!-- Vessel 1 -->
-          <div class="vessel-card vessel-row">
-            <span class="badge badge-emerald">Safe & Steady</span>
-            <h4 style="color: #34d399; margin: 4px 0 8px 0;">🚣 The Rowboat</h4>
+        <!-- 3 Vessels -->
+        <div class="grid-3">
+          <div class="vessel-card v-row">
+            <div class="v-tag" style="color: #34d399;">Safe & Steady</div>
+            <div class="vessel-title" style="color: #34d399;">🚣 Rowboat</div>
             <p><strong>Capacity:</strong> Unlimited</p>
-            <p><strong>Outcome:</strong> <strong>+150m</strong> always.</p>
-            <p style="font-size: 0.65em; color: #94a3b8;">Never capsizes. Reliable way to tick forward while rivals greedily crash.</p>
+            <p><strong>Advance:</strong> <span style="color: #34d399; font-weight: 700;">+150m ALWAYS</span></p>
+            <p style="font-size: 0.7rem; color: #94a3b8; margin: 0;">Never capsizes. Reliable way to tick forward while rivals greedily collide.</p>
           </div>
 
-          <!-- Vessel 2 -->
-          <div class="vessel-card vessel-sail">
-            <span class="badge badge-gold">Speed vs Crowds</span>
-            <h4 style="color: #fbbf24; margin: 4px 0 8px 0;">⛵ The Sailboat</h4>
+          <div class="vessel-card v-sail">
+            <div class="v-tag" style="color: #fbbf24;">Speed vs Crowds</div>
+            <div class="vessel-title" style="color: #fbbf24;">⛵ Sailboat</div>
             <p><strong>Capacity:</strong> Max 30% of fleet</p>
-            <p><strong>Success:</strong> <strong>+300m</strong> surge!</p>
-            <p style="font-size: 0.65em; color: #fca5a5;"><strong>Overcrowded:</strong> CAPSIZES into the river (<strong>0m</strong>)!</p>
+            <p><strong>Advance:</strong> <span style="color: #fbbf24; font-weight: 700;">+300m</span> surge!</p>
+            <p style="font-size: 0.7rem; color: #fca5a5; margin: 0;"><strong>Overcrowded:</strong> CAPSIZES into the river (0m advance)!</p>
           </div>
 
-          <!-- Vessel 3 -->
-          <div class="vessel-card vessel-ghost">
-            <span class="badge badge-rose">Solo High-Stakes</span>
-            <h4 style="color: #c084fc; margin: 4px 0 8px 0;">⚡ Ghost Ship</h4>
+          <div class="vessel-card v-ghost">
+            <div class="v-tag" style="color: #c084fc;">Solo High-Stakes</div>
+            <div class="vessel-title" style="color: #c084fc;">⚡ Ghost Ship</div>
             <p><strong>Capacity:</strong> Exactly 1 crew</p>
-            <p><strong>Solo Surge:</strong> <strong>+450m</strong> leap!</p>
-            <p style="font-size: 0.65em; color: #fca5a5;"><strong>2+ Crews:</strong> Crash! (<strong>-50m penalty</strong>)!</p>
+            <p><strong>Advance:</strong> <span style="color: #c084fc; font-weight: 700;">+450m</span> leap!</p>
+            <p style="font-size: 0.7rem; color: #fca5a5; margin: 0;"><strong>2+ Crews:</strong> Crash! (-50m penalty for both)!</p>
           </div>
         </div>
 
-        <div class="grid-2" style="margin-top: 20px;">
-          <div class="card" style="padding: 16px 20px;">
-            <h4 style="font-size: 1em;">🏁 Starting Head-Start & Deciding Winners</h4>
-            <p style="font-size: 0.65em; margin: 0;">
-              • Total points from R1 & R2 convert into your starting river meters.<br>
-              • 🕊️ <strong>Winds of Olympus:</strong> +75m bonus if you never betrayed anyone in R2!<br>
-              • <strong>Victory:</strong> First 3 crews across 1,000m win <strong>Gold, Silver & Bronze</strong>. (Sudden Death duel if tied!).
-            </p>
+        <div class="grid-2" style="margin-top: 12px;">
+          <div class="card" style="padding: 10px 14px;">
+            <h4 style="font-size: 0.85rem; margin-bottom: 4px;">🏁 Deciding the Winners</h4>
+            <ul style="font-size: 0.72rem;">
+              <li><strong>Head-Start:</strong> Points from R1 & R2 convert into starting river meters (+75m honor bonus).</li>
+              <li><strong>Podium Finish:</strong> First 3 crews across 1,000m win <strong>Gold, Silver & Bronze</strong>. (Sudden Death standoff if tied!).</li>
+            </ul>
           </div>
 
-          <div class="card" style="padding: 16px 20px;">
-            <h4 style="font-size: 1em;">🐕 Cerberus Revenge Attack</h4>
-            <p style="font-size: 0.65em; margin: 0;">
-              • Teams betrayed in Round 2 hold a <strong>Cerberus Honey-Cake Treat</strong>.<br>
-              • Guess which vessel your backstabber picks: if right, Cerberus attacks them (<strong>-150m drag back</strong>) and gives you a <strong>+150m leap</strong>!
-            </p>
+          <div class="card" style="padding: 10px 14px;">
+            <h4 style="font-size: 0.85rem; margin-bottom: 4px;">🐕 Cerberus Revenge Attack</h4>
+            <ul style="font-size: 0.72rem;">
+              <li>Crews betrayed in Round 2 can throw a treat to Cerberus.</li>
+              <li>Guess your nemesis's boat: if correct, they are <strong>dragged back -150m</strong> and you <strong>surge +150m</strong>!</li>
+            </ul>
           </div>
         </div>
 
         <aside class="notes">
           Talking points:
-          - Final battle: 4 waves of vessel picking.
-          - You shout and try to trick other tables into the wrong boat during the 55s bluff phase.
-          - Rowboat is safe. Sailboat is fast but capsizes if greedy. Ghost ship is huge but only works if you're the ONLY crew on it.
+          - 4 waves of vessel selection with a room-wide shouting/bluffing phase before each wave.
+          - Rowboat is safe. Sailboat is fast but capsizes if crowded. Ghost ship is huge but only 1 crew can take it.
           - First past 1,000m wins the entire tournament!
         </aside>
       </section>
 
-      <!-- SLIDE 5: FACILITATOR CHEATSHEET -->
+      <!-- SLIDE 5: SUMMARY CHEATSHEET -->
       <section>
-        <span class="badge badge-gold">Quick Summary</span>
-        <h2 style="font-size: 2.1em; margin-bottom: 0;">FACILITATOR <span class="gold-gradient">CHEATSHEET</span></h2>
-        <p class="subtitle">Everything in One Glance</p>
+        <div class="slide-header">
+          <span class="slide-tag tag-gold">Session Overview</span>
+          <h2 class="slide-title">FACILITATOR <span class="gold-gradient">CHEATSHEET</span></h2>
+          <p class="slide-subtitle">Everything in One Glance • Total Runtime: ~25 - 30 Minutes</p>
+        </div>
 
-        <div class="card" style="margin-top: 25px;">
-          <table style="width: 100%; border-collapse: collapse; font-size: 0.7em;">
+        <div class="card" style="padding: 6px 12px;">
+          <table class="summary-table">
             <thead>
-              <tr style="border-bottom: 1px solid rgba(245, 158, 11, 0.3); text-align: left; color: var(--gold);">
-                <th style="padding: 10px;">Round</th>
-                <th style="padding: 10px;">Core Activity</th>
-                <th style="padding: 10px;">How Points / Progress Work</th>
-                <th style="padding: 10px;">How Round Ends</th>
+              <tr>
+                <th style="width: 22%;">Round</th>
+                <th style="width: 28%;">Core Activity</th>
+                <th style="width: 32%;">How Points / Progress Work</th>
+                <th style="width: 18%;">Completion</th>
               </tr>
             </thead>
             <tbody>
-              <tr style="border-bottom: 1px solid rgba(255,255,255,0.06);">
-                <td style="padding: 12px 10px; font-weight: 700; color: #fff;">1. Shattered Tablet</td>
-                <td style="padding: 12px 10px;">Align 5 phones physically in order (#1 to #5)</td>
-                <td style="padding: 12px 10px;">Fast solve = high points. Hints cost -30 PTS.</td>
-                <td style="padding: 12px 10px;">Correct 2-word code entered (or timer expires)</td>
-              </tr>
-              <tr style="border-bottom: 1px solid rgba(255,255,255,0.06);">
-                <td style="padding: 12px 10px; font-weight: 700; color: #fff;">2. Shades in Mist</td>
-                <td style="padding: 12px 10px;">Face rival crew, negotiate, secret Truce/Ambush vote</td>
-                <td style="padding: 12px 10px;">Truce = safe points. Backstab = massive points or 0. Triple stakes in Clash 3.</td>
-                <td style="padding: 12px 10px;">All 3 clashes resolved</td>
+              <tr>
+                <td style="font-weight: 700; color: #fff;">1. Shattered Tablet<br><span style="font-size: 0.65rem; color: #94a3b8;">~5 min</span></td>
+                <td>Align 5 phones physically (#1 to #5) on table.</td>
+                <td>Fast solve = top points (up to 300). Progressive hints cost -30 PTS each. 50 PTS floor.</td>
+                <td style="color: #34d399; font-weight: 600;">Codeword entered</td>
               </tr>
               <tr>
-                <td style="padding: 12px 10px; font-weight: 700; color: #fff;">3. Escape Royale</td>
-                <td style="padding: 12px 10px;">Secretly pick vessels (Rowboat, Sailboat, Ghost Ship)</td>
-                <td style="padding: 12px 10px;">Points become starting meters. Out-think congestion to reach 1,000m.</td>
-                <td style="padding: 12px 10px;">Top 3 crews reach 1,000m for Gold, Silver, Bronze</td>
+                <td style="font-weight: 700; color: #fff;">2. Shades in Mist<br><span style="font-size: 0.65rem; color: #94a3b8;">~8 min</span></td>
+                <td>Face rival table across 3 clashes. Negotiate & vote secretly.</td>
+                <td>Truce = steady points. Backstab = huge points or 0. Stakes triple in Clash 3. Gives R3 perks.</td>
+                <td style="color: #34d399; font-weight: 600;">3 clashes done</td>
+              </tr>
+              <tr>
+                <td style="font-weight: 700; color: #fff;">3. Styx Escape<br><span style="font-size: 0.65rem; color: #94a3b8;">~8 min</span></td>
+                <td>Pick vessels (Rowboat: safe, Sailboat: 30% cap, Ghost: solo).</td>
+                <td>Points become starting meters. Avoid congestion and unleash Cerberus revenge.</td>
+                <td style="color: #fbbf24; font-weight: 700;">Top 3 cross 1,000m</td>
               </tr>
             </tbody>
           </table>
         </div>
 
-        <div class="callout-box" style="margin-top: 25px; text-align: center;">
-          <p style="font-size: 0.75em;">
-            🎮 <strong>Host Controls:</strong> Admin advances phases via <code>/admin</code> cockpit • Players interact at <code>/</code> • Solo sandbox at <code>/test</code>
-          </p>
+        <div class="callout" style="text-align: center; margin-top: 10px; font-size: 0.72rem;">
+          🎮 <strong>Host Controls:</strong> Game Master advances rounds at <code>/admin</code> • Players participate at <code>/</code> • Practice at <code>/test</code>
         </div>
 
         <aside class="notes">
           Talking points:
-          - Keep the room energy high.
-          - Remind players to negotiate actively between tables in Round 2 and Round 3.
-          - Total event run-time is roughly 25 to 30 minutes.
+          - Quick summary to keep the room on track.
+          - High energy, keep transitions brisk.
         </aside>
       </section>
 
@@ -497,13 +525,17 @@
   <script src="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/plugin/notes/notes.js"></script>
   <script>
     Reveal.initialize({
+      width: 1100,
+      height: 640,
+      margin: 0.05,
+      minScale: 0.2,
+      maxScale: 2.0,
       hash: true,
       slideNumber: 'c/t',
       controls: true,
       progress: true,
       center: true,
-      transition: 'slide', // none/fade/slide/convex/concave/zoom
-      transitionSpeed: 'fast',
+      transition: 'slide',
       plugins: [ RevealNotes ]
     });
   </script>

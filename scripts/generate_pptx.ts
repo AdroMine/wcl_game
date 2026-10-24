@@ -26,106 +26,74 @@ const C = {
 
 // Helper: Standard Slide Header
 function addHeader(slide: any, tag: string, tagColor: string, title: string, subtitle: string) {
-  // Tag
   slide.addText(tag, {
     x: 0.8,
     y: 0.45,
     w: 8.0,
-    h: 0.3,
+    h: 0.28,
     fontSize: 10,
     color: tagColor,
     bold: true,
     charSpacing: 2
   });
 
-  // Title
   slide.addText(title, {
     x: 0.8,
-    y: 0.75,
-    w: 11.7,
-    h: 0.6,
+    y: 0.72,
+    w: 11.73,
+    h: 0.55,
     fontSize: 26,
     color: C.goldLight,
     bold: true
   });
 
-  // Subtitle
   slide.addText(subtitle, {
     x: 0.8,
-    y: 1.35,
-    w: 11.7,
-    h: 0.35,
+    y: 1.28,
+    w: 11.73,
+    h: 0.32,
     fontSize: 12,
     color: C.muted
   });
 }
 
+// Helper: Standard Story Banner
+function addStoryBanner(slide: any, storyText: string, borderColor: string = C.gold) {
+  slide.addShape(pres.ShapeType.rect, {
+    x: 0.8,
+    y: 1.72,
+    w: 11.73,
+    h: 0.65,
+    fill: { color: "182033" },
+    line: { color: borderColor, width: 1.5 }
+  });
+
+  slide.addText(storyText, {
+    x: 1.0,
+    y: 1.77,
+    w: 11.33,
+    h: 0.55,
+    fontSize: 11,
+    color: C.goldLight,
+    italic: true,
+    valign: "middle"
+  });
+}
+
 // -------------------------------------------------------------
 // SLIDE 1: GAME OVERVIEW & FLOW
+// Details on top, simple process boxes below
 // -------------------------------------------------------------
 const slide1 = pres.addSlide();
 slide1.background = { color: C.bg };
 addHeader(slide1, "UNDERWORLD ENGINE • TEAM BRIEFING", C.gold, "ESCAPE FROM TARTARUS", "Complete Game Overview & 3-Round Journey");
 
-// 4 Pipeline Boxes
-const flowData = [
-  { step: "0. LOBBY", title: "Crew Assembly", desc: "3-Emoji Keypad & Roles" },
-  { step: "1. ROUND 1", title: "Shattered Tablet", desc: "Physical Phone Puzzle" },
-  { step: "2. ROUND 2", title: "Shades in Mist", desc: "Social Dilemma & Bluffing" },
-  { step: "3. ROUND 3", title: "Styx Escape", desc: "1,000m Vessel Royale" }
-];
-
-flowData.forEach((box, i) => {
-  const x = 0.8 + i * 2.99;
-  slide1.addShape(pres.ShapeType.roundRect, {
-    x,
-    y: 1.85,
-    w: 2.75,
-    h: 1.1,
-    fill: { color: C.cardBg },
-    line: { color: C.gold, width: 1.5 },
-    rectRadius: 0.08
-  });
-
-  slide1.addText(box.step, {
-    x: x + 0.1,
-    y: 1.95,
-    w: 2.55,
-    h: 0.25,
-    fontSize: 9,
-    color: C.gold,
-    bold: true,
-    align: "center"
-  });
-
-  slide1.addText(box.title, {
-    x: x + 0.1,
-    y: 2.2,
-    w: 2.55,
-    h: 0.35,
-    fontSize: 13,
-    color: C.text,
-    bold: true,
-    align: "center"
-  });
-
-  slide1.addText(box.desc, {
-    x: x + 0.1,
-    y: 2.55,
-    w: 2.55,
-    h: 0.3,
-    fontSize: 9.5,
-    color: C.muted,
-    align: "center"
-  });
-});
-
 // Left Card: 5-Player Crews
 slide1.addShape(pres.ShapeType.roundRect, {
   x: 0.8,
-  y: 3.2,
+  y: 1.8,
   w: 5.75,
-  h: 3.65,
+  h: 3.8,
   fill: { color: C.cardBg },
   line: { color: C.cardBorder, width: 1 },
   rectRadius: 0.08
@@ -133,7 +101,7 @@ slide1.addShape(pres.ShapeType.roundRect, {
 
 slide1.addText("👥 The 5-Player Crews", {
   x: 1.05,
-  y: 3.4,
+  y: 2.0,
   w: 5.25,
   h: 0.4,
   fontSize: 16,
@@ -145,16 +113,16 @@ slide1.addText([
   { text: "• 5 Distinct Roles: ", options: { bold: true, color: C.text } },
   { text: "Navigator, Oracle, Scholar, Torchbearer, Negotiator.\n\n", options: { color: C.muted } },
   { text: "• Simple Identity (No Complex Powers): ", options: { bold: true, color: C.text } },
-  { text: "Roles serve as crew member identities and tablet puzzle slots. Players don't need to learn complicated abilities.\n\n", options: { color: C.muted } },
+  { text: "Roles serve as crew member identities and tablet puzzle slots. Players don't need to manage complicated abilities.\n\n", options: { color: C.muted } },
   { text: "• 1-Tap Emoji Joining: ", options: { bold: true, color: C.text } },
   { text: "One player creates the crew; teammates join by tapping 3 emojis on screen (e.g. Skull • Bolt • Shield).\n\n", options: { color: C.muted } },
   { text: "• Zero Friction: ", options: { bold: true, color: C.text } },
-  { text: "No app to download, no typing, no camera permissions.", options: { color: C.emerald } }
+  { text: "No apps to download, no typing, no camera permissions required.", options: { color: C.emerald } }
 ], {
   x: 1.05,
-  y: 3.9,
+  y: 2.5,
   w: 5.25,
-  h: 2.8,
+  h: 2.9,
   fontSize: 11.5,
   lineSpacingMultiple: 1.15
 });
@@ -162,9 +130,9 @@ slide1.addText([
 // Right Card: Ultimate Objective
 slide1.addShape(pres.ShapeType.roundRect, {
   x: 6.78,
-  y: 3.2,
+  y: 1.8,
   w: 5.75,
-  h: 3.65,
+  h: 3.8,
   fill: { color: C.cardBg },
   line: { color: C.cardBorder, width: 1 },
   rectRadius: 0.08
@@ -172,7 +140,7 @@ slide1.addShape(pres.ShapeType.roundRect, {
 
 slide1.addText("🏆 The Ultimate Objective", {
   x: 7.03,
-  y: 3.4,
+  y: 2.0,
   w: 5.25,
   h: 0.4,
   fontSize: 16,
@@ -187,38 +155,73 @@ slide1.addText([
   { text: "Cumulative points convert directly into starting distance meters on the River Styx in Round 3!\n\n", options: { color: C.muted } },
   { text: "• Podium Victory: ", options: { bold: true, color: C.text } },
   { text: "First 3 crews to cross the 1,000-meter exit portal win Gold, Silver, and Bronze medals.\n\n", options: { color: C.gold } },
-  { text: "• Fast & Social: ", options: { bold: true, color: C.text } },
-  { text: "The whole experience runs in ~25-30 minutes of high-energy pub interaction.", options: { color: C.muted } }
+  { text: "• High Energy: ", options: { bold: true, color: C.text } },
+  { text: "The whole experience runs in ~25-30 minutes of fast, social interaction.", options: { color: C.muted } }
 ], {
   x: 7.03,
-  y: 3.9,
+  y: 2.5,
   w: 5.25,
-  h: 2.8,
+  h: 2.9,
   fontSize: 11.5,
   lineSpacingMultiple: 1.15
 });
 
+// Process Boxes Below Details (No Subtitles)
+const flowBoxes = [
+  "0. Lobby Assembly",
+  "1. Shattered Tablet",
+  "2. Shades in Mist",
+  "3. Styx Escape"
+];
+
+flowBoxes.forEach((name, i) => {
+  const x = 0.8 + i * 2.99;
+  slide1.addShape(pres.ShapeType.roundRect, {
+    x,
+    y: 5.85,
+    w: 2.75,
+    h: 0.8,
+    fill: { color: C.cardBg },
+    line: { color: C.gold, width: 1.5 },
+    rectRadius: 0.08
+  });
+
+  slide1.addText(name, {
+    x: x + 0.1,
+    y: 6.0,
+    w: 2.55,
+    h: 0.5,
+    fontSize: 12,
+    color: C.goldLight,
+    bold: true,
+    align: "center",
+    valign: "middle"
+  });
+});
+
 // -------------------------------------------------------------
 // SLIDE 2: ROUND 1 — THE SHATTERED TABLET
+// Story, Mechanics, Points (No Hints)
 // -------------------------------------------------------------
 const slide2 = pres.addSlide();
 slide2.background = { color: C.bg };
 addHeader(slide2, "ROUND 1 • PHYSICAL COOPERATION PUZZLE", C.cyan, "THE SHATTERED TABLET", "Tomb Gate Alignment • Duration: ~5 Minutes");
+addStoryBanner(slide2, "🏛️ The Story: Walking through the dark expanse of Tartarus, your crew reaches a sealed ancient stone door. You need a codeword to pass. Pieces of a shattered ancient tablet lie on the ground before you.", C.cyan);
 
-// Left Card: Mechanic
+// Left Card: Mechanics
 slide2.addShape(pres.ShapeType.roundRect, {
   x: 0.8,
-  y: 1.85,
+  y: 2.55,
   w: 5.75,
-  h: 4.25,
+  h: 4.15,
   fill: { color: C.cardBg },
   line: { color: C.cyan, width: 1.5 },
   rectRadius: 0.08
 });
 
-slide2.addText("🧩 The Story & Mechanic", {
+slide2.addText("⚙️ Mechanics", {
   x: 1.05,
-  y: 2.05,
+  y: 2.75,
   w: 5.25,
   h: 0.4,
   fontSize: 16,
@@ -227,37 +230,37 @@ slide2.addText("🧩 The Story & Mechanic", {
 });
 
 slide2.addText([
-  { text: "• The Setup: ", options: { bold: true, color: C.text } },
-  { text: "A locked ancient tomb door blocks Tartarus. A shattered stone tablet lies in front of you.\n\n", options: { color: C.muted } },
   { text: "• 5 Slices on 5 Phones: ", options: { bold: true, color: C.text } },
   { text: "The tablet is split into 5 vertical slices distributed across the crew's phones (#1 to #5).\n\n", options: { color: C.muted } },
-  { text: "• Physical Arrangement: ", options: { bold: true, color: C.text } },
-  { text: "Players must physically place their 5 phones side-by-side in numerical order (#1 to #5) across the table.\n\n", options: { color: C.muted } },
-  { text: "• The Clue: ", options: { bold: true, color: C.text } },
-  { text: "Golden fracture lines connect across phone borders to reveal a 2-word codeword (e.g. CRIMSON SHADOW).", options: { color: C.gold } }
+  { text: "• Physical Phone Order: ", options: { bold: true, color: C.text } },
+  { text: "Players physically place their 5 phones side-by-side in numerical order (#1 to #5) across the table.\n\n", options: { color: C.muted } },
+  { text: "• The Codeword: ", options: { bold: true, color: C.text } },
+  { text: "Golden carved fracture lines connect across phone borders to reveal a 2-word codeword (e.g. CRIMSON SHADOW).\n\n", options: { color: C.gold } },
+  { text: "• Team Submission: ", options: { bold: true, color: C.text } },
+  { text: "Any player in the crew can type and submit the answer on their screen.", options: { color: C.text } }
 ], {
   x: 1.05,
-  y: 2.55,
+  y: 3.25,
   w: 5.25,
-  h: 3.3,
+  h: 3.2,
   fontSize: 11.5,
   lineSpacingMultiple: 1.15
 });
 
-// Right Card: Scoring & Hints
+// Right Card: Points & Winning Conditions
 slide2.addShape(pres.ShapeType.roundRect, {
   x: 6.78,
-  y: 1.85,
+  y: 2.55,
   w: 5.75,
-  h: 4.25,
+  h: 4.15,
   fill: { color: C.cardBg },
   line: { color: C.cardBorder, width: 1 },
   rectRadius: 0.08
 });
 
-slide2.addText("⏱️ Points & Progressive Hints", {
+slide2.addText("🏆 Points & Winning Conditions", {
   x: 7.03,
-  y: 2.05,
+  y: 2.75,
   w: 5.25,
   h: 0.4,
   fontSize: 16,
@@ -267,64 +270,45 @@ slide2.addText("⏱️ Points & Progressive Hints", {
 
 slide2.addText([
   { text: "• Speed is Rewarded: ", options: { bold: true, color: C.text } },
-  { text: "Faster team solves earn higher base points (Legendary $\\rightarrow$ Swift $\\rightarrow$ Steady).\n\n", options: { color: C.muted } },
-  { text: "• Any Player Can Submit: ", options: { bold: true, color: C.text } },
-  { text: "Once solved, any teammate can type and submit the codeword on their screen.\n\n", options: { color: C.muted } },
-  { text: "• Progressive Hints: ", options: { bold: true, color: C.text } },
-  { text: "Hints unlock at 2m, 3m, and 4m pinpointing who holds the left (#1), right (#5), and center (#3) pieces (-30 PTS penalty each).\n\n", options: { color: C.muted } },
-  { text: "• Safety Net: ", options: { bold: true, color: C.text } },
-  { text: "50 PTS guaranteed floor ensures every crew passes through the door.", options: { color: C.emerald } }
+  { text: "Faster team solves earn higher base points (Legendary → Swift → Steady).\n\n", options: { color: C.muted } },
+  { text: "• Guaranteed Safety Floor: ", options: { bold: true, color: C.text } },
+  { text: "A 50 PTS minimum floor ensures every crew passes through the tomb gate.\n\n", options: { color: C.emerald } },
+  { text: "• Round Completion: ", options: { bold: true, color: C.text } },
+  { text: "The round ends when all crews submit the code or the timer concludes.\n\n", options: { color: C.muted } },
+  { text: "💡 Facilitator Prompt: ", options: { bold: true, color: C.gold } },
+  { text: "\"Don't stay seated staring at your own screen—stand up, place your 5 phones in order 1 to 5, and read the tablet together!\"", options: { color: C.goldLight } }
 ], {
   x: 7.03,
-  y: 2.55,
+  y: 3.25,
   w: 5.25,
-  h: 3.3,
+  h: 3.2,
   fontSize: 11.5,
   lineSpacingMultiple: 1.15
 });
 
-// Bottom Callout
-slide2.addShape(pres.ShapeType.rect, {
-  x: 0.8,
-  y: 6.3,
-  w: 11.73,
-  h: 0.65,
-  fill: { color: "1E293B" },
-  line: { color: C.cyan, width: 1 }
-});
-
-slide2.addText("💡 Facilitator Cue: \"Don't stay seated staring at your own screen—stand up, place your 5 phones in order 1 to 5, and read the tablet together!\"", {
-  x: 1.0,
-  y: 6.42,
-  w: 11.33,
-  h: 0.4,
-  fontSize: 11,
-  color: C.goldLight,
-  bold: true,
-  align: "center"
-});
-
 // -------------------------------------------------------------
 // SLIDE 3: ROUND 2 — SHADES IN THE MIST
+// Story, Mechanics, Points Difference (No R3 legacy mentions)
 // -------------------------------------------------------------
 const slide3 = pres.addSlide();
 slide3.background = { color: C.bg };
-addHeader(slide3, "ROUND 2 • SOCIAL DILEMMA & BLUFFING", C.rose, "SHADES IN THE MIST", "3 Clashes vs Rival Table • Face-to-Face Negotiation • Bluffing Allowed");
+addHeader(slide3, "ROUND 2 • PRISONER'S DILEMMA", C.rose, "SHADES IN THE MIST", "Prisoner's Dilemma • 3 Clashes • Face-to-Face Negotiation");
+addStoryBanner(slide3, "🏛️ The Story: You escape through the tomb door into a vast cavern hall as thick Stygian mist rolls in. Another crew of shades emerges from the shadows. Are they trustworthy friends or treacherous enemies?", C.rose);
 
-// Left Card: 4 Phases
+// Left Card: Mechanics
 slide3.addShape(pres.ShapeType.roundRect, {
   x: 0.8,
-  y: 1.85,
+  y: 2.55,
   w: 5.75,
-  h: 4.25,
+  h: 4.15,
   fill: { color: C.cardBg },
   line: { color: C.rose, width: 1.5 },
   rectRadius: 0.08
 });
 
-slide3.addText("⚔️ How Each Clash Runs", {
+slide3.addText("⚙️ Mechanics (Each Clash)", {
   x: 1.05,
-  y: 2.05,
+  y: 2.75,
   w: 5.25,
   h: 0.4,
   fontSize: 16,
@@ -337,34 +321,34 @@ slide3.addText([
   { text: "1. Private Huddle (50s): ", options: { bold: true, color: C.text } },
   { text: "Whisper at your table. Decide your true stance: Truce or Ambush?\n\n", options: { color: C.muted } },
   { text: "2. The Dialogue (40s): ", options: { bold: true, color: C.text } },
-  { text: "Turn to rival table. Look them in the eyes and negotiate across the room. (Bluffing is 100% permitted!).\n\n", options: { color: C.muted } },
+  { text: "Talk with the other team across the room (bluffing is 100% permitted!).\n\n", options: { color: C.muted } },
   { text: "3. Secret Blind Vote (25s): ", options: { bold: true, color: C.text } },
   { text: "Every player secretly votes on phone. Majority rules (Negotiator breaks ties).\n\n", options: { color: C.muted } },
   { text: "4. The Reveal (40s): ", options: { bold: true, color: C.text } },
   { text: "Both tables' choices unmask simultaneously on screen!", options: { color: C.gold } }
 ], {
   x: 1.05,
-  y: 2.55,
+  y: 3.25,
   w: 5.25,
-  h: 3.3,
+  h: 3.2,
   fontSize: 11,
   lineSpacingMultiple: 1.15
 });
 
-// Right Card: Points & Legacy
+// Right Card: Points Difference
 slide3.addShape(pres.ShapeType.roundRect, {
   x: 6.78,
-  y: 1.85,
+  y: 2.55,
   w: 5.75,
-  h: 4.25,
+  h: 4.15,
   fill: { color: C.cardBg },
   line: { color: C.cardBorder, width: 1 },
   rectRadius: 0.08
 });
 
-slide3.addText("⚖️ The Stances & Moral Legacy", {
+slide3.addText("🏆 Points Difference", {
   x: 7.03,
-  y: 2.05,
+  y: 2.75,
   w: 5.25,
   h: 0.4,
   fontSize: 16,
@@ -373,199 +357,106 @@ slide3.addText("⚖️ The Stances & Moral Legacy", {
 });
 
 slide3.addText([
-  { text: "Point Outcomes (Stakes DOUBLE in Clash 2, TRIPLE in Clash 3!):\n\n", options: { bold: true, color: C.gold } },
-  { text: "🤝 Mutual Truce: ", options: { bold: true, color: C.emerald } },
-  { text: "Both crews play peaceful $\\rightarrow$ Both win solid, steady points.\n\n", options: { color: C.muted } },
-  { text: "🗡️ The Backstab: ", options: { bold: true, color: C.rose } },
-  { text: "Ambush beats Truce $\\rightarrow$ Betrayer steals massive points; victim gets 0!\n\n", options: { color: C.muted } },
-  { text: "💥 Mutual Brawl: ", options: { bold: true, color: C.gold } },
-  { text: "Both crews attack $\\rightarrow$ Both walk away with scraps.\n\n", options: { color: C.muted } },
-  { text: "🕊️ Moral Legacy in Round 3:\n", options: { bold: true, color: C.goldLight } },
-  { text: "• Honourable (3 Truces): Athena grants +75m headstart in Round 3!\n• Betrayed: Crew gets a Cerberus revenge token to strike their nemesis!", options: { color: C.text } }
+  { text: "Points Outcomes (Stakes DOUBLE in Clash 2, TRIPLE in Clash 3!):\n\n", options: { bold: true, color: C.gold } },
+  { text: "🤝 Mutual Truce (Cooperation):\n", options: { bold: true, color: C.emerald } },
+  { text: "Both teams play peaceful → Both win solid, steady points (+75 / +150 / +225 PTS).\n\n", options: { color: C.muted } },
+  { text: "🗡️ The Backstab (Betrayal):\n", options: { bold: true, color: C.rose } },
+  { text: "Ambush beats Truce → Betrayer steals maximum points (+150 / +300 / +450 PTS); peaceful victim gets 0 PTS!\n\n", options: { color: C.muted } },
+  { text: "💥 Mutual Brawl (Conflict):\n", options: { bold: true, color: C.gold } },
+  { text: "Both teams attack → Both walk away with scraps (+15 / +30 / +45 PTS).\n\n", options: { color: C.muted } },
+  { text: "⚠️ Key Tension: Promises across the room are non-binding. Will you build trust or cash in on a backstab?", options: { color: C.goldLight, italic: true } }
 ], {
   x: 7.03,
-  y: 2.55,
+  y: 3.25,
   w: 5.25,
-  h: 3.3,
+  h: 3.2,
   fontSize: 11,
   lineSpacingMultiple: 1.15
 });
 
-// Bottom Callout
-slide3.addShape(pres.ShapeType.rect, {
-  x: 0.8,
-  y: 6.3,
-  w: 11.73,
-  h: 0.65,
-  fill: { color: "1E293B" },
-  line: { color: C.rose, width: 1 }
-});
-
-slide3.addText("💡 Facilitator Cue: \"Promises made across the room are not binding. Will you build trust, or cash in on a brutal backstab?\"", {
-  x: 1.0,
-  y: 6.42,
-  w: 11.33,
-  h: 0.4,
-  fontSize: 11,
-  color: C.goldLight,
-  bold: true,
-  align: "center"
-});
-
 // -------------------------------------------------------------
 // SLIDE 4: ROUND 3 — ESCAPE FROM TARTARUS
+// Story, Mechanics, Points & Winning Conditions
 // -------------------------------------------------------------
 const slide4 = pres.addSlide();
 slide4.background = { color: C.bg };
-addHeader(slide4, "ROUND 3 • THE CLIMAX & ESCAPE ROYALE", C.purple, "ESCAPE FROM TARTARUS", "River Styx Congestion Race • 1,000m to the Exit Portal");
+addHeader(slide4, "ROUND 3 • ESCAPE ROYALE", C.purple, "ESCAPE FROM TARTARUS", "River Styx Congestion Race • 1,000m to the Exit Portal");
+addStoryBanner(slide4, "🏛️ The Story: Cerberus is howling in the shadows behind you, and the exit portal across the wide River Styx is slowly starting to close. Can your crew reach the portal before it seals forever?", C.purple);
 
-// 3 Vessels
-const vessels = [
-  {
-    icon: "🚣",
-    name: "The Rowboat",
-    tag: "SAFE & STEADY",
-    color: C.emerald,
-    cap: "Unlimited Capacity",
-    outcome: "+150m ALWAYS",
-    desc: "Never capsizes. Reliable steady progress while rivals greedily crash."
-  },
-  {
-    icon: "⛵",
-    name: "The Sailboat",
-    tag: "SPEED VS CROWDS",
-    color: C.gold,
-    cap: "Max 30% of Fleet",
-    outcome: "+300m or CAPSIZE (0m)",
-    desc: "Fast surge! But if too many crews board, the vessel capsizes into the river."
-  },
-  {
-    icon: "⚡",
-    name: "The Ghost Ship",
-    tag: "SOLO GAMBLE",
-    color: C.purple,
-    cap: "EXACTLY 1 Crew Only",
-    outcome: "+450m or CRASH (-50m)",
-    desc: "Mythic leap! But if 2 or more crews choose it, they collide (-50m penalty)."
-  }
-];
-
-vessels.forEach((v, i) => {
-  const x = 0.8 + i * 4.02;
-  slide4.addShape(pres.ShapeType.roundRect, {
-    x,
-    y: 1.85,
-    w: 3.69,
-    h: 2.35,
-    fill: { color: C.cardBg },
-    line: { color: v.color, width: 1.5 },
-    rectRadius: 0.08
-  });
-
-  slide4.addText(`${v.icon} ${v.name}`, {
-    x: x + 0.15,
-    y: 1.95,
-    w: 3.39,
-    h: 0.35,
-    fontSize: 15,
-    color: v.color,
-    bold: true
-  });
-
-  slide4.addText(v.tag, {
-    x: x + 0.15,
-    y: 2.3,
-    w: 3.39,
-    h: 0.2,
-    fontSize: 8.5,
-    color: C.muted,
-    bold: true
-  });
-
-  slide4.addText([
-    { text: `• ${v.cap}\n`, options: { bold: true, color: C.text } },
-    { text: `• Advance: `, options: { bold: true, color: C.text } },
-    { text: `${v.outcome}\n\n`, options: { bold: true, color: v.color } },
-    { text: v.desc, options: { color: C.muted } }
-  ], {
-    x: x + 0.15,
-    y: 2.55,
-    w: 3.39,
-    h: 1.5,
-    fontSize: 9.5,
-    lineSpacingMultiple: 1.15
-  });
-});
-
-// 2 Bottom Panels
+// Left Card: 3 Vessels Mechanics
 slide4.addShape(pres.ShapeType.roundRect, {
   x: 0.8,
-  y: 4.4,
+  y: 2.55,
   w: 5.75,
-  h: 2.5,
+  h: 4.15,
+  fill: { color: C.cardBg },
+  line: { color: C.purple, width: 1.5 },
+  rectRadius: 0.08
+});
+
+slide4.addText("⚙️ Mechanics: The 3 Vessels", {
+  x: 1.05,
+  y: 2.75,
+  w: 5.25,
+  h: 0.4,
+  fontSize: 16,
+  color: C.goldLight,
+  bold: true
+});
+
+slide4.addText([
+  { text: "Each wave, your crew secretly votes for one vessel:\n\n", options: { color: C.muted } },
+  { text: "🚣 The Rowboat (Safe):\n", options: { bold: true, color: C.emerald } },
+  { text: "• Unlimited capacity. Always advances +150m. Never capsizes.\n\n", options: { color: C.muted } },
+  { text: "⛵ The Sailboat (Speed vs Crowds):\n", options: { bold: true, color: C.gold } },
+  { text: "• Max 30% fleet capacity. Advances +300m, but CAPSIZES (0m) if overcrowded!\n\n", options: { color: C.muted } },
+  { text: "⚡ The Ghost Ship (Solo Gamble):\n", options: { bold: true, color: C.purple } },
+  { text: "• Exactly 1 crew. Mythic surge (+450m)! But COLLIDES (-50m) if 2+ crews board.", options: { color: C.muted } }
+], {
+  x: 1.05,
+  y: 3.25,
+  w: 5.25,
+  h: 3.2,
+  fontSize: 11,
+  lineSpacingMultiple: 1.15
+});
+
+// Right Card: Winning Conditions
+slide4.addShape(pres.ShapeType.roundRect, {
+  x: 6.78,
+  y: 2.55,
+  w: 5.75,
+  h: 4.15,
   fill: { color: C.cardBg },
   line: { color: C.cardBorder, width: 1 },
   rectRadius: 0.08
 });
 
-slide4.addText("🏁 Deciding the Winners", {
-  x: 1.05,
-  y: 4.55,
+slide4.addText("🏆 Winning Conditions", {
+  x: 7.03,
+  y: 2.75,
   w: 5.25,
-  h: 0.35,
-  fontSize: 14,
+  h: 0.4,
+  fontSize: 16,
   color: C.goldLight,
   bold: true
 });
 
 slide4.addText([
   { text: "• Starting Head-Start: ", options: { bold: true, color: C.text } },
-  { text: "Points from R1 & R2 convert into starting meters (+75m honor bonus).\n\n", options: { color: C.muted } },
-  { text: "• Podium Victory: ", options: { bold: true, color: C.text } },
-  { text: "First 3 crews across the 1,000m line win Gold, Silver & Bronze medals!\n\n", options: { color: C.gold } },
-  { text: "• Sudden Death: ", options: { bold: true, color: C.text } },
-  { text: "Tie-breaker duel (Shields vs Ram vs Sails) if crews cross together.", options: { color: C.muted } }
-], {
-  x: 1.05,
-  y: 4.95,
-  w: 5.25,
-  h: 1.8,
-  fontSize: 10.5,
-  lineSpacingMultiple: 1.15
-});
-
-slide4.addShape(pres.ShapeType.roundRect, {
-  x: 6.78,
-  y: 4.4,
-  w: 5.75,
-  h: 2.5,
-  fill: { color: C.cardBg },
-  line: { color: C.cardBorder, width: 1 },
-  rectRadius: 0.08
-});
-
-slide4.addText("🐕 Cerberus Revenge Attack", {
-  x: 7.03,
-  y: 4.55,
-  w: 5.25,
-  h: 0.35,
-  fontSize: 14,
-  color: C.goldLight,
-  bold: true
-});
-
-slide4.addText([
-  { text: "• Retaliation for Betrayal: ", options: { bold: true, color: C.text } },
-  { text: "Teams backstabbed in Round 2 hold a Cerberus honey-cake treat.\n\n", options: { color: C.muted } },
-  { text: "• The Interception: ", options: { bold: true, color: C.text } },
-  { text: "Guess which boat your nemesis will pick this wave. If correct:\n", options: { color: C.muted } },
-  { text: "  ➔ Nemesis dragged back -150m!\n  ➔ Your crew surges forward +150m!", options: { bold: true, color: C.rose } }
+  { text: "Total points accumulated in Rounds 1 & 2 convert directly into starting river meters.\n\n", options: { color: C.muted } },
+  { text: "• The Victory Gate: ", options: { bold: true, color: C.text } },
+  { text: "First 3 crews to reach 1,000 meters win Gold, Silver & Bronze medals!\n\n", options: { color: C.gold } },
+  { text: "• Cerberus Revenge: ", options: { bold: true, color: C.text } },
+  { text: "Crews betrayed in R2 can guess their nemesis's vessel to drag them back -150m and surge +150m!\n\n", options: { color: C.rose } },
+  { text: "• Sudden Death Standoff: ", options: { bold: true, color: C.text } },
+  { text: "Tie-breaker duel (Shields vs Ram vs Sails) if crews cross the portal simultaneously.", options: { color: C.muted } }
 ], {
   x: 7.03,
-  y: 4.95,
+  y: 3.25,
   w: 5.25,
-  h: 1.8,
-  fontSize: 10.5,
+  h: 3.2,
+  fontSize: 11,
   lineSpacingMultiple: 1.15
 });
 
@@ -585,20 +476,20 @@ const tableRows = [
   ],
   [
     { text: "1. Shattered Tablet\n(~5 min)", options: { bold: true, color: C.text } },
-    { text: "Place 5 phones side-by-side in order (#1 to #5) across the table to connect carved lines.", options: { color: C.muted } },
-    { text: "Fast solve = top points (up to 300). Progressive hints cost -30 PTS each. 50 PTS floor.", options: { color: C.muted } },
-    { text: "2-word codeword entered or timer expires.", options: { color: C.emerald } }
+    { text: "Align 5 phones physically (#1 to #5) on table to connect carved fracture lines.", options: { color: C.muted } },
+    { text: "Fast solve = top points. 50 PTS safety floor. No elimination.", options: { color: C.muted } },
+    { text: "Codeword entered or timer expires.", options: { color: C.emerald } }
   ],
   [
     { text: "2. Shades in Mist\n(~8 min)", options: { bold: true, color: C.text } },
-    { text: "Face rival table across 3 clashes. Whisper in huddle, negotiate across room, vote secretly.", options: { color: C.muted } },
-    { text: "Truce = steady points. Backstab = massive points or 0. Stakes triple in Clash 3.", options: { color: C.muted } },
-    { text: "All 3 clashes resolved. Sets R3 headstart & revenge tokens.", options: { color: C.emerald } }
+    { text: "Prisoner's Dilemma: Face rival table across 3 clashes. Talk across room & vote secretly.", options: { color: C.muted } },
+    { text: "Truce = steady points. Backstab = huge points or 0. Stakes triple in Clash 3.", options: { color: C.muted } },
+    { text: "All 3 clashes resolved.", options: { color: C.emerald } }
   ],
   [
     { text: "3. Styx Escape\n(~8 min)", options: { bold: true, color: C.text } },
-    { text: "Pick vessels secretly (Rowboat: safe, Sailboat: 30% cap, Ghost Ship: solo).", options: { color: C.muted } },
-    { text: "Points become river meters. Avoid congestion and unleash Cerberus revenge.", options: { color: C.muted } },
+    { text: "Congestion race: Pick vessels (Rowboat: safe, Sailboat: 30% cap, Ghost: solo).", options: { color: C.muted } },
+    { text: "Points become starting meters. Avoid congestion and unleash Cerberus revenge.", options: { color: C.muted } },
     { text: "Top 3 crews cross 1,000m to win Gold, Silver & Bronze medals!", options: { color: C.gold } }
   ]
 ];
@@ -635,7 +526,17 @@ slide5.addText("🎮 Host Operations: Game Master advances rounds at /admin • 
   align: "center"
 });
 
-// Save presentation
-pres.writeFile({ fileName: "presentation.pptx" }).then(() => {
-  console.log("Successfully generated calibrated presentation.pptx!");
-});
+// Save presentation (with fallback if open in PowerPoint)
+pres.writeFile({ fileName: "presentation.pptx" })
+  .then(() => {
+    console.log("Successfully generated presentation.pptx!");
+  })
+  .catch(async (err: any) => {
+    if (err.code === "EBUSY") {
+      console.warn("Notice: presentation.pptx is currently open in PowerPoint. Writing to presentation_updated.pptx...");
+      await pres.writeFile({ fileName: "presentation_updated.pptx" });
+      console.log("Successfully generated presentation_updated.pptx!");
+    } else {
+      throw err;
+    }
+  });

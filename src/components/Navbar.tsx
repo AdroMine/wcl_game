@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useGameSession } from '../context/GameContext';
-import { Shield, Trophy, Zap, LogOut, Compass, Eye, Book, Flame, Users } from 'lucide-react';
+import { Shield, Trophy, LogOut, Compass, Eye, Book, Flame, Users } from 'lucide-react';
 
 const ROLE_ICONS: Record<string, React.ReactNode> = {
   compass: <Compass className="w-4 h-4" />,
@@ -16,8 +16,6 @@ export const Navbar: React.FC = () => {
     role,
     team,
     connectionStatus,
-    lowDataMode,
-    toggleLowDataMode,
     isLeaderboardOpen,
     setIsLeaderboardOpen,
     leave,
@@ -61,20 +59,6 @@ export const Navbar: React.FC = () => {
 
           {/* Right Action Icons */}
           <div className="flex items-center space-x-2">
-            {/* Low Data Mode Toggle */}
-            <button
-              onClick={toggleLowDataMode}
-              title={lowDataMode ? 'Low Data Mode Active (Click to disable)' : 'Enable Low Data Mode (Stripped assets & animations)'}
-              className={`p-1.5 rounded border text-xs flex items-center space-x-1 transition-all ${
-                lowDataMode
-                  ? 'bg-[#c4a45a] text-[#08090c] border-[#c4a45a] font-bold'
-                  : 'bg-[#161922] text-[#a9b4c7] border-[#3a4157] hover:text-[#f4f0e8]'
-              }`}
-            >
-              <Zap className="w-3.5 h-3.5" />
-              <span className="text-[10px] font-mono">{lowDataMode ? 'ECO' : 'DATA'}</span>
-            </button>
-
             {/* Leaderboard Drawer Toggle */}
             <button
               onClick={() => setIsLeaderboardOpen(!isLeaderboardOpen)}

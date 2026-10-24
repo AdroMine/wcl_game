@@ -20,7 +20,8 @@ const MainGameContent: React.FC = () => {
     return window.location.pathname.includes('/admin') || window.location.hash.includes('admin');
   });
   const [isSoloTesterView, setIsSoloTesterView] = useState(() => {
-    return window.location.pathname.includes('/solotester') || window.location.hash.includes('solotester');
+    return window.location.pathname.includes('/solotester') || window.location.hash.includes('solotester') ||
+           window.location.pathname.includes('/test') || window.location.hash.includes('test');
   });
 
   // Preload all round chunks into memory during browser idle time
@@ -32,7 +33,10 @@ const MainGameContent: React.FC = () => {
   useEffect(() => {
     const handleLocationChange = () => {
       setIsAdminView(window.location.pathname.includes('/admin') || window.location.hash.includes('admin'));
-      setIsSoloTesterView(window.location.pathname.includes('/solotester') || window.location.hash.includes('solotester'));
+      setIsSoloTesterView(
+        window.location.pathname.includes('/solotester') || window.location.hash.includes('solotester') ||
+        window.location.pathname.includes('/test') || window.location.hash.includes('test')
+      );
     };
     window.addEventListener('popstate', handleLocationChange);
     window.addEventListener('hashchange', handleLocationChange);

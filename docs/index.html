@@ -365,15 +365,41 @@
           </div>
 
           <!-- 🏆 Points System & Dilemma Differences -->
-          <div class="card">
-            <h4>🏆 Points Difference (Triples in Clash 3!)</h4>
-            <ul>
-              <li>🤝 <strong>Mutual Truce (Cooperate):</strong> Both teams play peaceful → <strong>Both win solid, steady points</strong> (+75 / +150 / +225 PTS).</li>
-              <li>🗡️ <strong>The Backstab (Betrayal):</strong> Ambush beats Truce → Betrayer steals <strong>maximum points</strong> (+150 / +300 / +450 PTS); peaceful victim gets <strong>0 PTS</strong>!</li>
-              <li>💥 <strong>Mutual Brawl (Conflict):</strong> Both attack → <strong>Both get scraps</strong> (+15 / +30 / +45 PTS).</li>
-              <li>📈 <strong>Escalating Stakes:</strong> Points DOUBLE in Clash 2, TRIPLE in Clash 3!</li>
-            </ul>
-            <div style="margin-top: 8px; padding: 6px 10px; background: rgba(0,0,0,0.3); border-radius: 6px; font-size: 0.72rem; color: #fca5a5;">
+          <div class="card" style="display: flex; flex-direction: column; justify-content: space-between;">
+            <div>
+              <div style="display: flex; align-items: baseline; justify-content: space-between; border-bottom: 1px solid rgba(245, 158, 11, 0.2); padding-bottom: 4px; margin-bottom: 8px;">
+                <h4 style="margin: 0; font-size: 0.92rem;">🏆 Points Difference</h4>
+                <span style="font-size: 0.65rem; color: var(--gold); font-weight: 700;">(Stakes DOUBLE in Clash 2, TRIPLE in Clash 3!)</span>
+              </div>
+
+              <div style="display: flex; flex-direction: column; gap: 7px;">
+                <!-- Mutual Truce -->
+                <div style="background: rgba(16, 185, 129, 0.08); border-left: 3px solid #10b981; padding: 5px 9px; border-radius: 0 6px 6px 0;">
+                  <div style="color: #34d399; font-weight: 700; font-size: 0.76rem;">🤝 Mutual Truce (Cooperation)</div>
+                  <div style="font-size: 0.7rem; color: #cbd5e1; margin-top: 1px; line-height: 1.35;">
+                    Both teams play peaceful → <strong>Both win solid, steady points</strong> (+75 / +150 / +225 PTS)
+                  </div>
+                </div>
+
+                <!-- The Backstab -->
+                <div style="background: rgba(244, 63, 94, 0.08); border-left: 3px solid #f43f5e; padding: 5px 9px; border-radius: 0 6px 6px 0;">
+                  <div style="color: #fb7185; font-weight: 700; font-size: 0.76rem;">🗡️ The Backstab (Betrayal)</div>
+                  <div style="font-size: 0.7rem; color: #cbd5e1; margin-top: 1px; line-height: 1.35;">
+                    Ambush beats Truce → Betrayer steals <strong>maximum points</strong> (+150 / +300 / +450 PTS); peaceful victim gets <strong>0 PTS</strong>!
+                  </div>
+                </div>
+
+                <!-- Mutual Brawl -->
+                <div style="background: rgba(245, 158, 11, 0.08); border-left: 3px solid #f59e0b; padding: 5px 9px; border-radius: 0 6px 6px 0;">
+                  <div style="color: #fbbf24; font-weight: 700; font-size: 0.76rem;">💥 Mutual Brawl (Conflict)</div>
+                  <div style="font-size: 0.7rem; color: #cbd5e1; margin-top: 1px; line-height: 1.35;">
+                    Both teams attack → <strong>Both walk away with scraps</strong> (+15 / +30 / +45 PTS)
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div style="margin-top: 6px; padding: 5px 8px; background: rgba(0,0,0,0.35); border-radius: 6px; font-size: 0.68rem; color: #fca5a5; font-style: italic;">
               ⚠️ <strong>Key Tension:</strong> Promises made across the room are non-binding. Will you build trust or cash in on a backstab?
             </div>
           </div>
@@ -481,7 +507,7 @@
         </div>
 
         <div class="story-banner" style="text-align: center; margin-top: 10px; font-size: 0.72rem; font-style: normal;">
-          🎮 <strong>Host Controls:</strong> Game Master advances rounds at <code>/admin</code> • Players participate at <code>/</code> • Practice sandbox at <code>/test</code>
+          🎮 <strong>Host Controls:</strong> Game Master advances rounds at <code>/admin</code> • Players participate at <code>/</code> • Practice sandbox at <code>/solotester</code>
         </div>
 
         <aside class="notes">

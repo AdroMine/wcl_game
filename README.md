@@ -51,7 +51,7 @@ npm run dev
 ```
 - **Player Interface**: `http://localhost:5173/`
 - **Game Master Cockpit**: `http://localhost:5173/admin`
-- **Solo Sandbox**: `http://localhost:5173/test`
+- **Solo Sandbox**: `http://localhost:5173/solotester` (or `/test`)
 
 ### 2. Running Tests
 Run all unit and integration test suites:

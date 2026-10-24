@@ -515,7 +515,7 @@ slide5.addShape(pres.ShapeType.rect, {
   line: { color: C.gold, width: 1 }
 });
 
-slide5.addText("🎮 Host Operations: Game Master advances rounds at /admin • Players play at / • Solo sandbox at /test", {
+slide5.addText("🎮 Host Operations: Game Master advances rounds at /admin • Players play at / • Solo sandbox at /solotester", {
   x: 1.0,
   y: 6.35,
   w: 11.33,

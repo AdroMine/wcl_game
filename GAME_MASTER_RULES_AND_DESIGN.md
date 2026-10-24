@@ -18,6 +18,7 @@ flowchart LR
     R3 --> Pod["Podium: Gold, Silver & Bronze Medals"]
 ```
 
+
 ### The 5 Complementary Underworld Roles
 Every crew must consist of exactly **5 unique roles** (no duplicate roles allowed in a single crew):
 1. 🧭 **Navigator** (*Cyan*): Charts currents and celestial markers in the Styx. Breaks ties in Round 2 & 3.
@@ -25,6 +26,8 @@ Every crew must consist of exactly **5 unique roles** (no duplicate roles allowe
 3. 📖 **Scholar** (*Blue*): Translates ancient script and lore from the tomb tablets.
 4. 🔥 **Torchbearer** (*Amber*): Keeps the light against the shadows of Tartarus.
 5. 🛡️ **Negotiator** (*Bronze*): Represents the table in parleys; breaks voting deadlocks.
+
+The roles don't have any importance in the games. 
 
 ---
 

@@ -527,15 +527,15 @@ slide5.addText("🎮 Host Operations: Game Master advances rounds at /admin • 
 });
 
 // Save presentation (with fallback if open in PowerPoint)
-pres.writeFile({ fileName: "presentation.pptx" })
+pres.writeFile({ fileName: "docs/presentation.pptx" })
   .then(() => {
-    console.log("Successfully generated presentation.pptx!");
+    console.log("Successfully generated docs/presentation.pptx!");
   })
   .catch(async (err: any) => {
     if (err.code === "EBUSY") {
-      console.warn("Notice: presentation.pptx is currently open in PowerPoint. Writing to presentation_updated.pptx...");
-      await pres.writeFile({ fileName: "presentation_updated.pptx" });
-      console.log("Successfully generated presentation_updated.pptx!");
+      console.warn("Notice: docs/presentation.pptx is currently open in PowerPoint. Writing to docs/presentation_updated.pptx...");
+      await pres.writeFile({ fileName: "docs/presentation_updated.pptx" });
+      console.log("Successfully generated docs/presentation_updated.pptx!");
     } else {
       throw err;
     }

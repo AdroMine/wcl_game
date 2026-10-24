@@ -5,8 +5,8 @@ import {
   formatEmojiCodeLabels,
   parseEmojiCode,
   checkTeamRoleCompatibility,
-} from './src/lib/teamCodeEngine';
-import { TEAM_EMOJI_POOL, TEAM_EMOJI_LABELS } from './src/types';
+} from '../src/lib/teamCodeEngine';
+import { TEAM_EMOJI_POOL, TEAM_EMOJI_LABELS } from '../src/types';
 
 function assert(condition: boolean, msg: string) {
   if (!condition) {

@@ -28,7 +28,11 @@ import { DEFAULT_ROUND1_CODEWORDS } from '../src/lib/tabletEngine';
 import fs from 'fs';
 import path from 'path';
 
-const STORAGE_FILE = path.join(process.cwd(), 'server_state.json');
+const STORAGE_FILE = fs.existsSync(path.join(process.cwd(), 'server', 'server_state.json'))
+  ? path.join(process.cwd(), 'server', 'server_state.json')
+  : fs.existsSync(path.join(__dirname, 'server_state.json'))
+  ? path.join(__dirname, 'server_state.json')
+  : path.join(process.cwd(), 'server', 'server_state.json');
 
 // Characters for easy 3-character join codes (avoiding confusing chars like 0/O and 1/I)
 const JOIN_CODE_CHARS = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';

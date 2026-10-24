@@ -10,7 +10,11 @@
     "build": "tsc -b && vite build",
     "lint": "oxlint",
     "preview": "vite preview",
-    "start": "tsx server/index.ts"
+    "start": "tsx server/index.ts",
+    "test": "tsx tests/run_all.ts",
+    "test:r2": "tsx tests/test_round2.ts",
+    "test:r3": "tsx tests/test_round3.ts",
+    "test:teams": "tsx tests/test_team_codes.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.118.0",

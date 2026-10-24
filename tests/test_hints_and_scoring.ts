@@ -3,16 +3,16 @@ import {
   generateHintText,
   calculateRound1Score,
   PlayerSlotInfo,
-} from './src/lib/round1Engine';
-import { getAllAsciiSlices } from './src/lib/asciiEngine';
+} from '../src/lib/round1Engine';
+import { getAllAsciiSlices } from '../src/lib/asciiEngine';
 import {
   supabaseRequestRoundHint,
   supabaseSubmitRoundAnswer,
   supabaseAdminSetState,
   supabaseAdminSpawnDemoCrew,
   fetchFullSyncPayloadFromSupabase,
-} from './src/lib/supabaseService';
-import { supabase } from './src/lib/supabase';
+} from '../src/lib/supabaseService';
+import { supabase } from '../src/lib/supabase';
 
 async function runTests() {
   console.log('=== RUNNING ROUND 1 HINTS & SCORING TESTS ===\n');

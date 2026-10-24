@@ -4,9 +4,9 @@ import {
   calculateClashPoints,
   calculateNemesis,
   sanitizeMatchForPlayer,
-} from './src/lib/round2Engine';
-import { DEFAULT_ROUND2_CONFIG } from './src/lib/defaultConfig';
-import type { Player, Round2Match, Round2Vote } from './src/types';
+} from '../src/lib/round2Engine';
+import { DEFAULT_ROUND2_CONFIG } from '../src/lib/defaultConfig';
+import type { Player, Round2Match, Round2Vote } from '../src/types';
 
 function assert(condition: boolean, msg: string) {
   if (!condition) {

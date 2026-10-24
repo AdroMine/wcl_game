@@ -11,8 +11,8 @@ import {
   supabaseAdminRound2AutoPair,
   supabaseAdminRound2ManualPair,
   supabaseAdminSpawnDemoCrew,
-} from './src/lib/supabaseService';
-import { supabase } from './src/lib/supabase';
+} from '../src/lib/supabaseService';
+import { supabase } from '../src/lib/supabase';
 
 function assert(cond: boolean, msg: string) {
   if (!cond) throw new Error(`Assertion failed: ${msg}`);

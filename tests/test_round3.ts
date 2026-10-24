@@ -9,9 +9,9 @@ import {
   evaluateWaveCongestion,
   resolveSuddenDeath,
   CrossingCandidate,
-} from './src/lib/round3Engine';
-import { DEFAULT_ROUND3_CONFIG } from './src/lib/defaultConfig';
-import type { Team, Player, Round3TeamWaveVote, Round3TeamState, Round2Match } from './src/types';
+} from '../src/lib/round3Engine';
+import { DEFAULT_ROUND3_CONFIG } from '../src/lib/defaultConfig';
+import type { Team, Player, Round3TeamWaveVote, Round3TeamState, Round2Match } from '../src/types';
 
 function assert(condition: boolean, message: string) {
   if (!condition) {

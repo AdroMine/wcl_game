@@ -54,7 +54,7 @@ const API_BASE = '/api';
 
 export async function fetchServerInfo() {
   if (isSupabaseConfigured) {
-    const origin = typeof window !== 'undefined' ? window.location.origin : 'https://wcl-game.pages.dev';
+    const origin = typeof window !== 'undefined' ? window.location.origin : 'https://wcl-game.adro-mine.workers.dev';
     try {
       const QRCode = (await import('qrcode')).default;
       const qrDataUrl = await QRCode.toDataURL(origin, {

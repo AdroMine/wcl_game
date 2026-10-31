@@ -97,8 +97,17 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, []);
 
-  // Poll fallback / manual sync
+  const isPollingRef = useRef<boolean>(false);
+  const pendingPollRef = useRef<boolean>(false);
+  const debounceSyncTimerRef = useRef<number | null>(null);
+
+  // Poll fallback / manual sync with concurrency protection
   const runPoll = useCallback(async () => {
+    if (isPollingRef.current) {
+      pendingPollRef.current = true;
+      return;
+    }
+    isPollingRef.current = true;
     const playerId = localStorage.getItem(PLAYER_ID_KEY) || undefined;
     try {
       const data = await pollSyncApi(playerId);
@@ -107,8 +116,29 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } catch (e) {
       console.warn('Poll failed:', e);
       setConnectionStatus('disconnected');
+    } finally {
+      isPollingRef.current = false;
+      if (pendingPollRef.current) {
+        pendingPollRef.current = false;
+        setTimeout(() => {
+          runPoll();
+        }, 200);
+      }
     }
   }, [updateWithPayload]);
+
+  // Debounced + jittered sync for Realtime events to eliminate thundering herd
+  const debouncedSync = useCallback((minMs = 300, maxMs = 1200) => {
+    if (debounceSyncTimerRef.current !== null) {
+      // Already scheduled a sync in the current window
+      return;
+    }
+    const jitter = minMs + Math.random() * (maxMs - minMs);
+    debounceSyncTimerRef.current = window.setTimeout(async () => {
+      debounceSyncTimerRef.current = null;
+      await runPoll();
+    }, jitter);
+  }, [runPoll]);
 
   // Connect to SSE stream (for local Node/Express dev)
   const connectSSE = useCallback(() => {
@@ -149,9 +179,9 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setConnectionStatus('polling-fallback');
 
         if (!pollingIntervalRef.current) {
-          runPoll();
-          const intervalMs = lowDataMode ? 20000 : 10000;
-          pollingIntervalRef.current = window.setInterval(runPoll, intervalMs);
+          debouncedSync(100, 500);
+          const intervalMs = lowDataMode ? 25000 : 12000;
+          pollingIntervalRef.current = window.setInterval(() => debouncedSync(100, 1000), intervalMs);
         }
 
         if (!sseReconnectTimeoutRef.current) {
@@ -165,21 +195,21 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       console.error('Could not initiate SSE:', e);
       setConnectionStatus('polling-fallback');
       if (!pollingIntervalRef.current) {
-        runPoll();
-        pollingIntervalRef.current = window.setInterval(runPoll, 10000);
+        debouncedSync(100, 500);
+        pollingIntervalRef.current = window.setInterval(() => debouncedSync(100, 1000), 12000);
       }
     }
-  }, [runPoll, updateWithPayload, lowDataMode]);
+  }, [debouncedSync, updateWithPayload, lowDataMode]);
 
   // Handle Realtime connection & auto-sync
   useEffect(() => {
     // Initial fetch
     runPoll();
 
-    // Pub-friendly Wakeup: When phone screen turns on or user switches tabs, sync immediately
+    // Pub-friendly Wakeup: When phone screen turns on or user switches tabs, sync with light jitter
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
-        runPoll();
+        debouncedSync(100, 500);
       }
     };
     document.addEventListener('visibilitychange', handleVisibilityChange);
@@ -189,16 +219,16 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const channel = supabase
         .channel('underworld_game_updates')
         .on('postgres_changes', { event: '*', schema: 'public', table: 'game_state' }, () => {
-          runPoll();
+          debouncedSync(200, 800);
         })
         .on('postgres_changes', { event: '*', schema: 'public', table: 'teams' }, () => {
-          runPoll();
+          debouncedSync(300, 1000);
         })
         .on('postgres_changes', { event: '*', schema: 'public', table: 'players' }, () => {
-          runPoll();
+          debouncedSync(400, 1200);
         })
         .on('postgres_changes', { event: '*', schema: 'public', table: 'round2_matches' }, () => {
-          runPoll();
+          debouncedSync(300, 1000);
         })
         .subscribe((status) => {
           if (status === 'SUBSCRIBED') {
@@ -208,12 +238,19 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
           }
         });
 
-      // Background heartbeat poll (every 10s, or 20s in low data mode)
-      const pollInterval = window.setInterval(runPoll, lowDataMode ? 20000 : 10000);
+      // Background heartbeat poll (every 15s, or 30s in low data mode) with jitter
+      const intervalMs = lowDataMode ? 30000 : 15000;
+      const pollInterval = window.setInterval(() => {
+        debouncedSync(100, 1500);
+      }, intervalMs);
 
       return () => {
         document.removeEventListener('visibilitychange', handleVisibilityChange);
         window.clearInterval(pollInterval);
+        if (debounceSyncTimerRef.current !== null) {
+          window.clearTimeout(debounceSyncTimerRef.current);
+          debounceSyncTimerRef.current = null;
+        }
         supabase?.removeChannel(channel);
       };
     } else {
@@ -225,9 +262,13 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (eventSourceRef.current) eventSourceRef.current.close();
         if (pollingIntervalRef.current) window.clearInterval(pollingIntervalRef.current);
         if (sseReconnectTimeoutRef.current) window.clearTimeout(sseReconnectTimeoutRef.current);
+        if (debounceSyncTimerRef.current !== null) {
+          window.clearTimeout(debounceSyncTimerRef.current);
+          debounceSyncTimerRef.current = null;
+        }
       };
     }
-  }, [runPoll, connectSSE, lowDataMode]);
+  }, [runPoll, debouncedSync, connectSSE, lowDataMode]);
 
   // Derived values
   const player = payload?.player || null;

@@ -3,7 +3,6 @@ import { useGameSession } from '../../context/GameContext';
 import {
   parseTabletCodeword,
   TABLET_CONFIG,
-  getSlotPositionLabel,
   getTabletTextMetrics,
 } from '../../lib/tabletEngine';
 import {
@@ -65,9 +64,9 @@ export const AsciiSplitterRound: React.FC = () => {
   const assignedWord = team?.assignedCodeword || 'CRIMSON SHADOW';
   const { line1, line2 } = parseTabletCodeword(assignedWord);
 
-  // Role for current active slot
-  const currentSlotRole = payload?.config?.roles?.[activeSlot] || role || {
-    name: `Slot ${activeSlot + 1}`,
+  // Player's assigned role
+  const playerRole = role || {
+    name: 'Shade',
     color: '#c4a45a',
   };
 
@@ -252,7 +251,7 @@ export const AsciiSplitterRound: React.FC = () => {
 
             {/* Ambient Role Color Glow */}
             <radialGradient id="roleAmbientGlow" cx="50%" cy="50%" r="50%">
-              <stop offset="0%" stopColor={currentSlotRole?.color || '#c4a45a'} stopOpacity="0.25" />
+              <stop offset="0%" stopColor={playerRole?.color || '#c4a45a'} stopOpacity="0.25" />
               <stop offset="100%" stopColor="#08090c" stopOpacity="0" />
             </radialGradient>
           </defs>
@@ -412,14 +411,13 @@ export const AsciiSplitterRound: React.FC = () => {
             showHud ? 'opacity-100' : 'opacity-0 pointer-events-none'
           }`}
         >
-          {/* Slot Badge */}
+          {/* Tablet Piece Badge */}
           <div className="bg-[#10121a]/95 backdrop-blur border border-[#c4a45a]/60 px-3 py-1.5 rounded-full flex items-center space-x-2 text-xs font-mono text-[#f4f0e8] shadow-2xl shrink-0">
             <span
               className="w-2.5 h-2.5 rounded-full shrink-0"
-              style={{ backgroundColor: currentSlotRole?.color || '#c4a45a' }}
+              style={{ backgroundColor: playerRole?.color || '#c4a45a' }}
             />
-            <span className="font-bold">SLOT #{activeSlot + 1} OF {teamSize}</span>
-            <span className="text-[#8e95a5]">({getSlotPositionLabel(activeSlot, teamSize)})</span>
+            <span className="font-bold">TABLET PIECE</span>
           </div>
 
           {/* Controls Bar - Minimal, focused on table placement */}
@@ -486,19 +484,19 @@ export const AsciiSplitterRound: React.FC = () => {
               <span
                 className="text-[10px] font-mono px-2 py-0.5 rounded-full font-bold"
                 style={{
-                  backgroundColor: `${currentSlotRole?.color || '#c4a45a'}25`,
-                  color: currentSlotRole?.color || '#c4a45a',
-                  border: `1px solid ${currentSlotRole?.color || '#c4a45a'}50`,
+                  backgroundColor: `${playerRole?.color || '#c4a45a'}25`,
+                  color: playerRole?.color || '#c4a45a',
+                  border: `1px solid ${playerRole?.color || '#c4a45a'}50`,
                 }}
               >
-                Slot #{activeSlot + 1} of {teamSize}
+                Tablet Piece
               </span>
             </div>
             <h3 className="text-lg font-serif font-black text-[#f4f0e8]">
               Assemble the Chiseled Codeword
             </h3>
             <p className="text-xs text-[#cbd5e1] leading-relaxed">
-              Place your phones side-by-side on your pub table in order (Slot 1 to {teamSize}) to align the golden chisel runes and reveal the 2-word codeword.
+              Re-arrange the tablet pieces to align the golden chisel runes and reveal the 2-word codeword.
             </p>
           </div>
         </div>
@@ -507,9 +505,7 @@ export const AsciiSplitterRound: React.FC = () => {
         <div className="bg-[#08090c] border border-[#3a4157] rounded-xl p-3 overflow-hidden relative shadow-inner space-y-2">
           <div className="flex items-center justify-between pb-2 border-b border-[#2a2e3d] text-[10px] font-mono text-[#a9b4c7]">
             <span className="font-bold text-[#f4f0e8]">YOUR TABLET PIECE</span>
-            <span style={{ color: currentSlotRole?.color || '#c4a45a' }} className="font-bold">
-              Position: {getSlotPositionLabel(activeSlot, teamSize)}
-            </span>
+            <span className="text-[#a9b4c7]">Align with your crew</span>
           </div>
 
           {/* Crisp Vector Slice */}
@@ -518,7 +514,7 @@ export const AsciiSplitterRound: React.FC = () => {
           </div>
 
           <div className="flex items-center justify-between pt-1 border-t border-[#2a2e3d] text-[10px] font-mono text-[#a9b4c7]">
-            <span>Left-to-Right tablet slice • Interlocking rune seams • 100% vector fit</span>
+            <span>Interlocking rune seams • 100% vector fit</span>
           </div>
         </div>
 

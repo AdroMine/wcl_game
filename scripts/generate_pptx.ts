@@ -231,9 +231,9 @@ slide2.addText("⚙️ Mechanics", {
 
 slide2.addText([
   { text: "• 5 Slices on 5 Phones: ", options: { bold: true, color: C.text } },
-  { text: "The tablet is split into 5 vertical slices distributed across the crew's phones (#1 to #5).\n\n", options: { color: C.muted } },
-  { text: "• Physical Phone Order: ", options: { bold: true, color: C.text } },
-  { text: "Players physically place their 5 phones side-by-side in numerical order (#1 to #5) across the table.\n\n", options: { color: C.muted } },
+  { text: "The tablet is split into 5 vertical slices distributed across the crew's phones.\n\n", options: { color: C.muted } },
+  { text: "• Re-arrange Tablet Pieces: ", options: { bold: true, color: C.text } },
+  { text: "Players physically re-arrange their 5 phones side-by-side across the table to align the golden chisel runes.\n\n", options: { color: C.muted } },
   { text: "• The Codeword: ", options: { bold: true, color: C.text } },
   { text: "Golden carved fracture lines connect across phone borders to reveal a 2-word codeword (e.g. CRIMSON SHADOW).\n\n", options: { color: C.gold } },
   { text: "• Team Submission: ", options: { bold: true, color: C.text } },

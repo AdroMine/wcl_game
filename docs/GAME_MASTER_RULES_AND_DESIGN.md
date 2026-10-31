@@ -37,9 +37,9 @@ The roles don't have any importance in the games.
 > *"Your crew of five has formed. Walking along Tartarus, you reach a sealed ancient stone door. You need a codeword to pass through. Pieces of a broken ancient stone tablet lie on the ground in front of you. Can you solve it in time to escape this place?"*
 
 ### 2. How the Game Works
-- The tablet is split into **5 asymmetric vertical slices** distributed across the 5 phones in the crew (Slot #1 to #5).
+- The tablet is split into **5 asymmetric vertical slices** distributed across the 5 phones in the crew.
 - Each phone renders high-resolution stone chisel strokes and vector text fragments.
-- **Physical Coordination**: Players must physically place their 5 phones side-by-side in numerical order across their pub table (#1 on far left $\rightarrow$ #5 on far right).
+- **Physical Coordination**: Players must physically re-arrange and align their 5 phones side-by-side across their pub table. Slices are unlabelled jigsaw pieces—teams must deduce the correct order by matching the golden fracture lines.
 - When the screens align, the carved golden fracture lines connect across phone borders, revealing a **2-word ancient codeword** (e.g., `CRIMSON SHADOW`, `TEMPLE RUIN`, `GOLDEN SPHERE`).
 - Any teammate can type and submit the answer on their screen.
 

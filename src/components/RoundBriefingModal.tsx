@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Sparkles,
   BookOpen,
@@ -22,9 +22,9 @@ interface BriefingContent {
   rules: {
     icon: React.ReactNode;
     title: string;
-    desc: string;
+    desc: React.ReactNode;
   }[];
-  objective: string;
+  objective: React.ReactNode;
 }
 
 const BRIEFINGS: Record<string, BriefingContent> = {
@@ -42,16 +42,28 @@ const BRIEFINGS: Record<string, BriefingContent> = {
     rules: [
       {
         icon: <Users className="w-4 h-4 text-[#e5cb87]" />,
-        title: '1. Lay Phones in Order',
-        desc: 'Check your slot number (#1 to #5) and place your phones side-by-side across the table in sequence.',
+        title: '1. Re-arrange Pieces',
+        desc: (
+          <span>
+            <strong className="text-[#f4f0e8]">Lay phones side-by-side.</strong> Match and align the golden fracture runes to reconstruct the ancient stone tablet.
+          </span>
+        ),
       },
       {
         icon: <Key className="w-4 h-4 text-[#34d399]" />,
-        title: '2. Decipher & Submit Codeword',
-        desc: 'Combine your letters to decipher the 2-word codeword revealed across your screens. Any teammate can submit!',
+        title: '2. Decipher & Submit',
+        desc: (
+          <span>
+            Read the connected 2-word phrase. <strong className="text-[#34d399]">Any teammate can type and submit</strong> on their phone screen.
+          </span>
+        ),
       },
     ],
-    objective: 'Decipher the 2-word ancient codeword to unseal the door (+150 PTS max).',
+    objective: (
+      <span>
+        Unseal the tomb gate before time expires. Fast solves award up to <strong className="text-[#e5cb87]">+300 PTS</strong> (50 PTS guaranteed floor).
+      </span>
+    ),
   },
   PRISONERS_DILEMMA: {
     stageNumber: 2,
@@ -66,21 +78,37 @@ const BRIEFINGS: Record<string, BriefingContent> = {
     rules: [
       {
         icon: <Shield className="w-4 h-4 text-[#e5cb87]" />,
-        title: '1. Private Huddle',
-        desc: 'Whisper with your table only. Agree on your secret strategy: will you honor peace or strike?',
+        title: '1. Private Huddle (50s)',
+        desc: (
+          <span>
+            <strong className="text-[#f4f0e8]">Whisper at your table only.</strong> Agree on your team's secret stance: <span className="text-emerald-400 font-bold">Truce</span> or <span className="text-rose-400 font-bold">Ambush</span>.
+          </span>
+        ),
       },
       {
         icon: <MessageSquare className="w-4 h-4 text-[#38bdf8]" />,
-        title: '2. The Dialogue',
-        desc: 'Turn to the rival table. Look them in the eyes and negotiate your pact. (Bluffing is permitted!).',
+        title: '2. The Dialogue (40s)',
+        desc: (
+          <span>
+            <strong className="text-[#38bdf8]">Face your rival crew</strong> across the room to parley and make pacts. Bluffing is 100% permitted!
+          </span>
+        ),
       },
       {
         icon: <Vote className="w-4 h-4 text-[#c084fc]" />,
-        title: '3. Secret Blind Vote',
-        desc: 'Vote on your phone (TRUCE or AMBUSH). Majority rules; Negotiator role breaks 2–2 ties.',
+        title: '3. Secret Blind Vote (25s)',
+        desc: (
+          <span>
+            Vote privately on your phone. <strong className="text-[#f4f0e8]">Majority decides</strong>; Negotiator role breaks 2–2 ties.
+          </span>
+        ),
       },
     ],
-    objective: '3 Clashes. Truce gives shared honor (+75); Ambushing gives total robbery (+150 vs 0).',
+    objective: (
+      <span>
+        3 Clashes with escalating stakes (up to <strong className="text-[#e5cb87]">+900 PTS</strong>). Mutual Truce yields shared honour; Ambush risks mutual brawl (+15 PTS).
+      </span>
+    ),
   },
   ODYSSEY_ESCAPE_ROYALE: {
     stageNumber: 3,
@@ -95,22 +123,38 @@ const BRIEFINGS: Record<string, BriefingContent> = {
     ],
     rules: [
       {
-        icon: <MessageSquare className="w-4 h-4 text-[#e5cb87]" />,
-        title: '1. Bluff the Room',
-        desc: 'Stand up and debate across tables. Only 1 crew can take the Ghost Ship. Max 30% take Sailboats.',
-      },
-      {
         icon: <Compass className="w-4 h-4 text-[#38bdf8]" />,
-        title: '2. 3 Escape Vessels',
-        desc: 'Rowboat (+150m, safe). Sailboat (+300m, capsizes if crowded). Ghost Ship (+450m, solo only).',
+        title: '1. Choose Your Vessel',
+        desc: (
+          <span>
+            🚣 <strong className="text-emerald-400">Rowboat</strong>: Safe (+150m) · ⛵ <strong className="text-cyan-400">Sailboat</strong>: Fast (+300m, max 30% fleet) · ⚡ <strong className="text-amber-400">Ghost Ship</strong>: Surge (+450m, 1 crew only).
+          </span>
+        ),
       },
       {
-        icon: <Sparkles className="w-4 h-4 text-[#f43f5e]" />,
-        title: '3. Stygian Leash (Cerberus)',
-        desc: 'If betrayed in Round 2, tether your rival: steal 50m if they float, or drag them down for +100m if they crash! 🕊️ Winds of Olympus: Unbroken truces grant a +75m starting boost!',
+        icon: <Shield className="w-4 h-4 text-[#f43f5e]" />,
+        title: '2. Congestion Hazards',
+        desc: (
+          <span>
+            Overcrowded Sailboats <strong className="text-rose-400">capsize (0m)</strong>. Multiple Ghost Ships <strong className="text-rose-400">collide (-50m)</strong>.
+          </span>
+        ),
+      },
+      {
+        icon: <Sparkles className="w-4 h-4 text-[#e5cb87]" />,
+        title: '3. Moral Legacies',
+        desc: (
+          <span>
+            🩸 <strong className="text-rose-400">Betrayed</strong>: Unleash Cerberus to leech rival meters. 🕊️ <strong className="text-emerald-400">Honourable</strong>: +75m starting boost.
+          </span>
+        ),
       },
     ],
-    objective: 'First 3 crews to cross the 1,000m threshold escape and claim Gold, Silver & Bronze medals!',
+    objective: (
+      <span>
+        Reach 1,000m across 4 waves. <strong className="text-[#e5cb87]">First 3 crews</strong> to cross into the portal win Gold, Silver & Bronze medals!
+      </span>
+    ),
   },
 };
 
@@ -136,7 +180,18 @@ export const RoundBriefingModal: React.FC<RoundBriefingModalProps> = ({
   const [manualTab, setManualTab] = useState<'story' | 'rules'>('rules');
   const [revealedIndex, setRevealedIndex] = useState(0);
 
-  // Progressive sentence revelation with generous breathing room (2.8s per sentence)
+  // Progressive rule card revelation
+  const [revealedRuleCount, setRevealedRuleCount] = useState<number>(1);
+
+  // Lore scroll container and active sentence ref
+  const loreContainerRef = useRef<HTMLDivElement>(null);
+  const activeSentenceRef = useRef<HTMLParagraphElement>(null);
+
+  // Decide whether to show Story or Rules
+  const showStory = isAutoBriefing ? secondsRemaining > 14 : manualTab === 'story';
+  const showRules = isAutoBriefing ? secondsRemaining <= 14 : manualTab === 'rules';
+
+  // 1. Progressive sentence revelation in Lore Story (2.8s per sentence)
   useEffect(() => {
     if (!isOpen) {
       setRevealedIndex(0);
@@ -144,7 +199,7 @@ export const RoundBriefingModal: React.FC<RoundBriefingModalProps> = ({
     }
 
     if (!isAutoBriefing) {
-      // Manual rules view: show all sentences immediately, no waiting
+      // Manual rules view: show all sentences immediately
       setRevealedIndex(briefing.sentences.length - 1);
       return;
     }
@@ -164,17 +219,52 @@ export const RoundBriefingModal: React.FC<RoundBriefingModalProps> = ({
     return () => clearInterval(interval);
   }, [isOpen, isAutoBriefing, briefing]);
 
-  if (!isOpen) return null;
+  // Smoothly center the newest active sentence without sudden jumps
+  useEffect(() => {
+    if (showStory && activeSentenceRef.current) {
+      activeSentenceRef.current.scrollIntoView({
+        behavior: 'smooth',
+        block: 'center',
+      });
+    }
+  }, [revealedIndex, showStory]);
 
-  // Decide whether to show Story or Rules
-  const showStory = isAutoBriefing ? secondsRemaining > 14 : manualTab === 'story';
-  const showRules = isAutoBriefing ? secondsRemaining <= 14 : manualTab === 'rules';
+  // 2. Progressive Rule Cards Revelation in Rules view
+  useEffect(() => {
+    if (!isOpen) {
+      setRevealedRuleCount(1);
+      return;
+    }
+
+    if (!isAutoBriefing || !showRules) {
+      // Manual rules view: reveal all rule cards and objective immediately
+      setRevealedRuleCount(briefing.rules.length + 1);
+      return;
+    }
+
+    // In auto-briefing: reveal rule boxes one by one with a sharp pace (every 2.0s)
+    setRevealedRuleCount(1);
+    const ruleInterval = setInterval(() => {
+      setRevealedRuleCount((prev) => {
+        const maxCount = briefing.rules.length + 1; // +1 for the Victory Objective
+        if (prev < maxCount) {
+          return prev + 1;
+        }
+        clearInterval(ruleInterval);
+        return prev;
+      });
+    }, 2000);
+
+    return () => clearInterval(ruleInterval);
+  }, [isOpen, isAutoBriefing, showRules, briefing]);
+
+  if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/90 backdrop-blur-md select-none animate-fadeIn">
       <div className="w-full max-w-[460px] bg-[#10121a] border-2 border-[#c4a45a]/70 rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[92vh] relative">
         {/* Top Header Banner */}
-        <div className="p-4 sm:p-5 bg-gradient-to-r from-[#161922] via-[#1f2433] to-[#161922] border-b border-[#3a4157] flex items-center justify-between">
+        <div className="p-4 sm:p-5 bg-gradient-to-r from-[#161922] via-[#1f2433] to-[#161922] border-b border-[#3a4157] flex items-center justify-between shrink-0">
           <div className="space-y-0.5">
             <div className="flex items-center space-x-2">
               <span className="text-[10px] font-mono uppercase tracking-wider text-[#e5cb87] font-black px-2 py-0.5 rounded bg-[#c4a45a]/20 border border-[#c4a45a]/40">
@@ -206,7 +296,7 @@ export const RoundBriefingModal: React.FC<RoundBriefingModalProps> = ({
 
         {/* Manual view tabs */}
         {!isAutoBriefing && (
-          <div className="flex border-b border-[#3a4157] bg-[#161922]">
+          <div className="flex border-b border-[#3a4157] bg-[#161922] shrink-0">
             <button
               onClick={() => setManualTab('rules')}
               className={`flex-1 py-2.5 text-xs font-mono font-bold transition-colors ${
@@ -231,28 +321,51 @@ export const RoundBriefingModal: React.FC<RoundBriefingModalProps> = ({
         )}
 
         {/* Body Content */}
-        <div className="p-5 sm:p-6 overflow-y-auto space-y-4 font-sans text-[#cbd5e1] text-xs">
-          {/* STAGE 1: THE LORE / STORY (Centered, generous pacing) */}
+        <div className="p-4 sm:p-5 overflow-y-auto space-y-4 font-sans text-[#cbd5e1] text-xs flex-1">
+          {/* STAGE 1: THE LORE / STORY (Centered active line, fading history, upward scroll) */}
           {showStory && (
-            <div className="space-y-4 py-2 animate-fadeIn text-center">
+            <div className="space-y-3 py-1 animate-fadeIn flex flex-col items-center">
               <div className="inline-flex items-center space-x-1.5 px-3 py-1 rounded-full bg-[#c4a45a]/15 border border-[#c4a45a]/30 text-[#e5cb87] text-[10px] font-mono uppercase tracking-widest font-bold">
                 <BookOpen className="w-3.5 h-3.5" />
                 <span>The Underworld Chronicles</span>
               </div>
 
-              <div className="min-h-[160px] flex flex-col justify-center space-y-3 font-serif italic text-sm sm:text-base text-[#f4f0e8] leading-relaxed max-w-sm mx-auto">
-                {briefing.sentences.slice(0, revealedIndex + 1).map((sentence, idx) => (
-                  <p key={idx} className="transition-all duration-500">
-                    {sentence}
-                    {isAutoBriefing && idx === revealedIndex && revealedIndex < briefing.sentences.length - 1 && (
-                      <span className="inline-block w-2 h-4 ml-1 bg-[#c4a45a] animate-pulse align-middle" />
-                    )}
-                  </p>
-                ))}
+              {/* Scrollable theater container with edge gradient masks */}
+              <div
+                ref={loreContainerRef}
+                className="w-full h-[250px] overflow-y-auto px-4 py-20 space-y-6 text-center scroll-smooth relative rounded-2xl bg-[#0c0e14]/60 border border-[#2a2e3d]/60"
+                style={{
+                  maskImage: 'linear-gradient(to bottom, transparent 0%, black 22%, black 78%, transparent 100%)',
+                  WebkitMaskImage: 'linear-gradient(to bottom, transparent 0%, black 22%, black 78%, transparent 100%)',
+                }}
+              >
+                {briefing.sentences.map((sentence, idx) => {
+                  const isCurrent = idx === revealedIndex;
+                  const isFuture = idx > revealedIndex;
+
+                  if (isFuture) return null;
+
+                  return (
+                    <p
+                      key={idx}
+                      ref={isCurrent ? activeSentenceRef : null}
+                      className={`transition-all duration-700 ease-out select-none ${
+                        isCurrent
+                          ? 'text-sm sm:text-base font-serif font-black text-[#f4f0e8] scale-100 drop-shadow-[0_2px_12px_rgba(229,203,135,0.45)] py-2'
+                          : 'text-xs sm:text-sm font-serif italic text-[#717b94] opacity-45 scale-95 py-0.5'
+                      }`}
+                    >
+                      {sentence}
+                      {isAutoBriefing && isCurrent && idx < briefing.sentences.length - 1 && (
+                        <span className="inline-block w-2 h-3.5 ml-1.5 bg-[#c4a45a] animate-pulse align-middle rounded-sm" />
+                      )}
+                    </p>
+                  );
+                })}
               </div>
 
               {isAutoBriefing && (
-                <div className="pt-2">
+                <div className="pt-1 text-center">
                   <div className="text-[11px] font-mono text-[#a9b4c7] animate-pulse">
                     Rules appearing shortly...
                   </div>
@@ -261,51 +374,64 @@ export const RoundBriefingModal: React.FC<RoundBriefingModalProps> = ({
             </div>
           )}
 
-          {/* STAGE 2: THE PHYSICAL RULES & OBJECTIVE */}
+          {/* STAGE 2: THE PHYSICAL RULES & OBJECTIVE (Revealed sequentially box-by-box with bold terms) */}
           {showRules && (
-            <div className="space-y-4 py-1 animate-fadeIn">
+            <div className="space-y-3.5 py-1 animate-fadeIn">
               <div className="text-center space-y-1">
                 <span className="text-[10px] font-mono uppercase tracking-wider text-[#e5cb87] font-bold block">
                   ⚔️ How Your Crew Plays (Physical Pub Rules)
                 </span>
               </div>
 
-              {/* Rules List */}
+              {/* Rules List - Revealed one box at a time in auto-briefing */}
               <div className="space-y-2.5">
-                {briefing.rules.map((rule, idx) => (
-                  <div
-                    key={idx}
-                    className="p-3 sm:p-3.5 rounded-xl bg-[#161922] border border-[#3a4157] flex items-start space-x-3.5 shadow-sm"
-                  >
-                    <div className="w-8 h-8 rounded-lg bg-[#10121a] border border-[#3a4157] flex items-center justify-center shrink-0 mt-0.5">
-                      {rule.icon}
+                {briefing.rules.map((rule, idx) => {
+                  const isVisible = idx < revealedRuleCount;
+                  const isJustRevealed = idx === revealedRuleCount - 1 && isAutoBriefing;
+
+                  if (!isVisible) return null;
+
+                  return (
+                    <div
+                      key={idx}
+                      className={`p-3 sm:p-3.5 rounded-xl bg-[#161922] border transition-all duration-500 flex items-start space-x-3.5 shadow-sm animate-fadeIn ${
+                        isJustRevealed
+                          ? 'border-[#c4a45a] shadow-[0_0_15px_rgba(196,164,90,0.3)] scale-[1.01]'
+                          : 'border-[#3a4157] scale-100'
+                      }`}
+                    >
+                      <div className="w-8 h-8 rounded-lg bg-[#10121a] border border-[#3a4157] flex items-center justify-center shrink-0 mt-0.5">
+                        {rule.icon}
+                      </div>
+                      <div className="space-y-0.5 flex-1">
+                        <h4 className="text-xs sm:text-sm font-bold text-[#f4f0e8]">{rule.title}</h4>
+                        <div className="text-[11px] text-[#cbd5e1] leading-relaxed">{rule.desc}</div>
+                      </div>
                     </div>
-                    <div className="space-y-0.5">
-                      <h4 className="text-xs sm:text-sm font-bold text-[#f4f0e8]">{rule.title}</h4>
-                      <p className="text-[11px] text-[#cbd5e1] leading-relaxed">{rule.desc}</p>
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
 
-              {/* Victory Goal Callout */}
-              <div className="p-3 rounded-xl bg-gradient-to-r from-[#161922] to-[#1e2433] border border-[#c4a45a]/50 flex items-center space-x-3">
-                <CheckCircle2 className="w-5 h-5 text-[#e5cb87] shrink-0" />
-                <div>
-                  <span className="text-[10px] font-mono text-[#e5cb87] uppercase font-bold block">
-                    Victory Objective
-                  </span>
-                  <p className="text-[11px] text-[#f4f0e8] font-medium leading-snug">
-                    {briefing.objective}
-                  </p>
+              {/* Victory Goal Callout - Appears after the rules boxes */}
+              {revealedRuleCount > briefing.rules.length && (
+                <div className="p-3 rounded-xl bg-gradient-to-r from-[#161922] to-[#1e2433] border border-[#c4a45a]/60 flex items-center space-x-3 shadow-[0_0_15px_rgba(196,164,90,0.2)] animate-fadeIn">
+                  <CheckCircle2 className="w-5 h-5 text-[#e5cb87] shrink-0" />
+                  <div>
+                    <span className="text-[10px] font-mono text-[#e5cb87] uppercase font-bold block">
+                      Victory Objective
+                    </span>
+                    <div className="text-[11px] text-[#f4f0e8] font-medium leading-snug">
+                      {briefing.objective}
+                    </div>
+                  </div>
                 </div>
-              </div>
+              )}
             </div>
           )}
         </div>
 
         {/* Footer / Progress Bar */}
-        <div className="p-4 bg-[#161922] border-t border-[#3a4157] text-center">
+        <div className="p-4 bg-[#161922] border-t border-[#3a4157] text-center shrink-0">
           {isAutoBriefing ? (
             /* Auto-briefing countdown holds everyone equally: NO early enter button */
             <div className="space-y-1.5">

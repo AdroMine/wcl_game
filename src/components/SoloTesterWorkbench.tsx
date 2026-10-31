@@ -53,6 +53,7 @@ import {
   RotateCcw,
   Skull,
   Users,
+  Key,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
@@ -75,7 +76,12 @@ export const SoloTesterWorkbench: React.FC = () => {
   const [r1ViewMode, setR1ViewMode] = useState<'table' | 'rack'>('table');
 
   // Codeword selection for testing (2-word phrases)
-  const codewordsPool = (payload?.config?.rounds?.[0]?.data as any)?.codewords || DEFAULT_ROUND1_CODEWORDS;
+  const configWords: string[] = (payload?.config?.rounds?.[0]?.data as any)?.codewords || [];
+  const codewordsPool = Array.from(new Set([
+    ...DEFAULT_ROUND1_CODEWORDS,
+    ...configWords,
+    ...(team?.assignedCodeword ? [team.assignedCodeword] : [])
+  ]));
   const [selectedWord, setSelectedWord] = useState<string>('CRIMSON SHADOW');
 
   // Global & Per-Slot adjustments for Round 1
@@ -482,6 +488,16 @@ export const SoloTesterWorkbench: React.FC = () => {
             </select>
           </div>
 
+          {team && (
+            <div className="flex items-center space-x-1.5 bg-[#161922] border border-cyan-500/40 rounded-xl px-3 py-1.5 text-xs font-mono" title="Assigned Round 1 Codeword for this crew">
+              <Key className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+              <span className="text-[#8e95a5]">Crew Word:</span>
+              <span className="text-cyan-300 font-bold bg-cyan-950/90 px-2 py-0.5 rounded border border-cyan-500/50">
+                {team.assignedCodeword || 'CRIMSON SHADOW'}
+              </span>
+            </div>
+          )}
+
           <button
             onClick={() => { window.location.href = '/'; }}
             className="px-3.5 py-2 rounded-xl bg-gradient-to-r from-[#c4a45a] to-[#e5cb87] hover:from-[#d8b86e] hover:to-[#edd99e] text-[#08090c] font-serif font-bold text-xs shadow-gold-glow transition-all"
@@ -672,23 +688,129 @@ export const SoloTesterWorkbench: React.FC = () => {
             </div>
           </div>
 
-          {/* Codeword Switcher Pills */}
-          <div className="flex flex-wrap items-center gap-1.5 bg-[#10121a] border border-[#2a2e3d] p-3 rounded-2xl">
-            <span className="text-[10px] font-mono uppercase text-[#8e95a5] mr-1">Select 2-Word Codeword:</span>
-            {codewordsPool.map((word: string) => (
-              <button
-                key={word}
-                onClick={() => setSelectedWord(word)}
-                className={`px-2.5 py-1 rounded-lg text-xs font-mono font-bold transition-all ${
-                  selectedWord === word
-                    ? 'bg-[#c4a45a] text-[#08090c] shadow-gold-glow'
-                    : 'bg-[#161922] border border-[#2a2e3d] text-[#8e95a5] hover:text-[#f4f0e8]'
-                }`}
-              >
-                {word}
-              </button>
-            ))}
+          {/* Codeword Switcher & Active Crew Codeword Bar */}
+          <div className="bg-[#10121a] border border-[#2a2e3d] p-3.5 rounded-2xl space-y-2.5">
+            <div className="flex flex-wrap items-center justify-between gap-2 pb-2.5 border-b border-[#2a2e3d]/80 text-xs font-mono">
+              <div className="flex items-center space-x-2">
+                <span className="text-[10px] uppercase text-[#8e95a5] font-bold">Active Crew:</span>
+                <span className="text-[#f4f0e8] font-bold">{team?.name || 'No Crew Selected'}</span>
+                {team?.battle_code && (
+                  <span className="text-[10px] text-[#c4a45a]">[{team.battle_code}]</span>
+                )}
+                <span className="text-[#8e95a5]">|</span>
+                <span className="text-[10px] uppercase text-[#8e95a5] font-bold">Assigned Codeword:</span>
+                <span className="px-2 py-0.5 rounded bg-cyan-950 border border-cyan-500/50 text-cyan-300 font-bold text-xs flex items-center space-x-1">
+                  <Key className="w-3 h-3 text-cyan-400" />
+                  <span>{team?.assignedCodeword || 'CRIMSON SHADOW'}</span>
+                </span>
+              </div>
+
+              {team?.assignedCodeword && selectedWord !== team.assignedCodeword && (
+                <button
+                  onClick={() => setSelectedWord(team.assignedCodeword!)}
+                  className="px-2.5 py-1 rounded-lg bg-cyan-900/60 hover:bg-cyan-800 border border-cyan-400/50 text-cyan-200 text-[10px] font-mono font-bold flex items-center space-x-1 transition-colors"
+                >
+                  <RefreshCw className="w-3 h-3" />
+                  <span>Sync Visualizer to Crew Word ({team.assignedCodeword})</span>
+                </button>
+              )}
+            </div>
+
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="text-[10px] font-mono uppercase text-[#8e95a5] mr-1">Preview Word:</span>
+              {codewordsPool.map((word: string) => {
+                const isAssigned = word === team?.assignedCodeword;
+                const isSelected = selectedWord === word;
+                return (
+                  <button
+                    key={word}
+                    onClick={() => setSelectedWord(word)}
+                    className={`px-2.5 py-1 rounded-lg text-xs font-mono font-bold transition-all flex items-center space-x-1 ${
+                      isSelected
+                        ? 'bg-[#c4a45a] text-[#08090c] shadow-gold-glow'
+                        : isAssigned
+                        ? 'bg-cyan-950/80 border border-cyan-500/60 text-cyan-200 hover:border-cyan-400'
+                        : 'bg-[#161922] border border-[#2a2e3d] text-[#8e95a5] hover:text-[#f4f0e8]'
+                    }`}
+                  >
+                    <span>{word}</span>
+                    {isAssigned && (
+                      <span className={`text-[9px] px-1 rounded-full font-black ${
+                        isSelected ? 'bg-[#08090c] text-[#c4a45a]' : 'bg-cyan-500/30 text-cyan-300'
+                      }`}>
+                        CREW
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
           </div>
+
+          {/* ALL CREWS & CODEWORDS DIRECT INSPECTION ROSTER */}
+          {payload?.teams_leaderboard && payload.teams_leaderboard.length > 0 && (
+            <div className="bg-[#10121a] border border-[#2a2e3d] rounded-2xl p-4 shadow-xl space-y-2.5">
+              <div className="flex items-center justify-between border-b border-[#2a2e3d] pb-2 text-xs font-mono">
+                <span className="text-[10px] uppercase font-bold text-[#c4a45a] flex items-center space-x-1.5">
+                  <Key className="w-3.5 h-3.5 text-[#c4a45a]" />
+                  <span>All Crews & Assigned Codewords Roster ({payload.teams_leaderboard.length})</span>
+                </span>
+                <span className="text-[10px] text-[#8e95a5]">1-Click to Inspect or Switch</span>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
+                {payload.teams_leaderboard.map(t => {
+                  const isCurrentTeam = t.id === team?.id;
+                  const word = t.assignedCodeword || 'CRIMSON SHADOW';
+                  const firstPlayer = t.members?.[0];
+                  const firstPlayerId = firstPlayer?.id;
+
+                  return (
+                    <div
+                      key={t.id}
+                      className={`p-2.5 rounded-xl border flex items-center justify-between gap-2 text-xs font-mono transition-all ${
+                        isCurrentTeam
+                          ? 'bg-cyan-950/40 border-cyan-500/60 shadow-[0_0_12px_rgba(6,182,212,0.15)]'
+                          : 'bg-[#161922] border-[#2a2e3d] hover:border-[#3a4157]'
+                      }`}
+                    >
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center space-x-1.5 truncate">
+                          <span className="font-bold text-[#f4f0e8] truncate">{t.name}</span>
+                          {t.battle_code && (
+                            <span className="text-[9px] text-[#c4a45a]">[{t.battle_code}]</span>
+                          )}
+                        </div>
+                        <div className="flex items-center space-x-1 mt-0.5">
+                          <span className="text-[10px] text-[#8e95a5]">Word:</span>
+                          <span className="text-[10px] font-bold text-cyan-300 truncate">{word}</span>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center space-x-1 shrink-0">
+                        {firstPlayerId && (
+                          <button
+                            onClick={() => {
+                              switchPlayer(firstPlayerId);
+                              setSelectedWord(word);
+                            }}
+                            className={`px-2 py-1 rounded text-[10px] font-mono font-bold transition-all ${
+                              isCurrentTeam
+                                ? 'bg-cyan-500 text-[#08090c]'
+                                : 'bg-[#10121a] border border-[#3a4157] text-[#c4a45a] hover:bg-[#c4a45a] hover:text-[#08090c]'
+                            }`}
+                            title={`Switch acting player to ${firstPlayer.name} and preview ${word}`}
+                          >
+                            {isCurrentTeam ? 'Active' : 'Inspect'}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
           {/* SUB-VIEW 1: PUB TABLE SIDE-BY-SIDE */}
           {r1ViewMode === 'table' && (
@@ -822,12 +944,24 @@ export const SoloTesterWorkbench: React.FC = () => {
                   Codeword Submission & Dynamic Scoring Simulator
                 </h3>
               </div>
-              <button
-                onClick={() => setTestInput(selectedWord)}
-                className="text-[10px] font-mono text-[#c4a45a] hover:underline"
-              >
-                Auto-fill: {selectedWord}
-              </button>
+              <div className="flex items-center space-x-2">
+                <button
+                  type="button"
+                  onClick={() => setTestInput(team?.assignedCodeword || selectedWord)}
+                  className="text-[10px] font-mono text-cyan-400 hover:underline font-bold"
+                >
+                  Auto-fill Crew Word ({team?.assignedCodeword || selectedWord})
+                </button>
+                {team?.assignedCodeword && selectedWord !== team.assignedCodeword && (
+                  <button
+                    type="button"
+                    onClick={() => setTestInput(selectedWord)}
+                    className="text-[10px] font-mono text-[#8e95a5] hover:underline"
+                  >
+                    Auto-fill Preview ({selectedWord})
+                  </button>
+                )}
+              </div>
             </div>
 
             <form onSubmit={handleCodewordSubmit} className="space-y-3">

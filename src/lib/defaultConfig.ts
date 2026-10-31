@@ -138,7 +138,18 @@ export const DEFAULT_CONFIG: GameConfig = {
       subtitle: "Align all 5 phone screens side-by-side to reconstruct the broken stone tablet and unlock the ancient tomb door.",
       durationSeconds: 300,
       data: {
-        codewords: ["CRIMSON SHADOW", "MIDNIGHT BELL", "OBSIDIAN GATE", "SILENT SPECTER", "ANCIENT CURSE", "HOLLOW GRAVE", "PHANTOM WRATH", "BLOOD MOON"],
+        codewords: [
+          "CRIMSON SHADOW",
+          "MIDNIGHT BELL",
+          "OBSIDIAN GATE",
+          "SILENT SPECTER",
+          "ANCIENT CURSE",
+          "HOLLOW GRAVE",
+          "PHANTOM WRATH",
+          "BLOOD MOON",
+          "BURNING ALTAR",
+          "EMERALD TOMB"
+        ],
         mode: "HORIZONTAL",
         pointsBase: 100,
         pointsSpeedBonusMax: 100,

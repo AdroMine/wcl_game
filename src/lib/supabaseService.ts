@@ -186,10 +186,17 @@ async function getGameStateRow(): Promise<{ id: any; row: any }> {
 }
 
 export async function supabaseVerifyAdminPasscode(passcode: string): Promise<boolean> {
-  if (!supabase) return passcode === 'underworld';
+  if (!passcode) return false;
+  const envPass =
+    (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_ADMIN_PASSCODE) ||
+    (typeof process !== 'undefined' && process.env?.VITE_ADMIN_PASSCODE);
+
+  if (envPass && passcode.trim() === envPass.trim()) return true;
+
+  if (!supabase) return passcode.trim() === (envPass || DEFAULT_CONFIG.admin_passcode || 'underworld');
   const { row } = await getGameStateRow();
-  const validPasscode = row?.config?.admin_passcode || DEFAULT_CONFIG.admin_passcode || 'underworld';
-  return passcode === validPasscode || passcode === 'underworld';
+  const validPasscode = envPass || row?.config?.admin_passcode || DEFAULT_CONFIG.admin_passcode || 'underworld';
+  return passcode.trim() === validPasscode.trim();
 }
 
 export async function processMatchPhaseAdvance(

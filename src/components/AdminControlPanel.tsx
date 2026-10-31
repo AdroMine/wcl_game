@@ -110,7 +110,7 @@ function renderMoralBadge(report: TeamMoralReport, isHonourableOverride?: boolea
 
 export const AdminControlPanel: React.FC<AdminProps> = ({ payload, onClose }) => {
   const { refresh } = useGameSession();
-  const [passcode, setPasscode] = useState(() => localStorage.getItem('underworld_admin_pass') || 'underworld');
+  const [passcode, setPasscode] = useState(() => localStorage.getItem('underworld_admin_pass') || '');
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
 
@@ -156,12 +156,15 @@ export const AdminControlPanel: React.FC<AdminProps> = ({ payload, onClose }) =>
 
   // Initial auth check
   useEffect(() => {
-    if (passcode) {
-      verifyAdminPasscode(passcode).then(ok => {
+    const savedPass = localStorage.getItem('underworld_admin_pass');
+    if (savedPass) {
+      verifyAdminPasscode(savedPass).then(ok => {
         setIsAuthenticated(ok);
         if (ok) {
-          localStorage.setItem('underworld_admin_pass', passcode);
           fetchServerInfo().then(setServerInfo).catch(console.warn);
+        } else {
+          localStorage.removeItem('underworld_admin_pass');
+          setPasscode('');
         }
       });
     }
@@ -169,15 +172,26 @@ export const AdminControlPanel: React.FC<AdminProps> = ({ payload, onClose }) =>
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
+    const clean = passcode.trim();
+    if (!clean) {
+      setAuthError('Please enter the Game Master passcode.');
+      return;
+    }
     setAuthError(null);
-    const ok = await verifyAdminPasscode(passcode);
+    const ok = await verifyAdminPasscode(clean);
     if (ok) {
       setIsAuthenticated(true);
-      localStorage.setItem('underworld_admin_pass', passcode);
+      localStorage.setItem('underworld_admin_pass', clean);
       fetchServerInfo().then(setServerInfo).catch(console.warn);
     } else {
       setAuthError('Invalid Game Master passcode.');
     }
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem('underworld_admin_pass');
+    setPasscode('');
+    setIsAuthenticated(false);
   };
 
   // Universal Time Adjust (Adjusts global round timer AND active Round 2 & Round 3 timers)
@@ -551,6 +565,16 @@ export const AdminControlPanel: React.FC<AdminProps> = ({ payload, onClose }) =>
             title="Reset game to lobby"
           >
             <RotateCcw className="w-4 h-4" />
+          </button>
+
+          {/* Lock / Log Out */}
+          <button
+            onClick={handleLogout}
+            className="px-2.5 py-1.5 rounded-xl border border-amber-500/40 bg-amber-950/30 hover:bg-amber-900/50 text-amber-300 text-xs font-mono font-bold flex items-center space-x-1.5 transition-all shadow-sm"
+            title="Lock Game Master Cockpit & Log Out"
+          >
+            <Lock className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Lock</span>
           </button>
 
           {/* Exit Admin */}

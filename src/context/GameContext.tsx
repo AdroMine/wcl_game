@@ -100,9 +100,15 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const isPollingRef = useRef<boolean>(false);
   const pendingPollRef = useRef<boolean>(false);
   const debounceSyncTimerRef = useRef<number | null>(null);
+  const consecutiveFailuresRef = useRef<number>(0);
+  const backoffUntilRef = useRef<number>(0);
 
-  // Poll fallback / manual sync with concurrency protection
+  // Poll fallback / manual sync with concurrency protection & exponential backoff
   const runPoll = useCallback(async () => {
+    const now = Date.now();
+    if (now < backoffUntilRef.current) {
+      return; // Still in backoff window from a previous 5xx failure
+    }
     if (isPollingRef.current) {
       pendingPollRef.current = true;
       return;
@@ -112,13 +118,20 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       const data = await pollSyncApi(playerId);
       updateWithPayload(data);
+      consecutiveFailuresRef.current = 0;
+      backoffUntilRef.current = 0;
       setConnectionStatus(prev => prev === 'connected' ? 'connected' : 'polling-fallback');
     } catch (e) {
       console.warn('Poll failed:', e);
+      consecutiveFailuresRef.current += 1;
+      // Exponential backoff: 3s, 6s, 12s, max 30s
+      const backoffDelay = Math.min(30000, 3000 * Math.pow(2, consecutiveFailuresRef.current - 1));
+      backoffUntilRef.current = Date.now() + backoffDelay;
+      pendingPollRef.current = false; // Discard pending syncs during downtime to prevent retry storm
       setConnectionStatus('disconnected');
     } finally {
       isPollingRef.current = false;
-      if (pendingPollRef.current) {
+      if (pendingPollRef.current && consecutiveFailuresRef.current === 0) {
         pendingPollRef.current = false;
         setTimeout(() => {
           runPoll();

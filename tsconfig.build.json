@@ -1,0 +1,21 @@
+{
+  "compilerOptions": {
+    "target": "es2022",
+    "lib": ["es2023"],
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "strict": true,
+    "outDir": "dist-server",
+    "rootDir": ".",
+    "rewriteRelativeImportExtensions": true,
+    "verbatimModuleSyntax": true,
+    "erasableSyntaxOnly": true,
+    "noUnusedLocals": true,
+    "noFallthroughCasesInSwitch": true,
+    "skipLibCheck": true,
+    "sourceMap": false,
+    "types": ["node"]
+  },
+  "include": ["server/**/*.ts", "shared/**/*.ts"],
+  "exclude": ["server/stateStore.ts"]
+}

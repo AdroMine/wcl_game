@@ -212,7 +212,8 @@ export class Persistence {
 export function pauseRestored(state: GameState, savedAt: number, bootId: string): GameState {
   if (state.pausedAt != null) return state;
   const r = reduce(state, { commandId: `sys:restore-pause:${bootId}`, type: 'ADMIN_PAUSE', actor: { kind: 'admin' }, payload: {} }, { now: savedAt });
-  return r.state;
+  // Pausing is not new game content: a restored state keeps the version it was saved with.
+  return { ...r.state, version: state.version };
 }
 
 export interface BootResult {

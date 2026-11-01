@@ -5,19 +5,23 @@
   "type": "module",
   "scripts": {
     "dev": "concurrently -k -n \"server,client\" -c \"cyan,magenta\" \"tsx server/index.ts\" \"vite\"",
-    "dev:server": "tsx server/index.ts",
+    "dev:server": "node --watch server/index.ts",
     "dev:client": "vite",
     "build": "tsc -b && vite build",
     "lint": "oxlint",
     "preview": "vite preview",
     "start": "tsx server/index.ts",
-    "test": "node --test \"tests/engine/*.test.ts\" \"tests/sim/*.test.ts\"",
+    "test": "node --test \"tests/engine/*.test.ts\" \"tests/sim/*.test.ts\" \"tests/server/*.test.ts\"",
     "test:r2": "tsx tests/test_round2.ts",
     "test:r3": "tsx tests/test_round3.ts",
     "test:teams": "tsx tests/test_team_codes.ts",
     "test:legacy": "tsx tests/run_all.ts",
     "sim": "node tests/sim/simulate.ts",
-    "typecheck:server": "tsc -p tsconfig.server.json"
+    "typecheck:server": "tsc -p tsconfig.server.json",
+    "server:local": "ADMIN_TOKEN=${ADMIN_TOKEN:-dev-admin-token-change-me} node server/index.ts",
+    "build:server": "tsc -p tsconfig.build.json",
+    "start:server": "node dist-server/server/index.js",
+    "swarm": "node tools/swarm/swarm.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.118.0",
@@ -47,5 +51,8 @@
     "tsx": "^4.23.15",
     "typescript": "~6.0.2",
     "vite": "^8.3.0"
+  },
+  "engines": {
+    "node": ">=22.18"
   }
 }

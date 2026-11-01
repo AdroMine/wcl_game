@@ -23,6 +23,7 @@ export class RateLimiter {
 
   /** Try to take `cost` tokens. Returns true when allowed. */
   take(key: string, now: number, cost = 1): boolean {
+    if (now - this.lastSweep > 60_000) this.sweep(now, false);
     let b = this.buckets.get(key);
     if (!b) {
       if (this.buckets.size >= this.maxKeys) this.sweep(now, true);
@@ -33,7 +34,6 @@ export class RateLimiter {
       b.tokens = Math.min(this.burst, b.tokens + elapsed * this.rate);
       b.at = now;
     }
-    if (now - this.lastSweep > 60_000) this.sweep(now, false);
     if (b.tokens >= cost) {
       b.tokens -= cost;
       return true;

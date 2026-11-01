@@ -24,9 +24,11 @@ Organizer rulings (Areeb, Nov 1, 2026) where `GAME_MASTER_RULES_AND_DESIGN.md` c
 - Round 1 speed tiers are based on whole seconds elapsed: ≤60 s → 300, ≤120 → 250, ≤180 → 200, ≤240 → 150, otherwise 100.
 - Round 3 head-start = min(200 m, floor(R1+R2 points / 5)), plus 75 m if Honourable.
 
-## Pending confirmation (flagged by Claude, not yet ruled on)
+## Confirmed later (Nov 1)
 
-- **Sailboat minimum of 1.** Rounding down gives 0 with 1–3 crews, which would make the Sailboat always capsize. The engine uses max(1, floor(0.30 × crews)) until told otherwise.
-- **Unpaired teams when the admin forces Round 2 to start** stay out of Round 2 (0 points) unless the admin pairs them first.
+- **No Round 3 escape points.** The old code's 500/350/200/100 escape bonus is not part of the game; Round 3 changes metres only.
+- **Sailboat minimum of 1:** max(1, floor(0.30 × active crews)).
+- **Unpaired crews** when the admin force-starts Round 2 sit out with 0 points. The admin can still pair them by hand or auto-pair before starting.
+- **Sudden Death is manual only.** It never starts automatically. When crews are tied for a medal, the host explains the rules and starts the duel from the admin panel. Ties among 3 crews are settled with successive two-crew duels started by the host.
 - The unused round types `ASYMMETRIC_TEXT_PUZZLE` and `OFFLINE_TASK_TIMER` are not ported.
 - The admin can still edit phase durations. Scoring values are fixed in code.

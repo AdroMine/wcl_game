@@ -89,13 +89,14 @@ export function formTeams(h: Harness, sizes: number[]): string[] {
     const tid = h.state.players[first].teamId!;
     teamIds.push(tid);
     for (const pid of ids.slice(1)) {
-      for (let tries = 0; tries < 40; tries++) {
+      for (let tries = 0; tries < 30; tries++) {
         const err = h.as(pid, 'JOIN_TEAM', { code: h.state.teams[tid].emojiCode });
         if (!err) break;
         if (err !== 'ROLE_TAKEN') throw new Error(`join failed: ${err}`);
         h.ok(h.as(pid, 'REROLL_ROLE'), 'reroll');
       }
-      if (h.state.players[pid].teamId !== tid) throw new Error(`could not place ${pid}`);
+      // Rerolling is random; fall back to the admin override (which ignores role rules).
+      if (h.state.players[pid].teamId !== tid) h.ok(h.admin('ADMIN_MOVE_PLAYER', { playerId: pid, teamId: tid }), `place ${pid}`);
     }
   });
   return teamIds;

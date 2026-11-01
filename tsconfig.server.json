@@ -14,5 +14,6 @@
     "skipLibCheck": true,
     "types": ["node"]
   },
-  "include": ["server/engine/**/*.ts", "shared/**/*.ts", "tests/engine/**/*.ts", "tests/sim/**/*.ts"]
+  "include": ["server/**/*.ts", "shared/**/*.ts", "tools/**/*.ts", "tests/engine/**/*.ts", "tests/sim/**/*.ts", "tests/server/**/*.ts"],
+  "exclude": ["server/stateStore.ts"]
 }

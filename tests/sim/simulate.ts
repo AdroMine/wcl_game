@@ -22,6 +22,8 @@ export interface SimOptions {
   /** Replace the state by JSON.parse(JSON.stringify(state)) at this tick. */
   snapshotAtTick?: number | null;
   measure?: boolean;
+  /** Observer called once per tick after the planner's commands were applied (read-only; used by server tests). */
+  onTick?: (state: GameState, tick: number, now: number) => void;
 }
 
 export interface SimResult {
@@ -493,6 +495,7 @@ export function runSimulation(opts: SimOptions): SimResult {
     }
     if (state.phase === 'FINISHED') {
       finishedAtTick = tick;
+      opts.onTick?.(state, tick, now);
       break;
     }
     if (opts.shuffle && state.phase !== 'LOBBY' && state.phase !== 'R2_PAIRING') {
@@ -513,6 +516,7 @@ export function runSimulation(opts: SimOptions): SimResult {
       }
       send(c);
     }
+    opts.onTick?.(state, tick, now);
   }
   if (finishedAtTick < 0) fail(`game did not finish within ${MAX_TICKS} ticks (phase ${state.phase})`);
 

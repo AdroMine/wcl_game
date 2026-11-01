@@ -235,7 +235,7 @@ export function autoGroup(d: GameState, ev: GameEvent[]): number {
   let placed = 0;
   let cursor = 0;
   for (const size of sizes) {
-    const team = createTeamRecord(d, `Crew #${nextNumber(d)}`);
+    const team = createTeamRecord(d, `Crew #${d.teamOrder.length + 1}`);
     if (!team) break;
     for (let i = 0; i < size; i++) addToTeam(d, team, d.players[interleaved[cursor++]]);
     placed += size;

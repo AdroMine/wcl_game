@@ -42,6 +42,8 @@ export function calculateClashPoints(
 }
 
 /** Moral status per RULE_DECISIONS Q7 (doc wording). */
+// RULE-QUESTION: a match cancelled mid-way (a team was deleted) is judged on the clashes resolved so far;
+// "Honourable" still needs all 3 mutual truces, so such teams end up Blood Feud / Betrayed / Aggressor by ambush counts.
 export function computeMoral(clashes: Clash[], side: 'A' | 'B', rivalTeamId: string): Moral {
   let mutualTruce = 0;
   let myAmbush = 0;

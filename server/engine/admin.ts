@@ -16,6 +16,7 @@ import { MAX_TEAM_NAME } from './config.ts';
 
 const startGame: Handler = (d, _c, now, ev) => {
   if (d.phase !== 'LOBBY') return fail('WRONG_PHASE');
+  // RULE-QUESTION: teams below 3 members, and players without a team, are not blocked from starting; unassigned players sit out Round 1.
   initRound1(d, now);
   setStep(d, now, 'R1_ACTIVE', null, { durationMs: d.config.r1Seconds * 1000 }, ev);
   return undefined;
@@ -31,6 +32,7 @@ const startR2: Handler = (d, _c, now, ev) => {
 const forceStartClashes: Handler = (d, _c, now, ev) => {
   if (d.phase !== 'R2_PAIRING') return fail('WRONG_PHASE');
   // Unpaired teams sit out Round 2 (pending confirmation in RULE_DECISIONS).
+  // RULE-QUESTION: forcing the start with zero pairings is allowed (nobody scores in Round 2).
   startClashes(d, now, ev);
   return undefined;
 };

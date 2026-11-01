@@ -172,6 +172,8 @@ const submit: Handler = (d, c, now, ev) => {
   return undefined;
 };
 
+// RULE-QUESTION: the rules do not say whether hints must be taken in order; as in the old code any unlocked hint may be taken.
+// Hints taken after the team has solved are ignored (no penalty).
 const hint: Handler = (d, c, now, ev) => {
   const t = playerTeamForR1(d, c as never);
   if ('error' in t) return t.error;

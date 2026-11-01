@@ -75,6 +75,8 @@ export interface CrossingCandidate {
  * Same-wave crossers (RULE_DECISIONS Q5): 1) distance overshoot, 2) vessel boldness,
  * 3) vote unanimity, 4) prior R1+R2 points. Remaining ties keep input order (stable sort).
  */
+// RULE-QUESTION: "prior R1+R2 points" is read as the team's current score (R1 + R2 + admin adjustments), and
+// a complete tie on all four priorities falls back to team creation order. The rules do not cover either case.
 export function sortCrossingCandidates<T extends CrossingCandidate>(candidates: T[]): T[] {
   return [...candidates].sort((a, b) => {
     if (b.newTotalDistance !== a.newTotalDistance) return b.newTotalDistance - a.newTotalDistance;
@@ -86,6 +88,7 @@ export function sortCrossingCandidates<T extends CrossingCandidate>(candidates: 
   });
 }
 
+// RULE-QUESTION: RULE_DECISIONS lists "Sailboat minimum of 1" as pending confirmation; implemented as max(1, floor(0.30 x crews)).
 /** Q4: max = floor(0.30 x active crews), but at least 1 (pending confirmation). */
 export function sailboatCapacity(activeCrews: number): number {
   return Math.max(1, Math.floor(R3.sailboatCapacityPercent * activeCrews));
@@ -129,7 +132,9 @@ export function evaluateWave(inputs: WaveTeamInput[], wave: number, alreadyEscap
   for (const h of inputs) {
     if (!h.leashTarget) continue;
     const target = byId[h.leashTarget];
-    if (!target) continue; // target no longer racing: leash fizzles and is not consumed
+    // RULE-QUESTION: if the nemesis escaped or was removed after the leash was armed, the leash
+    // fizzles and is NOT consumed (the rules only define float / crash / snap outcomes).
+    if (!target) continue;
     let kind: LeashEvent['kind'];
     let holderDelta = 0;
     let targetDelta = 0;
@@ -273,6 +278,9 @@ export function startRound3(d: GameState, now: number, ev: GameEvent[]): void {
   setStep(d, now, 'R3_ACTIVE', 'BLUFF', { durationMs: d.config.r3.BLUFF * 1000, wave: 1 }, ev);
 }
 
+// RULE-QUESTION: the old code (supabaseService.ts ~2361) awarded an escape bonus to the team score
+// (500 / 350 / 200 / 100 by rank). The rules doc and RULE_DECISIONS.md do not mention it, so the
+// engine does NOT add points on escape; Round 3 only moves meters and orders the podium.
 /** Start of REVEAL: resolve the wave from the recorded votes. Runs exactly once per wave. */
 export function resolveWave(d: GameState, ev: GameEvent[]): void {
   const r3 = d.r3;
@@ -363,6 +371,7 @@ function armLeash(d: GameState, teamId: string, requested: string | undefined): 
   const target = r3.teams[t3.nemesis];
   if (!target || !d.teams[t3.nemesis]) return { error: fail('INVALID_TARGET') };
   if (target.escaped) return { error: fail('TARGET_ESCAPED') };
+  // RULE-QUESTION: arming the leash is final for the wave (the old code never cleared it either); there is no disarm.
   if (r3.leash[teamId] === t3.nemesis) return { changed: false };
   r3.leash[teamId] = t3.nemesis;
   return { changed: true };
@@ -439,6 +448,8 @@ const sdVote: Handler = (d, c, now) => {
 export function triggerSuddenDeath(d: GameState, a: string, b: string, now: number, ev: GameEvent[]) {
   const r3 = d.r3;
   if (!r3) return fail('WRONG_PHASE');
+  // RULE-QUESTION: the rules say Sudden Death is admin-triggered "between two crews" to settle the podium.
+  // The engine allows it only between two crews that have already escaped, during REVEAL or on the results screen.
   const okPhase = (d.phase === 'R3_ACTIVE' && d.step === 'REVEAL') || (d.phase === 'R3_RESULTS' && d.step !== 'SUDDEN_DEATH');
   if (!okPhase) return fail('WRONG_PHASE');
   if (a === b) return fail('SAME_TEAM');

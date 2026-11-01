@@ -475,6 +475,7 @@ async function playFullGame(sw: Swarm, r: Report, label: string): Promise<GameRu
   sw.world.boldness = fast ? 0.8 : 0.55;
   const pause = fast ? 4000 : 10_000; // the host reads the results screen before pressing "next"
   const t0 = Date.now();
+  let waves = 0;
   const { joined, teamed } = await sw.setup({ joinSpreadMs: fast ? 8000 : Math.min(60_000, sw.opts.joinSeconds * 1000), durations: dur });
   r.check('all bots joined and teamed', joined === sw.bots.length && teamed, `${joined} joined, teamed ${teamed}`);
   if (!teamed) return null;
@@ -503,12 +504,15 @@ async function playFullGame(sw: Swarm, r: Report, label: string): Promise<GameRu
   await sw.refreshWorld();
   await sleep(Math.min(20_000, dur.r2.HUDDLE * 1000 + 6000));
   await sw.admin('ADMIN_R2_AUTO_PAIR'); // the host pairs any crew that could not find its rival
+  if ((await sw.adminView()).phase.name === 'R2_PAIRING') {
+    r.notes.push('an odd number of crews: the host started the clashes with one crew unpaired');
+    await sw.admin('ADMIN_R2_FORCE_START');
+  }
   const r2Len = 3 * (dur.r2.HUDDLE + dur.r2.PARLEY + dur.r2.VOTE + dur.r2.DEBRIEF) * 1000;
   if (!(await must('Round 2 ran through three clashes', sw.waitPhase('R2_RESULTS', null, phaseTimeout(r2Len))))) return finish(false, 'R2');
   await sleep(pause);
 
   await sw.admin('ADMIN_START_R3');
-  let waves = 0;
   const r3Start = Date.now();
   const waveLen = (dur.r3.BLUFF + dur.r3.VOTE + dur.r3.REVEAL) * 1000;
   for (;;) {

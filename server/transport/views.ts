@@ -82,7 +82,6 @@ export class ViewBuilder {
   private notice: string | null = null;
   private epoch = 0;
   private cacheKey = '';
-  private cacheState: GameState | null = null;
   private global: GlobalPart | null = null;
   private teams = new Map<string, TeamPart>();
   private screenCache: { key: string; json: string; hash: string } | null = null;
@@ -112,16 +111,13 @@ export class ViewBuilder {
   }
 
   private prepare(state: GameState): void {
+    // Every accepted command bumps state.version; a rejected one replaces the state object but not its content.
     const key = `${state.version}:${this.epoch}`;
-    if (key === this.cacheKey && this.cacheState === state) return;
-    // Rejected commands replace the state object without changing content, so identity may differ with the same key.
-    if (key !== this.cacheKey) {
-      this.cacheKey = key;
-      this.global = null;
-      this.teams.clear();
-      this.screenCache = null;
-    }
-    this.cacheState = state;
+    if (key === this.cacheKey) return;
+    this.cacheKey = key;
+    this.global = null;
+    this.teams.clear();
+    this.screenCache = null;
   }
 
   // ---- global part -----------------------------------------------------------
@@ -300,7 +296,6 @@ export class ViewBuilder {
     this.prepare(state);
     const g = this.buildGlobal(state);
     const known = !!playerId && !!tokenHash && checkPlayer(state, playerId, tokenHash) === 'ok';
-    const rest: Rest = { sid: this.sid, phase: g.phase, board: g.board, boardTotal: g.boardTotal };
     let me: MeView | undefined;
     let part: TeamPart | null = null;
     if (known && playerId) {
@@ -317,7 +312,7 @@ export class ViewBuilder {
         part = priv.teamId ? this.buildTeam(state, g, priv.teamId) : null;
       }
     }
-    const ordered: Rest = { sid: rest.sid, phase: rest.phase } as Rest;
+    const ordered = { sid: this.sid, phase: g.phase } as Rest;
     if (me) ordered.me = me;
     if (part) {
       ordered.team = part.team;

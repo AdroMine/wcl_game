@@ -148,8 +148,11 @@ test('admin resync sends a resync event to every client and then fresh views', a
   const res = await fetch(`${srv.url}/api/admin/resync`, { method: 'POST', headers: { Authorization: 'Bearer test-admin-token-0123456789' } });
   assert.equal(res.status, 200);
   await l.waitFor(() => l.events.some(e => e.event === 'resync'), 1000);
-  const n = l.views().length;
-  await l.waitFor(() => l.views().length > n, 1000);
+  const afterResync = () => {
+    const i = l.events.findIndex(e => e.event === 'resync');
+    return l.events.slice(i + 1).filter(e => e.event === 'message').length;
+  };
+  await l.waitFor(() => afterResync() >= 1, 1000);
   l.close();
 });
 

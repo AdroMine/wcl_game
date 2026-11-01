@@ -14,7 +14,7 @@ A live party game for up to 200 players in about 40 teams of five. One Node serv
 - Admin actions require the ADMIN_TOKEN environment variable, compared in constant time and never serialized.
 
 ## Environment constraints
-- No new npm dependencies: the agent sandboxes cannot reach the npm registry. The engine, server, tests, simulator and swarm use only Node built-ins (node:http, node:test, node:crypto) and run on Node 22.18+ with native TypeScript type stripping.
+- The engine, server, tests, simulator and swarm use only Node built-ins (node:http, node:test, node:crypto) and run on Node 22.18+ with native TypeScript type stripping. Keep it that way: no new runtime dependencies for the server without asking. The web app (src/) uses the existing npm dependencies.
 - TypeScript in server/, shared/, tests/ and tools/ must be erasable syntax only: no enums, namespaces or parameter properties; `import type` for types; relative imports end in `.ts`.
 - Requests are validated with hand-written validators in shared/protocol.ts (stands in for zod).
 

@@ -1,6 +1,9 @@
 // One simulated phone: a real SSE connection with jittered reconnect and a polling fallback,
 // commands with real commandIds, retries after timeouts with the SAME commandId, and deliberate
 // duplicates. Game decisions live in brain.ts.
+import { writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { SseConnection } from './sse.ts';
 import { mulberry, sleep } from './stats.ts';
 import type { CommandResult, View } from '../../shared/protocol.ts';
@@ -141,7 +144,10 @@ export class Bot {
             setTimeout(() => this.conn?.close(), Math.floor(this.rng() * 2000));
             return;
           }
-          if (bytes > this.c.maxEventBytes) this.c.maxEventBytes = bytes;
+          if (bytes > this.c.maxEventBytes) {
+            this.c.maxEventBytes = bytes;
+            if (bytes > 4096) writeFileSync(join(tmpdir(), 'swarm-oversize-view.json'), e.data); // evidence for the report
+          }
           try {
             this.accept(JSON.parse(e.data) as View, e.data);
           } catch {

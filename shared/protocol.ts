@@ -366,6 +366,8 @@ export interface MeView {
   joinedTeam: boolean;
   /** Round 1 only: this player's own piece of the tablet. */
   slice?: string[];
+  /** 'hash': the server swapped every block glyph (U+2588) for "#" to stay under 4 KB; swap it back before drawing. */
+  sliceFmt?: 'hash';
   slot?: number;
   slotCount?: number;
   /** The player's own vote in the current clash, wave or standoff. */

@@ -171,7 +171,7 @@ Key rules for the client:
 - **Clocks**: the client never changes phase by itself. Keep `offset = serverNow - Date.now()` from the latest view (or the
   `X-Server-Now` header on `/api/view` answers, including `304`) and show `endsAt - (Date.now() + offset)`. While
   `phase.paused` the clock is frozen: show `pausedRemainingMs`, and use `pausedAt` instead of "now" for R1 hint timers.
-- **R1**: `me.slice` is this player's own part of the tablet (array of text lines, monospace, keep the line breaks).
+- **R1**: `me.slice` is this player's own part of the tablet (array of text lines, monospace, keep the line breaks). When `me.sliceFmt === "hash"` (only for very small crews, whose slice is large) every `#` in the lines stands for the block glyph `\u2588`; replace it before drawing.
   `r1.hints[].unlocksAt` is an absolute server time; a hint is takeable when `now + offset >= unlocksAt`. `text` appears
   once the team took it. `team.members[0]` is the team's first member (slot 0).
 - **R2**: `team.battleCode` is "Your code"; the player types the rival's code into `R2_PAIR`. `r2.clashes` lists only

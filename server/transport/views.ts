@@ -336,6 +336,11 @@ export class ViewBuilder {
       this.degradedViews++;
       const steps: (() => void)[] = [
         () => {
+          // Lossless: a crew of one gets the whole 15-row tablet, and every block glyph costs 3 UTF-8 bytes.
+          // `sliceFmt: 'hash'` tells the client to map "#" back to the block glyph.
+          if (rest.me?.slice && !rest.me.sliceFmt) rest.me = { ...rest.me, slice: rest.me.slice.map(l => l.replaceAll('\u2588', '#')), sliceFmt: 'hash' };
+        },
+        () => {
           if (rest.r3) rest.r3 = { ...rest.r3, fleet: rest.r3.fleet.slice(0, 4) };
         },
         () => {

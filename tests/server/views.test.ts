@@ -282,3 +282,22 @@ test('screen view is public: no private fields, small', () => {
     assert.ok(Buffer.byteLength(json) < 6000, `${s.state.phase}: ${Buffer.byteLength(json)}`);
   }
 });
+
+test('a crew of one gets the whole tablet: the view stays <= 4096 bytes and the slice is losslessly re-encoded', () => {
+  const base = structuredClone(samples.filter(s => s.state.phase === 'R1_ACTIVE').at(-1)!.state);
+  const team = Object.values(base.teams).find(t => t.r1)!;
+  const pid = Object.keys(team.r1!.slots)[0];
+  team.r1!.slots = { [pid]: 0 };
+  team.r1!.size = 1;
+  team.playerIds = [pid];
+  for (const p of Object.values(base.players)) if (p.teamId === team.id && p.id !== pid) p.teamId = null;
+  const { state, tokens } = withRealTokens(base);
+  const vb = new ViewBuilder({ sid: 'x' });
+  const b = vb.forPlayer(state, pid, hashToken(tokens[pid]), NOW);
+  assert.ok(b.bytes <= LIMITS.viewBytes, `${b.bytes}`);
+  const me = (JSON.parse(b.json) as View).me!;
+  assert.equal(me.slice!.length, 15);
+  assert.equal(me.sliceFmt, 'hash');
+  const full = getPlayerAsciiSlice(team.r1!.codeword, 0, 1);
+  assert.deepEqual(me.slice!.map(l => l.replaceAll('#', '█')), full);
+});

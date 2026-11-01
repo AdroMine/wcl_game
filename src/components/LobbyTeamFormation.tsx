@@ -1,385 +1,242 @@
-import React, { useState, useEffect } from 'react';
-import { useGameSession } from '../context/GameContext';
-import {
-  Users,
-  Sparkles,
-  Compass,
-  Eye,
-  Book,
-  Flame,
-  Shield,
-  Plus,
-  Edit2,
-  AlertCircle,
-  Dices,
-  LogOut,
-  Delete,
-  Check,
-  ArrowRight,
-  RotateCcw,
-} from 'lucide-react';
-import {
-  TEAM_EMOJI_POOL,
-  TEAM_EMOJI_LABELS,
-  type TeamEmoji,
-  type TeamPreviewInfo,
-} from '../types';
-import {
-  formatEmojiCodeLabels,
-} from '../lib/teamCodeEngine';
+import React, { useEffect, useState } from 'react';
+import { Users, Sparkles, Plus, Edit2, Dices, LogOut, Delete, Check, ArrowRight, AlertTriangle } from 'lucide-react';
+import { useGame } from '../game/useGame';
+import type { TeamPreview } from '../game/useGame';
+import { BTN_DARK, BTN_DANGER, BTN_GOLD, CARD, ErrorNote, LABEL, RoleIcon, useRoles } from './ui';
 
-const ROLE_ICONS: Record<string, React.ReactNode> = {
-  compass: <Compass className="w-5 h-5" />,
-  eye: <Eye className="w-5 h-5" />,
-  book: <Book className="w-5 h-5" />,
-  flame: <Flame className="w-5 h-5" />,
-  shield: <Shield className="w-5 h-5" />,
-};
+const EMOJI_LABELS: Record<string, string> = { '🔥': 'Fire', '💀': 'Skull', '⚡': 'Bolt', '🌊': 'Wave', '🛡️': 'Shield' };
+const labelsOf = (emojis: string[]) => emojis.map(e => EMOJI_LABELS[e] ?? '').filter(Boolean).join(' • ');
 
 export const LobbyTeamFormation: React.FC = () => {
-  const {
-    player,
-    role,
-    team,
-    payload,
-    createTeam,
-    previewTeamByEmoji,
-    joinTeamByEmoji,
-    leaveTeam,
-    renameTeam,
-    rerollRole,
-  } = useGameSession();
+  const { view, meta, send, previewTeam } = useGame();
+  const { list: roles, byId } = useRoles();
+  const me = view?.me;
+  const team = view?.team;
 
-  // Create team state
-  const [isCreating, setIsCreating] = useState(false);
-  const [createError, setCreateError] = useState<string | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [note, setNote] = useState<string | null>(null);
 
-  // Join team modal & dialpad state
-  const [showJoinModal, setShowJoinModal] = useState(false);
-  const [selectedEmojis, setSelectedEmojis] = useState<TeamEmoji[]>([]);
-  const [previewData, setPreviewData] = useState<TeamPreviewInfo | null>(null);
-  const [isPreviewLoading, setIsPreviewLoading] = useState(false);
-  const [joinError, setJoinError] = useState<string | null>(null);
-  const [isJoining, setIsJoining] = useState(false);
+  const [showJoin, setShowJoin] = useState(false);
+  const [picked, setPicked] = useState<string[]>([]);
+  const [preview, setPreview] = useState<TeamPreview | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
 
-  // Leave / Disband state
-  const [isLeaving, setIsLeaving] = useState(false);
-  const [leaveError, setLeaveError] = useState<string | null>(null);
+  const [editing, setEditing] = useState(false);
+  const [nameInput, setNameInput] = useState('');
 
-  // Reroll fate state
-  const [isRerolling, setIsRerolling] = useState(false);
-  const [rerollMsg, setRerollMsg] = useState<string | null>(null);
+  const pool = meta?.emojiPool ?? [];
+  const size = meta?.teamSize ?? { min: 3, target: 5, max: 6 };
 
-  // Rename team state
-  const [isEditingName, setIsEditingName] = useState(false);
-  const [editNameInput, setEditNameInput] = useState(team?.name || '');
-
-  const roles = payload?.config.roles || [];
-  const teamSize = payload?.config.team_size || 5;
-
-  // Whenever 3 emojis are selected, automatically look up team preview
   useEffect(() => {
-    if (selectedEmojis.length === 3) {
-      const code = selectedEmojis.join('');
-      let isMounted = true;
-      setIsPreviewLoading(true);
-      setJoinError(null);
-      setPreviewData(null);
-
-      previewTeamByEmoji(code).then(res => {
-        if (!isMounted) return;
-        setIsPreviewLoading(false);
-        if (!res.success || !res.preview) {
-          setJoinError(res.error || 'No active team found with this code.');
-        } else {
-          setPreviewData(res.preview);
-        }
-      });
-
-      return () => {
-        isMounted = false;
-      };
-    } else {
-      setPreviewData(null);
-      setJoinError(null);
+    if (picked.length !== 3) {
+      setPreview(null);
+      return;
     }
-  }, [selectedEmojis]);
+    let live = true;
+    setPreviewLoading(true);
+    setError(null);
+    previewTeam(picked.join('')).then(r => {
+      if (!live) return;
+      setPreviewLoading(false);
+      if (r.ok) setPreview(r.team);
+      else setError(r.message);
+    });
+    return () => {
+      live = false;
+    };
+  }, [picked, previewTeam]);
 
-  if (!player || !role) return null;
+  if (!me) return null;
+  const role = byId(me.role);
 
-  // --- Handlers ---
-  const handleRerollRole = async () => {
-    try {
-      setIsRerolling(true);
-      setRerollMsg(null);
-      const res = await rerollRole();
-      if (!res.success) {
-        setRerollMsg(res.error || 'Failed to reroll role');
-      } else {
-        setRerollMsg('🎲 Fate re-cast! A new role was assigned.');
-      }
-      setTimeout(() => setRerollMsg(null), 3500);
-    } finally {
-      setIsRerolling(false);
-    }
+  const run = async (key: string, fn: () => ReturnType<typeof send>, onOk?: () => void) => {
+    setBusy(key);
+    setError(null);
+    const r = await fn();
+    setBusy(null);
+    if (!r.ok) setError(r.message ?? 'Something went wrong.');
+    else onOk?.();
   };
 
-  const handleCreateTeamSubmit = async () => {
-    try {
-      setIsCreating(true);
-      setCreateError(null);
-      const res = await createTeam();
-      if (!res.success) {
-        setCreateError(res.error || 'Failed to create team');
-      }
-    } catch (err: any) {
-      setCreateError(err.message || 'Error creating team');
-    } finally {
-      setIsCreating(false);
-    }
-  };
-
-  const handleEmojiTap = (emoji: TeamEmoji) => {
-    if (selectedEmojis.length < 3) {
-      setSelectedEmojis([...selectedEmojis, emoji]);
-    }
-  };
-
-  const handleBackspace = () => {
-    if (selectedEmojis.length > 0) {
-      setSelectedEmojis(selectedEmojis.slice(0, -1));
-      setPreviewData(null);
-      setJoinError(null);
-    }
-  };
-
-  const handleClearEmojis = () => {
-    setSelectedEmojis([]);
-    setPreviewData(null);
-    setJoinError(null);
-  };
-
-  const handleConfirmJoin = async () => {
-    if (!previewData) return;
-    try {
-      setIsJoining(true);
-      setJoinError(null);
-      const res = await joinTeamByEmoji(previewData.emojiCode);
-      if (!res.success) {
-        setJoinError(res.error || 'Failed to join crew');
-      } else {
-        setShowJoinModal(false);
-        setSelectedEmojis([]);
-        setPreviewData(null);
-      }
-    } catch (err: any) {
-      setJoinError(err.message || 'Failed to join crew');
-    } finally {
-      setIsJoining(false);
-    }
-  };
-
-  const handleLeaveTeam = async () => {
-    const isSolo = (team?.player_ids.length || 0) <= 1;
-    const confirmMsg = isSolo
-      ? 'Disband this team and return to the lobby?'
-      : 'Leave this crew and return to the lobby?';
-
-    if (!confirm(confirmMsg)) return;
-
-    try {
-      setIsLeaving(true);
-      setLeaveError(null);
-      const res = await leaveTeam();
-      if (!res.success) {
-        setLeaveError(res.error || 'Failed to leave team');
-      }
-    } catch (err: any) {
-      setLeaveError(err.message || 'Error leaving team');
-    } finally {
-      setIsLeaving(false);
-    }
-  };
-
-  const handleRenameSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!editNameInput.trim()) return;
-    await renameTeam(editNameInput.trim());
-    setIsEditingName(false);
-  };
-
-  // =========================================================================
-  // VIEW A: PLAYER IS ALREADY IN A TEAM (CREW HUB)
-  // =========================================================================
+  // ---------------------------------------------------------------- in a team
   if (team) {
-    const teamEmojiCode = team.emoji_code || ((team.round_submissions?._emoji_code as unknown) as string) || '';
-    const formattedLabels = formatEmojiCodeLabels(teamEmojiCode);
-    const isSolo = team.player_ids.length <= 1;
+    const count = team.members.length;
+    // One card per role: filled with the first member holding it, otherwise Missing Role.
+    const used = new Set<number>();
+    const cards = roles.map(r => {
+      const idx = team.members.findIndex((m, i) => m.role === r.id && !used.has(i));
+      if (idx >= 0) used.add(idx);
+      return { role: r, member: idx >= 0 ? team.members[idx] : null };
+    });
+    const extras = team.members.filter((_m, i) => !used.has(i));
+    const isMe = (m: { name: string; role: string }) => m.name === me.name && m.role === me.role;
+    const isSolo = count <= 1;
+    const enough = count >= size.min;
 
     return (
       <div className="space-y-5 py-4">
-        {/* Crew Header Card */}
-        <div className="bg-[#10121a] border border-[#3a4157] rounded-2xl p-5 shadow-xl relative overflow-hidden space-y-4">
+        <div className={`${CARD} relative overflow-hidden space-y-4`}>
           <div className="flex items-start justify-between">
             <div className="flex-1 min-w-0 pr-2">
-              <span className="text-[10px] font-mono uppercase tracking-wider text-[#e5cb87] font-bold">
-                Your Formed Crew
-              </span>
-              {isEditingName ? (
-                <form onSubmit={handleRenameSubmit} className="flex items-center space-x-2 mt-1">
+              <span className={LABEL}>Your Formed Crew</span>
+              {editing ? (
+                <form
+                  onSubmit={e => {
+                    e.preventDefault();
+                    if (!nameInput.trim()) return;
+                    void run('rename', () => send('RENAME_TEAM', { name: nameInput.trim() }), () => setEditing(false));
+                  }}
+                  className="flex items-center space-x-2 mt-1"
+                >
                   <input
-                    type="text"
-                    value={editNameInput}
-                    onChange={(e) => setEditNameInput(e.target.value)}
-                    className="bg-[#161922] border border-[#c4a45a] rounded-lg px-2.5 py-1 text-sm text-[#f4f0e8] outline-none"
+                    value={nameInput}
+                    onChange={e => setNameInput(e.target.value)}
+                    maxLength={32}
                     autoFocus
+                    aria-label="Crew name"
+                    className="min-h-[48px] min-w-0 flex-1 bg-[#161922] border border-[#c4a45a] rounded-lg px-2.5 text-base text-[#f4f0e8] outline-none"
                   />
-                  <button type="submit" className="text-xs bg-[#c4a45a] text-[#08090c] font-bold px-2 py-1 rounded">
+                  <button type="submit" className="min-h-[48px] text-sm bg-[#c4a45a] text-[#08090c] font-bold px-3 rounded">
                     Save
                   </button>
-                  <button type="button" onClick={() => setIsEditingName(false)} className="text-xs text-[#a9b4c7]">
+                  <button type="button" onClick={() => setEditing(false)} className="min-h-[48px] text-sm text-[#a9b4c7] px-1">
                     Cancel
                   </button>
                 </form>
               ) : (
                 <div className="flex items-center space-x-2 mt-1">
-                  <h2 className="text-lg font-serif font-black text-[#f4f0e8] truncate">{team.name}</h2>
+                  <h2 data-testid="team-name" className="text-xl font-serif font-black text-[#f4f0e8] truncate">
+                    {team.name}
+                  </h2>
                   <button
                     onClick={() => {
-                      setEditNameInput(team.name);
-                      setIsEditingName(true);
+                      setNameInput(team.name);
+                      setEditing(true);
                     }}
-                    className="text-[#a9b4c7] hover:text-[#e5cb87] transition-colors shrink-0"
-                    title="Rename crew"
+                    aria-label="Rename crew"
+                    className="w-11 h-11 flex items-center justify-center text-[#a9b4c7] hover:text-[#e5cb87] transition-colors shrink-0"
                   >
-                    <Edit2 className="w-3.5 h-3.5" />
+                    <Edit2 className="w-4 h-4" />
                   </button>
                 </div>
               )}
             </div>
-
             <div className="text-right shrink-0">
               <span className="text-[10px] font-mono text-[#a9b4c7]">CREW SCORE</span>
               <p className="text-xl font-mono font-bold text-[#e5cb87]">{team.score} PTS</p>
             </div>
           </div>
 
-          {/* 3-Emoji Team Join Code Callout */}
-          {teamEmojiCode && (
-            <div className="p-4 rounded-xl bg-gradient-to-r from-[#161922] via-[#12151e] to-[#161922] border border-[#c4a45a]/60 text-center space-y-1.5 shadow-gold-glow">
-              <span className="text-[10px] font-mono uppercase tracking-widest text-[#a9b4c7] font-bold block">
-                TEAM JOIN CODE
-              </span>
-              <div className="text-3xl sm:text-4xl tracking-widest font-black py-0.5 animate-pulse">
-                {teamEmojiCode}
-              </div>
-              <div className="text-xs font-mono font-bold text-[#e5cb87] uppercase tracking-wider">
-                {formattedLabels}
-              </div>
-              <p className="text-[11px] text-[#8e95a5] italic font-serif">
-                Tell teammates to tap these 3 emojis on their phone
-              </p>
+          <div className="p-4 rounded-xl bg-gradient-to-r from-[#161922] via-[#12151e] to-[#161922] border border-[#c4a45a]/60 text-center space-y-1.5 shadow-gold-glow">
+            <span className="text-[10px] font-mono uppercase tracking-widest text-[#a9b4c7] font-bold block">TEAM JOIN CODE</span>
+            <div data-testid="team-code" className="text-5xl tracking-widest font-black py-1">
+              {team.emojiCode}
             </div>
-          )}
+            <div className="text-xs font-mono font-bold text-[#e5cb87] uppercase tracking-wider">
+              {labelsOf(splitEmojis(team.emojiCode, pool))}
+            </div>
+            <p className="text-sm text-[#8e95a5] italic font-serif">Tell teammates to tap these 3 emojis on their phone</p>
+          </div>
 
-          {/* Members Roster */}
           <div className="space-y-2">
             <div className="flex items-center justify-between">
-              <p className="text-[10px] font-mono uppercase tracking-wider text-[#a9b4c7]">
-                Crew Roster ({team.player_ids.length} of {teamSize} Shades)
+              <p className="text-[11px] font-mono uppercase tracking-wider text-[#a9b4c7]">
+                Crew Roster ({count} of {size.target} Shades)
               </p>
-              {team.player_ids.length < teamSize && (
-                <span className="text-[10px] font-mono text-amber-400">
-                  Waiting for {teamSize - team.player_ids.length} more...
-                </span>
-              )}
+              <span data-testid="size-hint" className={`text-[11px] font-mono ${enough ? 'text-emerald-400' : 'text-amber-400'}`}>
+                {enough ? `Ready: ${size.min} to ${size.max} allowed` : `Need at least ${size.min}, aim for ${size.target}`}
+              </span>
             </div>
 
-            <div className="space-y-1.5">
-              {team.player_ids.map((pid, idx) => {
-                const isYou = pid === player.id;
-                const memberData = payload?.teams_leaderboard
-                  ?.find(t => t.id === team.id)
-                  ?.members[idx];
-
-                const memberRole = roles.find(r => r.name === memberData?.roleName) || (isYou ? role : null);
-
-                return (
+            <div className="space-y-2">
+              {cards.map(({ role: r, member }) =>
+                member ? (
                   <div
-                    key={pid}
-                    className={`flex items-center justify-between p-2.5 rounded-xl border transition-all ${
-                      isYou
-                        ? 'bg-[#161922] border-[#c4a45a]/50 shadow-sm'
-                        : 'bg-[#161922]/50 border-[#3a4157]'
+                    key={r.id}
+                    data-testid="role-card-filled"
+                    className={`flex items-center justify-between p-3 min-h-[56px] rounded-xl border transition-all ${
+                      isMe(member) ? 'bg-[#161922] border-[#c4a45a]/50 shadow-sm' : 'bg-[#161922]/60 border-[#3a4157]'
                     }`}
                   >
-                    <div className="flex items-center space-x-2.5">
+                    <div className="flex items-center space-x-3 min-w-0">
                       <div
-                        className="w-7 h-7 rounded-lg flex items-center justify-center font-bold text-xs"
-                        style={{
-                          backgroundColor: `${memberRole?.color || '#c4a45a'}25`,
-                          color: memberRole?.color || '#c4a45a',
-                          border: `1px solid ${memberRole?.color || '#c4a45a'}50`,
-                        }}
+                        className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0"
+                        style={{ backgroundColor: `${r.color}25`, color: r.color, border: `1px solid ${r.color}50` }}
                       >
-                        {ROLE_ICONS[memberRole?.icon || 'shield']}
+                        <RoleIcon icon={r.icon} />
                       </div>
-                      <div>
-                        <div className="flex items-center space-x-1.5">
-                          <span className="text-xs font-bold text-[#f4f0e8]">
-                            {isYou ? `${player.name} (You)` : memberData?.name || `Crewmate #${idx + 1}`}
-                          </span>
-                        </div>
-                        <span
-                          className="text-[10px] font-medium"
-                          style={{ color: memberRole?.color || '#a9b4c7' }}
-                        >
-                          {memberRole?.name || 'Underworld Traveler'}
+                      <div className="min-w-0">
+                        <div className="text-sm font-bold text-[#f4f0e8] truncate">{isMe(member) ? `${member.name} (You)` : member.name}</div>
+                        <span className="text-[11px] font-medium" style={{ color: r.color }}>
+                          {r.name}
                         </span>
                       </div>
                     </div>
-                    {isYou ? (
-                      <span className="text-[10px] font-mono text-emerald-400 bg-emerald-950/40 border border-emerald-500/30 px-2 py-0.5 rounded-full font-bold">
-                        You
-                      </span>
-                    ) : (
-                      <span className="text-[10px] font-mono text-[#a9b4c7] bg-[#10121a] border border-[#2a2e3d] px-2 py-0.5 rounded-full">
-                        Ready
-                      </span>
-                    )}
+                    <span className="text-[10px] font-mono text-emerald-400 bg-emerald-950/40 border border-emerald-500/30 px-2 py-0.5 rounded-full font-bold">
+                      {isMe(member) ? 'You' : 'Ready'}
+                    </span>
+                  </div>
+                ) : (
+                  <div
+                    key={r.id}
+                    data-testid="role-card-missing"
+                    className="flex items-center justify-between p-3 min-h-[56px] rounded-xl border border-dashed border-amber-500/50 bg-amber-950/10"
+                  >
+                    <div className="flex items-center space-x-3 min-w-0">
+                      <div className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0 border border-dashed border-[#3a4157] text-[#5b6377]">
+                        <RoleIcon icon={r.icon} />
+                      </div>
+                      <div className="min-w-0">
+                        <div className="text-sm font-bold text-[#8e95a5]">{r.name}</div>
+                        <span className="text-[11px] text-[#5b6377]">Nobody yet</span>
+                      </div>
+                    </div>
+                    <span className="text-[10px] font-mono font-bold text-amber-300 bg-amber-950/60 border border-amber-500/50 px-2 py-1 rounded-full uppercase tracking-wide">
+                      Missing Role
+                    </span>
+                  </div>
+                ),
+              )}
+              {extras.map((m, i) => {
+                const r = byId(m.role);
+                return (
+                  <div key={`x${i}`} className="flex items-center justify-between p-3 min-h-[56px] rounded-xl border border-[#3a4157] bg-[#161922]/40">
+                    <div className="min-w-0">
+                      <div className="text-sm font-bold text-[#f4f0e8] truncate">{isMe(m) ? `${m.name} (You)` : m.name}</div>
+                      <span className="text-[11px] text-[#8e95a5]">Extra crewmate • {r?.name ?? m.role}</span>
+                    </div>
                   </div>
                 );
               })}
             </div>
           </div>
 
-          {/* Leave / Disband Team Action */}
-          <div className="pt-2 border-t border-[#2a2e3d]/80 flex items-center justify-between">
-            <span className="text-[11px] text-[#8e95a5]">
-              {isSolo ? 'Wrong group? Disband with 1 tap.' : 'Need to switch groups?'}
-            </span>
+          <ErrorNote text={error} />
+
+          <div className="pt-2 border-t border-[#2a2e3d]/80 flex items-center justify-between gap-3">
+            <span className="text-xs text-[#8e95a5]">{isSolo ? 'Wrong group? Disband with 1 tap.' : 'Need to switch groups?'}</span>
             <button
-              onClick={handleLeaveTeam}
-              disabled={isLeaving}
-              className="px-3 py-1.5 rounded-xl bg-red-950/40 hover:bg-red-900/60 border border-red-500/40 text-red-300 text-xs font-mono font-bold flex items-center space-x-1.5 transition-all disabled:opacity-50"
+              data-testid="leave-team"
+              disabled={busy === 'leave'}
+              onClick={() => {
+                if (!confirm(isSolo ? 'Disband this team and return to the lobby?' : 'Leave this crew and return to the lobby?')) return;
+                void run('leave', () => send('LEAVE_TEAM', {}));
+              }}
+              className={BTN_DANGER}
             >
-              <LogOut className="w-3.5 h-3.5" />
-              <span>{isLeaving ? 'Leaving...' : isSolo ? 'Disband Team' : 'Leave Team'}</span>
+              <LogOut className="w-4 h-4" />
+              <span>{busy === 'leave' ? 'Leaving...' : isSolo ? 'Disband Team' : 'Leave Team'}</span>
             </button>
           </div>
 
-          {leaveError && (
-            <p className="text-xs text-red-400 font-mono">{leaveError}</p>
-          )}
-
-          {/* Waiting for Round 1 Banner */}
           <div className="p-4 rounded-xl bg-gradient-to-b from-[#161922] to-[#08090c] border border-[#c4a45a]/40 text-center space-y-2">
             <div className="inline-flex items-center space-x-1.5 text-xs font-mono text-[#e5cb87] font-bold">
-              <Sparkles className="w-3.5 h-3.5 animate-spin" style={{ animationDuration: '4s' }} />
+              <Sparkles className="w-3.5 h-3.5" />
               <span>THE DESCENT IS APPROACHING</span>
             </div>
-            <p className="text-xs text-[#cbd5e1] leading-relaxed">
-              Stand together at your pub table. Keep this screen active — when the descent begins, a brief story and rules overview will guide your crew into Round 1.
+            <p className="text-sm text-[#cbd5e1] leading-relaxed">
+              Stand together at your pub table. Keep this screen open: when the host starts the descent, a short story and the rules will guide your crew into Round 1.
             </p>
           </div>
         </div>
@@ -387,333 +244,194 @@ export const LobbyTeamFormation: React.FC = () => {
     );
   }
 
-  // =========================================================================
-  // VIEW B: PLAYER HAS NO TEAM (LOBBY ACTIONS: CREATE OR JOIN)
-  // =========================================================================
+  // ---------------------------------------------------------------- no team yet
+  const confirmJoin = () => {
+    if (!preview) return;
+    void run('join', () => send('JOIN_TEAM', { code: preview.emojiCode }), () => {
+      setShowJoin(false);
+      setPicked([]);
+      setPreview(null);
+    });
+  };
+
   return (
     <div className="space-y-5 py-4">
-      {/* Role Beacon Card */}
-      <div
-        className="rounded-2xl p-6 border shadow-beacon relative overflow-hidden transition-all"
-        style={{
-          borderColor: role.color,
-          backgroundColor: '#10121a',
-          '--beacon-glow': `${role.color}55`,
-        } as React.CSSProperties}
-      >
-        {/* Glow ambient circle */}
+      {role && (
         <div
-          className="absolute -top-12 -right-12 w-48 h-48 rounded-full blur-3xl opacity-30 pointer-events-none"
-          style={{ backgroundColor: role.color }}
-        />
-
-        <div className="relative z-10 space-y-4">
-          <div className="flex items-center justify-between">
+          className="rounded-2xl p-6 border shadow-beacon relative overflow-hidden transition-all"
+          style={{ borderColor: role.color, backgroundColor: '#10121a', '--beacon-glow': `${role.color}55` } as React.CSSProperties}
+        >
+          <div className="absolute -top-12 -right-12 w-48 h-48 rounded-full blur-3xl opacity-30 pointer-events-none" style={{ backgroundColor: role.color }} />
+          <div className="relative z-10 space-y-4">
             <span
               className="text-[10px] font-mono uppercase tracking-widest font-bold px-2 py-0.5 rounded-full"
-              style={{
-                backgroundColor: `${role.color}20`,
-                color: role.color,
-                border: `1px solid ${role.color}40`,
-              }}
+              style={{ backgroundColor: `${role.color}20`, color: role.color, border: `1px solid ${role.color}40` }}
             >
               Assigned Underworld Role
             </span>
-            <div
-              className="w-3 h-3 rounded-full animate-ping"
-              style={{ backgroundColor: role.color }}
-            />
-          </div>
-
-          <div className="flex items-center space-x-3.5">
-            <div
-              className="w-14 h-14 rounded-2xl flex items-center justify-center shadow-lg border shrink-0"
-              style={{
-                backgroundColor: `${role.color}15`,
-                borderColor: `${role.color}60`,
-                color: role.color,
-              }}
-            >
-              {ROLE_ICONS[role.icon] || <Shield className="w-7 h-7" />}
-            </div>
-            <div>
-              <h2 className="text-2xl font-serif font-black tracking-wide text-[#f4f0e8]">
-                {role.name}
-              </h2>
-              <p className="text-xs text-[#8e95a5] mt-0.5 leading-snug">
-                {role.description}
-              </p>
-              {/* Re-roll Fate Action */}
-              <div className="pt-2">
-                <button
-                  type="button"
-                  onClick={handleRerollRole}
-                  disabled={isRerolling}
-                  className="px-2.5 py-1 rounded-lg bg-[#08090c] hover:bg-[#161922] border border-[#2a2e3d] hover:border-[#c4a45a]/60 text-[11px] font-mono text-[#8e95a5] hover:text-[#c4a45a] flex items-center space-x-1.5 transition-all shadow-sm disabled:opacity-50"
-                  title="Roll for another under-represented role if multiple people at your table have duplicates"
-                >
-                  <Dices className={`w-3.5 h-3.5 ${isRerolling ? 'animate-spin' : ''}`} />
-                  <span>{isRerolling ? 'Consulting Oracle...' : '🎲 Re-roll Fate (Random Role)'}</span>
-                </button>
-                {rerollMsg && (
-                  <p className="text-[10px] font-mono text-[#c4a45a] mt-1 animate-fade-in">{rerollMsg}</p>
-                )}
+            <div className="flex items-center space-x-3.5">
+              <div
+                className="w-14 h-14 rounded-2xl flex items-center justify-center shadow-lg border shrink-0"
+                style={{ backgroundColor: `${role.color}15`, borderColor: `${role.color}60`, color: role.color }}
+              >
+                <RoleIcon icon={role.icon} className="w-7 h-7" />
+              </div>
+              <div className="min-w-0">
+                <h2 data-testid="my-role" className="text-2xl font-serif font-black tracking-wide text-[#f4f0e8]">
+                  {role.name}
+                </h2>
+                <p className="text-sm text-[#8e95a5] mt-0.5 leading-snug">{role.description}</p>
               </div>
             </div>
-          </div>
-
-          {/* Physical Social Objective */}
-          <div className="bg-[#161922]/80 border border-[#2a2e3d] p-3.5 rounded-xl space-y-1.5">
-            <div className="flex items-center space-x-1.5 text-xs font-semibold text-[#f4f0e8]">
-              <Users className="w-4 h-4 text-[#c4a45a]" />
-              <span>Physical Social Objective:</span>
-            </div>
-            <p className="text-xs text-[#8e95a5] leading-relaxed">
-              Mingle with other players in the room. Find 4 other shades holding different roles to complete your escape crew:
-            </p>
-            <div className="flex flex-wrap gap-1.5 pt-1">
-              {roles.map(r => (
-                <span
-                  key={r.id}
-                  className={`text-[10px] px-2 py-0.5 rounded-md font-medium border ${
-                    r.id === role.id
-                      ? 'border-[#c4a45a] bg-[#c4a45a]/20 text-[#f4f0e8] font-bold'
-                      : 'border-[#2a2e3d] bg-[#10121a] text-[#8e95a5]'
-                  }`}
-                >
-                  {r.id === role.id ? '✓ ' : ''}{r.name}
-                </span>
-              ))}
-            </div>
-          </div>
-
-          {/* TWO PRIMARY ACTIONS: CREATE TEAM OR JOIN TEAM */}
-          <div className="space-y-2.5 pt-2">
             <button
-              onClick={handleCreateTeamSubmit}
-              disabled={isCreating}
-              className="w-full py-3.5 px-4 rounded-xl bg-gradient-to-r from-[#c4a45a] to-[#e5cb87] hover:from-[#d8b86e] hover:to-[#f0d89e] text-[#08090c] font-serif font-black text-sm tracking-wide flex items-center justify-center space-x-2 shadow-gold-glow transition-all disabled:opacity-50"
+              type="button"
+              data-testid="reroll"
+              onClick={() => run('reroll', () => send('REROLL_ROLE', {}), () => {
+                setNote('Fate re-cast! A new role was assigned.');
+                setTimeout(() => setNote(null), 3500);
+              })}
+              disabled={busy === 'reroll'}
+              className="min-h-[56px] w-full rounded-xl bg-[#08090c] hover:bg-[#161922] border border-[#2a2e3d] hover:border-[#c4a45a]/60 text-sm font-mono text-[#8e95a5] hover:text-[#c4a45a] flex items-center justify-center space-x-2 transition-all disabled:opacity-50"
             >
-              <Plus className="w-4 h-4" />
-              <span>{isCreating ? 'Creating Crew...' : '+ Create a Team'}</span>
+              <Dices className={`w-4 h-4 ${busy === 'reroll' ? 'animate-spin' : ''}`} />
+              <span>{busy === 'reroll' ? 'Consulting Oracle...' : 'Re-roll Fate (Random Role)'}</span>
             </button>
+            {note && <p className="text-xs font-mono text-[#c4a45a]">{note}</p>}
 
-            <button
-              onClick={() => {
-                setShowJoinModal(true);
-                setSelectedEmojis([]);
-                setPreviewData(null);
-                setJoinError(null);
-              }}
-              className="w-full py-3 px-4 rounded-xl bg-[#161922] hover:bg-[#202533] border border-[#3a4157] hover:border-[#c4a45a] text-[#f4f0e8] font-serif font-bold text-xs tracking-wide flex items-center justify-center space-x-2 transition-all shadow-sm"
-            >
-              <span>🤝 Join a Team (Enter 3 Emojis)</span>
-            </button>
-          </div>
-
-          {createError && (
-            <div className="p-2.5 rounded-lg bg-red-950/80 border border-red-500/60 text-red-200 text-xs font-medium">
-              {createError}
+            <div className="bg-[#161922]/80 border border-[#2a2e3d] p-3.5 rounded-xl space-y-1.5">
+              <div className="flex items-center space-x-1.5 text-sm font-semibold text-[#f4f0e8]">
+                <Users className="w-4 h-4 text-[#c4a45a]" />
+                <span>Physical Social Objective:</span>
+              </div>
+              <p className="text-sm text-[#8e95a5] leading-relaxed">
+                Mingle with other players in the room. Find {size.target - 1} other shades holding different roles to complete your escape crew ({size.min} to {size.max} players per crew):
+              </p>
+              <div className="flex flex-wrap gap-1.5 pt-1">
+                {roles.map(r => (
+                  <span
+                    key={r.id}
+                    className={`text-[11px] px-2 py-1 rounded-md font-medium border ${
+                      r.id === role.id ? 'border-[#c4a45a] bg-[#c4a45a]/20 text-[#f4f0e8] font-bold' : 'border-[#2a2e3d] bg-[#10121a] text-[#8e95a5]'
+                    }`}
+                  >
+                    {r.id === role.id ? '✓ ' : ''}
+                    {r.name}
+                  </span>
+                ))}
+              </div>
             </div>
-          )}
+
+            <div className="space-y-3 pt-1">
+              <button data-testid="create-team" onClick={() => run('create', () => send('CREATE_TEAM', {}))} disabled={busy === 'create'} className={BTN_GOLD}>
+                <Plus className="w-4 h-4" />
+                <span>{busy === 'create' ? 'Creating Crew...' : 'Create a Team'}</span>
+              </button>
+              <button
+                data-testid="join-team"
+                onClick={() => {
+                  setShowJoin(true);
+                  setPicked([]);
+                  setPreview(null);
+                  setError(null);
+                }}
+                className={BTN_DARK}
+              >
+                <span>Join a Team (Enter 3 Emojis)</span>
+              </button>
+            </div>
+            {!showJoin && <ErrorNote text={error} />}
+          </div>
         </div>
-      </div>
+      )}
 
-      {/* ========================================================================= */}
-      {/* JOIN TEAM EMOJI DIALPAD & CONFIRMATION MODAL                             */}
-      {/* ========================================================================= */}
-      {showJoinModal && (
-        <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4">
-          <div className="bg-[#10121a] border border-[#3a4157] rounded-2xl max-w-sm w-full p-6 shadow-2xl space-y-4 relative overflow-hidden">
-            {/* Top Close Button */}
+      {showJoin && (
+        <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-[#10121a] border border-[#3a4157] rounded-2xl max-w-sm w-full p-5 shadow-2xl space-y-4 relative overflow-hidden">
             <div className="flex items-center justify-between border-b border-[#2a2e3d] pb-3">
               <div>
-                <h3 className="text-base font-serif font-black text-[#f4f0e8]">Join a Team</h3>
-                <p className="text-[11px] text-[#8e95a5]">Tap the 3 emojis from your teammate&apos;s screen</p>
+                <h3 className="text-lg font-serif font-black text-[#f4f0e8]">Join a Team</h3>
+                <p className="text-xs text-[#8e95a5]">Tap the 3 emojis from your teammate&apos;s screen</p>
               </div>
-              <button
-                onClick={() => setShowJoinModal(false)}
-                className="text-[#8e95a5] hover:text-[#f4f0e8] text-base p-1"
-              >
+              <button onClick={() => setShowJoin(false)} aria-label="Close" className="w-11 h-11 text-[#8e95a5] hover:text-[#f4f0e8] text-lg">
                 ✕
               </button>
             </div>
 
-            {/* 3-Slot Indicator */}
-            <div className="space-y-1">
-              <div className="flex items-center justify-center space-x-3 py-2">
-                {[0, 1, 2].map((slotIdx) => {
-                  const emoji = selectedEmojis[slotIdx];
-                  const isCurrent = slotIdx === selectedEmojis.length;
-
-                  return (
-                    <div
-                      key={slotIdx}
-                      className={`w-16 h-16 rounded-2xl flex flex-col items-center justify-center border-2 transition-all ${
-                        emoji
-                          ? 'bg-[#161922] border-[#c4a45a] shadow-gold-glow scale-105'
-                          : isCurrent
-                          ? 'bg-[#161922] border-[#c4a45a]/70 border-dashed animate-pulse'
-                          : 'bg-[#161922]/50 border-[#2a2e3d] border-dashed'
-                      }`}
-                    >
-                      {emoji ? (
-                        <>
-                          <span className="text-2xl">{emoji}</span>
-                          <span className="text-[9px] font-mono font-bold text-[#c4a45a] uppercase tracking-wider">
-                            {TEAM_EMOJI_LABELS[emoji]}
-                          </span>
-                        </>
-                      ) : (
-                        <span className="text-xs font-mono text-[#8e95a5]">#{slotIdx + 1}</span>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-
-              {/* Phonetic Subtitle */}
-              {selectedEmojis.length > 0 && (
-                <p className="text-center text-xs font-mono font-bold text-[#c4a45a] tracking-wider">
-                  {selectedEmojis.map(e => TEAM_EMOJI_LABELS[e]).join(' • ')}
-                </p>
-              )}
-            </div>
-
-            {/* The 5 Emojis Dialpad */}
-            <div className="space-y-2">
-              <div className="grid grid-cols-5 gap-1.5">
-                {TEAM_EMOJI_POOL.map((emoji) => (
-                  <button
-                    key={emoji}
-                    type="button"
-                    onClick={() => handleEmojiTap(emoji)}
-                    disabled={selectedEmojis.length >= 3 || isPreviewLoading}
-                    className="flex flex-col items-center justify-center py-2.5 px-1 rounded-xl bg-[#161922] hover:bg-[#202533] border border-[#2a2e3d] hover:border-[#c4a45a] active:scale-95 transition-all disabled:opacity-40"
+            <div className="flex items-center justify-center space-x-3 py-1">
+              {[0, 1, 2].map(i => {
+                const e = picked[i];
+                const current = i === picked.length;
+                return (
+                  <div
+                    key={i}
+                    className={`w-16 h-16 rounded-2xl flex items-center justify-center border-2 transition-all ${
+                      e ? 'bg-[#161922] border-[#c4a45a] shadow-gold-glow' : current ? 'bg-[#161922] border-[#c4a45a]/70 border-dashed' : 'bg-[#161922]/50 border-[#2a2e3d] border-dashed'
+                    }`}
                   >
-                    <span className="text-2xl mb-0.5">{emoji}</span>
-                    <span className="text-[10px] font-mono font-bold text-[#f4f0e8]">
-                      {TEAM_EMOJI_LABELS[emoji]}
-                    </span>
-                  </button>
-                ))}
-              </div>
-
-              {/* Dialpad Utility Buttons (Backspace / Clear) */}
-              <div className="flex items-center justify-between text-xs font-mono pt-1">
-                <button
-                  type="button"
-                  onClick={handleClearEmojis}
-                  disabled={selectedEmojis.length === 0}
-                  className="text-[#8e95a5] hover:text-[#f4f0e8] disabled:opacity-30"
-                >
-                  Clear All
-                </button>
-                <button
-                  type="button"
-                  onClick={handleBackspace}
-                  disabled={selectedEmojis.length === 0}
-                  className="flex items-center space-x-1 text-[#e5cb87] hover:text-[#f4f0e8] disabled:opacity-30 font-bold"
-                >
-                  <Delete className="w-4 h-4" />
-                  <span>Delete</span>
-                </button>
-              </div>
+                    {e && <span className="text-3xl">{e}</span>}
+                  </div>
+                );
+              })}
             </div>
 
-            {/* Loading Indicator */}
-            {isPreviewLoading && (
-              <div className="p-3 rounded-xl bg-[#161922] border border-[#2a2e3d] flex items-center justify-center space-x-2 text-xs font-mono text-[#c4a45a]">
-                <RotateCcw className="w-4 h-4 animate-spin" />
-                <span>Finding crew...</span>
-              </div>
-            )}
-
-            {/* Error Message */}
-            {joinError && (
-              <div className="p-3 rounded-xl bg-red-950/80 border border-red-500/60 text-red-200 text-xs flex items-center space-x-2">
-                <AlertCircle className="w-4 h-4 shrink-0" />
-                <span>{joinError}</span>
-              </div>
-            )}
-
-            {/* =============================================================== */}
-            {/* PREVIEW & CONFIRMATION CARD (PREVENTS MISCLICKS)                */}
-            {/* =============================================================== */}
-            {previewData && (
-              <div className="p-4 rounded-xl bg-[#161922] border border-[#c4a45a]/70 shadow-gold-glow space-y-3 animate-fade-in">
-                <div className="flex items-start justify-between">
-                  <div>
-                    <span className="text-[10px] font-mono uppercase text-[#a9b4c7] block">
-                      Found Team
-                    </span>
-                    <h4 className="text-sm font-serif font-black text-[#f4f0e8]">
-                      {previewData.name}
-                    </h4>
+            {preview ? (
+              <div className="space-y-3" data-testid="team-preview">
+                <div className="p-4 rounded-xl bg-[#161922] border border-[#c4a45a]/60 space-y-1.5">
+                  <div className="text-base font-serif font-black text-[#f4f0e8]">{preview.name}</div>
+                  <div className="text-xs font-mono text-[#a9b4c7]">
+                    {preview.memberCount} of {preview.maxMembers} members • led by {preview.leaderName}
                   </div>
-                  <span className="text-xs font-mono font-bold text-[#c4a45a] px-2 py-0.5 rounded bg-[#10121a] border border-[#2a2e3d]">
-                    {previewData.memberCount}/{previewData.maxMembers} Seats
-                  </span>
-                </div>
-
-                {/* Existing Members Roster */}
-                <div className="space-y-1">
-                  <span className="text-[10px] font-mono uppercase tracking-wider text-[#8e95a5]">
-                    Current Crewmates:
-                  </span>
-                  <div className="flex flex-wrap gap-1.5">
-                    {previewData.members.map((m) => (
-                      <span
-                        key={m.id}
-                        className="text-[10px] font-mono px-2 py-0.5 rounded-md bg-[#10121a] border border-[#2a2e3d] text-[#cbd5e1]"
-                      >
-                        {m.name} ({m.roleName})
+                  <div className="flex flex-wrap gap-1.5 pt-1">
+                    {preview.members.map((m, i) => (
+                      <span key={i} className="text-[11px] px-2 py-1 rounded-md border border-[#3a4157] text-[#cbd5e1]">
+                        {m.name} • {byId(m.role)?.name ?? m.role}
                       </span>
                     ))}
                   </div>
-                </div>
-
-                {/* Compatibility Assessment */}
-                {previewData.isFull ? (
-                  <div className="p-2.5 rounded-lg bg-red-950/70 border border-red-500/50 text-red-200 text-xs">
-                    ⚠️ This team is already full ({previewData.maxMembers}/{previewData.maxMembers})!
-                  </div>
-                ) : previewData.hasRoleConflict ? (
-                  <div className="p-2.5 rounded-lg bg-amber-950/70 border border-amber-500/50 text-amber-200 text-xs space-y-1">
-                    <p className="font-bold">
-                      ⚠️ Role Conflict: {previewData.conflictingRoleName}
+                  {preview.isFull && <p className="text-sm text-red-300">This team is full.</p>}
+                  {preview.hasRoleConflict && !preview.isFull && (
+                    <p className="text-sm text-amber-300 flex items-start gap-1.5">
+                      <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
+                      <span>
+                        They already have a {byId(preview.conflictingRole ?? '')?.name ?? 'player'}. Re-roll your role first, or join another team.
+                      </span>
                     </p>
-                    <p className="text-[11px] leading-tight">
-                      This crew already has a {previewData.conflictingRoleName}. Each crew requires unique Underworld roles. Re-roll your role or join another crew.
-                    </p>
-                  </div>
-                ) : (
-                  <div className="p-2.5 rounded-lg bg-emerald-950/70 border border-emerald-500/50 text-emerald-200 text-xs flex items-center space-x-1.5">
-                    <Check className="w-4 h-4 text-emerald-400 shrink-0" />
-                    <span>Your role ({role.name}) is open for this crew!</span>
-                  </div>
-                )}
-
-                {/* Confirmation Action Buttons */}
-                <div className="flex space-x-2 pt-1">
-                  <button
-                    type="button"
-                    onClick={handleClearEmojis}
-                    className="flex-1 py-2.5 rounded-xl border border-[#2a2e3d] text-xs font-semibold text-[#8e95a5] hover:bg-[#10121a]"
-                  >
-                    Change Code
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleConfirmJoin}
-                    disabled={isJoining || previewData.isFull || previewData.hasRoleConflict}
-                    className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-[#c4a45a] to-[#e5cb87] text-[#08090c] text-xs font-bold font-serif shadow-gold-glow flex items-center justify-center space-x-1 disabled:opacity-40"
-                  >
-                    <span>{isJoining ? 'Joining...' : 'Confirm & Join'}</span>
-                    <ArrowRight className="w-3.5 h-3.5" />
-                  </button>
+                  )}
                 </div>
+                <ErrorNote text={error} />
+                <button data-testid="confirm-join" onClick={confirmJoin} disabled={busy === 'join' || preview.isFull} className={BTN_GOLD}>
+                  <Check className="w-4 h-4" />
+                  <span>{busy === 'join' ? 'Joining...' : `Join ${preview.name}`}</span>
+                </button>
               </div>
+            ) : (
+              <>
+                {previewLoading && <p className="text-center text-sm font-mono text-[#e5cb87]">Looking for that crew...</p>}
+                <ErrorNote text={error} />
+                <div className="grid grid-cols-5 gap-2">
+                  {pool.map(e => (
+                    <button
+                      key={e}
+                      data-testid={`emoji-${e}`}
+                      onClick={() => picked.length < 3 && setPicked([...picked, e])}
+                      aria-label={EMOJI_LABELS[e] ?? e}
+                      className="min-h-[56px] rounded-xl bg-[#161922] hover:bg-[#202533] border border-[#3a4157] hover:border-[#c4a45a] text-3xl flex items-center justify-center active:scale-95 transition"
+                    >
+                      {e}
+                    </button>
+                  ))}
+                </div>
+                <div className="flex gap-2">
+                  <button onClick={() => setPicked(picked.slice(0, -1))} disabled={!picked.length} className={`${BTN_DARK} flex-1`}>
+                    <Delete className="w-4 h-4" />
+                    <span>Back</span>
+                  </button>
+                  <button onClick={() => setPicked([])} disabled={!picked.length} className={`${BTN_DARK} flex-1`}>
+                    <ArrowRight className="w-4 h-4 rotate-180" />
+                    <span>Clear</span>
+                  </button>
+                </div>
+              </>
             )}
           </div>
         </div>
@@ -721,3 +439,16 @@ export const LobbyTeamFormation: React.FC = () => {
     </div>
   );
 };
+
+/** Split "🔥💀⚡" into its pool emojis (some are two code points). */
+function splitEmojis(code: string, pool: string[]): string[] {
+  const out: string[] = [];
+  let rest = code;
+  while (rest.length) {
+    const hit = [...pool].sort((a, b) => b.length - a.length).find(e => rest.startsWith(e));
+    if (!hit) break;
+    out.push(hit);
+    rest = rest.slice(hit.length);
+  }
+  return out;
+}

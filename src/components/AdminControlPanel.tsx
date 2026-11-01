@@ -1,2010 +1,648 @@
-import React, { useState, useEffect } from 'react';
-import { useGameSession } from '../context/GameContext';
+// /admin: the host's control panel. Polls the full snapshot every 2 s and sends ADMIN_* commands.
+// Nothing here is shown to players; the token is typed by the host and kept in sessionStorage.
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  verifyAdminPasscode,
-  adminSetState,
-  adminAdjustTimer,
-  adminChangeRole,
-  adminMovePlayerTeam,
-  adminRemovePlayer,
-  adminAddPlayer,
-  adminMarkRound1Solved,
-  adminUpdateConfig,
-  adminResetGame,
-  adminDeleteTeam,
-  renameTeamApi,
-  adminAutoGroup,
-  adminRebalanceUnassignedRoles,
-  fetchServerInfo,
-  adminRound2AutoPair,
-  adminRound2ManualPair,
-  adminRound2AdjustTimer,
-  adminRound2SkipPhase,
-  adminRound2ResetMatches,
-  adminRound3AdjustTimer,
-  adminRound3NextPhase,
-  adminRound3ForceNextWave,
-  adminRound3AdjustDistance,
-  adminRound3TriggerSuddenDeath,
-  adminRound3ResetSession,
-} from '../lib/api';
-import { evaluateTeamRound2MoralStatus } from '../lib/round3Engine';
-import type { SyncPayload, TeamMoralReport } from '../types';
-import {
-  ShieldAlert,
-  Play,
-  Pause,
-  Clock,
-  Users,
-  QrCode,
-  UserX,
-  Lock,
-  Trash2,
-  RotateCcw,
-  Swords,
-  FastForward,
-  RefreshCw,
-  CheckCircle2,
-  ChevronDown,
-  ChevronUp,
-  Search,
-  Trophy,
-  X,
-  Copy,
-  UserCheck,
-  Edit2,
-  Check,
-  Compass,
-  AlertTriangle,
-  Key,
+  Activity, Download, Eye, Pause, Play, RefreshCw, RotateCcw, Shield, SkipForward, Trash2, Upload, Users, Megaphone, Timer,
 } from 'lucide-react';
+import {
+  adminCommand, adminPost, downloadBackup, fetchAdminView, fetchHealth, getAdminToken, setAdminToken,
+} from '../game/admin';
+import type { AdminViewData, Durations, Health } from '../game/admin';
+import { rand } from '../game/backoff';
+import { formatClock } from '../game/clock';
+import { apiUrl, loadRuntimeConfig } from '../game/config';
+import { useTick } from '../game/useNow';
 
-interface AdminProps {
-  payload: SyncPayload | null;
-  onClose?: () => void;
-}
+const BTN = 'min-h-[44px] px-3 rounded-lg border border-[#3a4157] bg-[#161922] hover:bg-[#202533] hover:border-[#c4a45a] text-[#f4f0e8] text-sm font-semibold flex items-center justify-center gap-1.5 disabled:opacity-40 transition';
+const BTN_PRIMARY = 'min-h-[48px] px-4 rounded-xl bg-gradient-to-r from-[#c4a45a] to-[#e5cb87] text-[#08090c] font-serif font-black text-sm flex items-center justify-center gap-2 disabled:opacity-50 shadow-gold-glow';
+const BTN_RED = 'min-h-[44px] px-3 rounded-lg border border-red-500/50 bg-red-950/40 hover:bg-red-900/60 text-red-200 text-sm font-semibold flex items-center justify-center gap-1.5 disabled:opacity-40';
+const BOX = 'bg-[#10121a] border border-[#3a4157] rounded-2xl p-4 space-y-3';
+const H = 'text-[11px] font-mono uppercase tracking-wider text-[#e5cb87] font-bold';
+const INPUT = 'min-h-[44px] bg-[#161922] border border-[#3a4157] focus:border-[#c4a45a] rounded-lg px-3 text-sm text-[#f4f0e8] outline-none';
 
-function renderMoralBadge(report: TeamMoralReport, isHonourableOverride?: boolean) {
-  const isHonourable = isHonourableOverride || report.status === 'HONOURABLE';
-  if (isHonourable) {
-    return (
-      <span
-        className="px-2 py-0.5 rounded text-[10px] font-mono font-bold shrink-0 bg-emerald-950/80 border border-emerald-500/80 text-emerald-300"
-        title="🕊️ Winds of Olympus (+75m)"
-      >
-        🕊️ +75m Winds
-      </span>
-    );
-  }
-  if (report.status === 'BETRAYED') {
-    return (
-      <span
-        className="px-2 py-0.5 rounded text-[10px] font-mono font-bold shrink-0 bg-rose-950/80 border border-rose-500/80 text-rose-300"
-        title={report.label}
-      >
-        🩸 Betrayed (Cerberus)
-      </span>
-    );
-  }
-  if (report.status === 'AGGRESSOR') {
-    return (
-      <span
-        className="px-2 py-0.5 rounded text-[10px] font-mono font-bold shrink-0 bg-amber-950/80 border border-amber-500/80 text-amber-300"
-        title={report.label}
-      >
-        🗡️ Aggressor (Hunted)
-      </span>
-    );
-  }
-  if (report.status === 'MUTUAL_BRAWL') {
-    return (
-      <span
-        className="px-2 py-0.5 rounded text-[10px] font-mono font-bold shrink-0 bg-purple-950/80 border border-purple-500/80 text-purple-300"
-        title={report.label}
-      >
-        ⚔️ Blood Feud
-      </span>
-    );
-  }
-  return null;
-}
+type Tab = 'game' | 'teams' | 'players' | 'round2' | 'settings';
 
-export const AdminControlPanel: React.FC<AdminProps> = ({ payload, onClose }) => {
-  const { refresh } = useGameSession();
-  const [passcode, setPasscode] = useState(() => localStorage.getItem('underworld_admin_pass') || '');
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
+const NEXT_ACTION: Record<string, { type: string; label: string }> = {
+  LOBBY: { type: 'ADMIN_START_GAME', label: 'Start Round 1' },
+  R1_RESULTS: { type: 'ADMIN_START_R2', label: 'Start Round 2 (pairing)' },
+  R2_PAIRING: { type: 'ADMIN_R2_FORCE_START', label: 'Force-start Round 2 clashes' },
+  R2_RESULTS: { type: 'ADMIN_START_R3', label: 'Start Round 3' },
+  R3_RESULTS: { type: 'ADMIN_FINISH', label: 'Finish game (final standings)' },
+};
+
+export const AdminControlPanel: React.FC = () => {
+  const [token, setToken] = useState(getAdminToken());
+  const [tokenInput, setTokenInput] = useState('');
   const [authError, setAuthError] = useState<string | null>(null);
 
-  // 2 Primary Tabs: 'cockpit' (Live Operation) | 'roster' (People & Crews)
-  const [activeTab, setActiveTab] = useState<'cockpit' | 'roster'>('cockpit');
+  const [view, setView] = useState<AdminViewData | null>(null);
+  const [health, setHealth] = useState<Health | null>(null);
+  const [online, setOnline] = useState(true);
+  const [tab, setTab] = useState<Tab>('game');
+  const [log, setLog] = useState<string>('');
+  const [busy, setBusy] = useState(false);
+  const etag = useRef<string | null>(null);
+  const offsetRef = useRef(0);
+  useTick(500);
 
-  // Server Info & QR Modal
-  const [serverInfo, setServerInfo] = useState<{ localIp: string; joinUrl: string; qrDataUrl: string | null } | null>(null);
-  const [showQrModal, setShowQrModal] = useState(false);
-  const [copiedLink, setCopiedLink] = useState(false);
-
-  // Private Admin-Only Live Leaderboard modal state
-  const [showAdminLeaderboard, setShowAdminLeaderboard] = useState(false);
-
-  // Reset Game Safety Modal
-  const [showResetModal, setShowResetModal] = useState(false);
-  const [isResetting, setIsResetting] = useState(false);
-
-  // Roster Search & Crew Directory
-  const [crewSearch, setCrewSearch] = useState('');
-  const [expandedCrewIds, setExpandedCrewIds] = useState<Set<string>>(new Set());
-  const [editingCrewId, setEditingCrewId] = useState<string | null>(null);
-  const [editingCrewName, setEditingCrewName] = useState('');
-
-  // Round 1 filter & status message
-  const [r1Search, setR1Search] = useState('');
-  const [r1Msg, setR1Msg] = useState<string | null>(null);
-
-  // Add offline player form
-  const [newPlayerName, setNewPlayerName] = useState('');
-  const [newPlayerRoleId, setNewPlayerRoleId] = useState('navigator');
-
-  // Round 2 state
-  const [manualTeamA, setManualTeamA] = useState('');
-  const [manualTeamB, setManualTeamB] = useState('');
-  const [showManualPairing, setShowManualPairing] = useState(false);
-  const [r2Msg, setR2Msg] = useState<string | null>(null);
-
-  // Round 3 state
-  const [sdTeamA, setSdTeamA] = useState('');
-  const [sdTeamB, setSdTeamB] = useState('');
-  const [r3Msg, setR3Msg] = useState<string | null>(null);
-
-  // Initial auth check
+  // ---- polling: admin snapshot (ETag) + /health, every 2 s with jitter
   useEffect(() => {
-    const savedPass = localStorage.getItem('underworld_admin_pass');
-    if (savedPass) {
-      verifyAdminPasscode(savedPass).then(ok => {
-        setIsAuthenticated(ok);
-        if (ok) {
-          fetchServerInfo().then(setServerInfo).catch(console.warn);
-        } else {
-          localStorage.removeItem('underworld_admin_pass');
-          setPasscode('');
-        }
-      });
+    if (!token) return;
+    let stopped = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const poll = async () => {
+      const [v, h] = await Promise.all([fetchAdminView(etag.current), fetchHealth()]);
+      if (stopped) return;
+      if (v === 'unauthorized') {
+        setAdminToken('');
+        setToken('');
+        setAuthError('The admin token was refused.');
+        return;
+      }
+      setOnline(v !== null && h !== null);
+      if (h) setHealth(h);
+      if (v && v !== 'same') {
+        etag.current = v.etag;
+        offsetRef.current = v.data.serverNow - Date.now();
+        setView(v.data);
+      }
+      timer = setTimeout(poll, rand(1800, 2400));
+    };
+    void loadRuntimeConfig().then(() => {
+      if (!stopped) void poll();
+    });
+    return () => {
+      stopped = true;
+      if (timer) clearTimeout(timer);
+    };
+  }, [token]);
+
+  // ---- keep a free Render instance awake while the panel is open (every 3 minutes)
+  useEffect(() => {
+    if (!token) return;
+    const id = setInterval(() => {
+      void fetchHealth();
+    }, 180_000);
+    return () => clearInterval(id);
+  }, [token]);
+
+  const refreshSoon = () => {
+    etag.current = null;
+  };
+
+  const run = useCallback(async (label: string, type: string, payload: unknown = {}, ok?: () => void) => {
+    setBusy(true);
+    const r = await adminCommand(type, payload);
+    setBusy(false);
+    setLog(`${new Date().toLocaleTimeString()} ${label}: ${r.ok ? 'OK' : `FAILED (${r.error ?? r.status})`}`);
+    if (r.ok) {
+      etag.current = null;
+      ok?.();
     }
+    return r;
   }, []);
 
-  const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const clean = passcode.trim();
-    if (!clean) {
-      setAuthError('Please enter the Game Master passcode.');
-      return;
-    }
-    setAuthError(null);
-    const ok = await verifyAdminPasscode(clean);
-    if (ok) {
-      setIsAuthenticated(true);
-      localStorage.setItem('underworld_admin_pass', clean);
-      fetchServerInfo().then(setServerInfo).catch(console.warn);
-    } else {
-      setAuthError('Invalid Game Master passcode.');
-    }
-  };
-
-  const handleLogout = () => {
-    localStorage.removeItem('underworld_admin_pass');
-    setPasscode('');
-    setIsAuthenticated(false);
-  };
-
-  // Universal Time Adjust (Adjusts global round timer AND active Round 2 & Round 3 timers)
-  const handleUniversalTimeAdjust = async (deltaSeconds: number) => {
-    await Promise.all([
-      adminAdjustTimer(passcode, 'adjust', deltaSeconds),
-      adminRound2AdjustTimer(passcode, deltaSeconds),
-      adminRound3AdjustTimer(passcode, deltaSeconds),
-    ]);
-    await refresh();
-  };
-
-  const handleTimePause = async () => {
-    await adminAdjustTimer(passcode, 'pause');
-    await refresh();
-  };
-
-  const handleStateChange = async (state: any, roundIndex?: number) => {
-    await adminSetState(passcode, state, roundIndex);
-    await refresh();
-  };
-
-  const handleMarkRound1Solved = async (teamId: string, teamName: string) => {
-    if (confirm(`Mark Round 1 as SOLVED for "${teamName}"? This calculates legitimate points based on elapsed time.`)) {
-      const res = await adminMarkRound1Solved(passcode, teamId);
-      if (res?.success) {
-        setR1Msg(`✓ Awarded +${res.points || 0} PTS to ${teamName}!`);
-      } else {
-        setR1Msg(`⚠️ ${res?.message || 'Could not mark solved'}`);
-      }
-      setTimeout(() => setR1Msg(null), 4000);
-      await refresh();
-    }
-  };
-
-  const handleTargetCrewSizeChange = async (newSize: number) => {
-    if (!payload?.config || newSize < 2 || newSize > 10) return;
-    const updated = { ...payload.config, team_size: newSize };
-    await adminUpdateConfig(passcode, updated);
-    await refresh();
-  };
-
-  const handleRoleChange = async (playerId: string, roleId: string) => {
-    await adminChangeRole(passcode, playerId, roleId);
-    await refresh();
-  };
-
-  const handleMovePlayer = async (playerId: string, targetTeamId: string | null) => {
-    await adminMovePlayerTeam(passcode, playerId, targetTeamId);
-    await refresh();
-  };
-
-  const handleRemovePlayer = async (playerId: string) => {
-    if (confirm('Permanently remove this player from the session?')) {
-      await adminRemovePlayer(passcode, playerId);
-      await refresh();
-    }
-  };
-
-  const handleAddPlayer = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newPlayerName.trim()) return;
-    await adminAddPlayer(passcode, newPlayerName.trim(), newPlayerRoleId);
-    setNewPlayerName('');
-    await refresh();
-  };
-
-  const handleAutoGroup = async () => {
-    await adminAutoGroup(passcode);
-    await refresh();
-  };
-
-  const handleRebalanceRoles = async () => {
-    await adminRebalanceUnassignedRoles(passcode);
-    await refresh();
-  };
-
-  const handleRenameTeam = async (teamId: string) => {
-    if (!editingCrewName.trim()) return;
-    try {
-      await renameTeamApi(teamId, editingCrewName.trim());
-      setEditingCrewId(null);
-      setEditingCrewName('');
-      await refresh();
-    } catch (e: any) {
-      alert(`Failed to rename crew: ${e.message || e}`);
-    }
-  };
-
-  const handleDeleteTeam = async (teamId: string, teamName: string) => {
-    if (confirm(`Disband "${teamName}"? All crew members will be moved back to the unassigned lobby.`)) {
-      const res = await adminDeleteTeam(passcode, teamId);
-      if (res && !res.success && res.error) {
-        alert(`Failed to delete team: ${res.error}`);
-      }
-      await refresh();
-    }
-  };
-
-  const handleResetGame = async () => {
-    setIsResetting(true);
-    try {
-      await adminResetGame(passcode);
-      await refresh();
-      setShowResetModal(false);
-    } catch (e: any) {
-      alert(`Reset failed: ${e?.message || e}`);
-    } finally {
-      setIsResetting(false);
-    }
-  };
-
-  // Round 2 Handlers
-  const handleR2SkipPhase = async (matchId?: string) => {
-    await adminRound2SkipPhase(passcode, matchId);
-    await refresh();
-  };
-
-  const handleR2AutoPair = async () => {
-    const res = await adminRound2AutoPair(passcode);
-    if (res.error) {
-      setR2Msg(`Auto-pair notice: ${res.error}`);
-    } else {
-      setR2Msg(`Successfully paired ${res.pairedCount} matches!`);
-    }
-    setTimeout(() => setR2Msg(null), 4000);
-    await refresh();
-  };
-
-  const handleR2ManualPair = async () => {
-    if (!manualTeamA || !manualTeamB) {
-      setR2Msg('Select both squads to pair.');
-      return;
-    }
-    const res = await adminRound2ManualPair(passcode, manualTeamA, manualTeamB);
-    if (res.error) {
-      setR2Msg(res.error);
-    } else {
-      setR2Msg('Crews paired successfully!');
-      setManualTeamA('');
-      setManualTeamB('');
-      setShowManualPairing(false);
-    }
-    setTimeout(() => setR2Msg(null), 4000);
-    await refresh();
-  };
-
-  const handleR2ResetMatches = async () => {
-    if (confirm('Reset all Round 2 matches, clash records, and pairings?')) {
-      await adminRound2ResetMatches(passcode);
-      await refresh();
-    }
-  };
-
-  // Round 3 Handlers
-  const handleR3AdjustTimer = async (delta: number) => {
-    await adminRound3AdjustTimer(passcode, delta);
-    await refresh();
-    setR3Msg(`Adjusted wave timer by +${delta}s`);
-    setTimeout(() => setR3Msg(null), 4000);
-  };
-
-  const handleR3NextPhase = async () => {
-    await adminRound3NextPhase(passcode);
-    await refresh();
-    setR3Msg('Advanced wave to next phase');
-    setTimeout(() => setR3Msg(null), 4000);
-  };
-
-  const handleR3ForceWave = async () => {
-    await adminRound3ForceNextWave(passcode);
-    await refresh();
-    setR3Msg('Forced next wave');
-    setTimeout(() => setR3Msg(null), 4000);
-  };
-
-  const handleR3AdjustDistance = async (teamId: string, deltaMeters: number) => {
-    await adminRound3AdjustDistance(passcode, teamId, deltaMeters);
-    await refresh();
-  };
-
-  const handleR3TriggerSuddenDeath = async () => {
-    if (!sdTeamA || !sdTeamB) return;
-    const res = await adminRound3TriggerSuddenDeath(passcode, sdTeamA, sdTeamB);
-    if (res.error) {
-      setR3Msg(`Sudden Death error: ${res.error}`);
-    } else {
-      setR3Msg('⚡ Sudden Death Standoff initiated!');
-      setSdTeamA('');
-      setSdTeamB('');
-    }
-    setTimeout(() => setR3Msg(null), 4000);
-    await refresh();
-  };
-
-  const handleR3ResetSession = async () => {
-    if (confirm('Reset all Round 3 wave records, distance states, and podium spots?')) {
-      await adminRound3ResetSession(passcode);
-      await refresh();
-    }
-  };
-
-  const handleCopyJoinLink = () => {
-    const url = serverInfo?.joinUrl || window.location.origin + '/join';
-    navigator.clipboard.writeText(url);
-    setCopiedLink(true);
-    setTimeout(() => setCopiedLink(false), 2500);
-  };
-
-  // Toggle crew expand
-  const toggleCrewExpand = (teamId: string) => {
-    setExpandedCrewIds(prev => {
-      const next = new Set(prev);
-      if (next.has(teamId)) next.delete(teamId);
-      else next.add(teamId);
-      return next;
-    });
-  };
-
-  // Auth Screen
-  if (!isAuthenticated) {
+  if (!token) {
     return (
-      <div className="flex items-center justify-center p-6 min-h-[60vh]">
-        <div className="bg-[#10121a] border border-[#2a2e3d] rounded-2xl p-6 max-w-sm w-full space-y-4 shadow-2xl">
-          <div className="text-center space-y-1.5">
-            <div className="w-12 h-12 rounded-xl bg-[#c4a45a]/20 border border-[#c4a45a] flex items-center justify-center mx-auto text-[#c4a45a]">
-              <Lock className="w-6 h-6" />
-            </div>
-            <h2 className="text-lg font-serif font-bold text-[#f4f0e8]">
-              Game Master Access
-            </h2>
-            <p className="text-xs text-[#8e95a5]">
-              Enter the master passcode to open the orchestrator console.
-            </p>
+      <div className="min-h-screen bg-[#08090c] text-[#f4f0e8] flex items-center justify-center p-4">
+        <form
+          className={`${BOX} w-full max-w-sm`}
+          onSubmit={e => {
+            e.preventDefault();
+            if (!tokenInput.trim()) return;
+            setAdminToken(tokenInput.trim());
+            setToken(tokenInput.trim());
+            setTokenInput('');
+            setAuthError(null);
+            etag.current = null;
+          }}
+        >
+          <div className="flex items-center gap-2">
+            <Shield className="w-5 h-5 text-[#c4a45a]" />
+            <h1 className="text-lg font-serif font-black">Game master</h1>
           </div>
-
-          <form onSubmit={handleLogin} className="space-y-3">
-            <div>
-              <input
-                type="password"
-                value={passcode}
-                onChange={(e) => setPasscode(e.target.value)}
-                placeholder="Admin Passcode..."
-                className="w-full bg-[#161922] border border-[#2a2e3d] focus:border-[#c4a45a] rounded-xl px-4 py-3 text-sm text-[#f4f0e8] outline-none text-center font-mono"
-              />
-            </div>
-
-            {authError && (
-              <p className="text-xs text-red-400 text-center">{authError}</p>
-            )}
-
-            <button
-              type="submit"
-              className="w-full py-3 rounded-xl bg-gradient-to-r from-[#c4a45a] to-[#e5cb87] hover:from-[#d8b86e] hover:to-[#f0d89e] text-[#08090c] font-serif font-bold text-sm tracking-wide shadow-gold-glow transition-all"
-            >
-              Authenticate Game Master
-            </button>
-          </form>
-
-          {onClose && (
-            <button
-              onClick={onClose}
-              className="w-full py-2 text-xs text-[#8e95a5] hover:text-[#f4f0e8] transition-colors"
-            >
-              ← Back to Player View
-            </button>
-          )}
-        </div>
+          <label htmlFor="admin-token" className={H}>
+            Admin token
+          </label>
+          <input id="admin-token" data-testid="admin-token" type="password" autoComplete="off" value={tokenInput} onChange={e => setTokenInput(e.target.value)} className={`${INPUT} w-full`} />
+          {authError && <div className="text-sm text-red-300">{authError}</div>}
+          <button data-testid="admin-login" type="submit" className={`${BTN_PRIMARY} w-full`}>
+            Open control panel
+          </button>
+        </form>
       </div>
     );
   }
 
-  // Derive state collections
-  const roles = payload?.config.roles || [];
-  const teams = payload?.teams_leaderboard || [];
-  const unassigned = payload?.unassigned_players || [];
-  const round2Matches = payload?.round2_all_matches || [];
-  const targetCrewSize = payload?.config?.team_size || 5;
-
-  const totalAttendees = teams.reduce((acc, t) => acc + t.members.length, 0) + unassigned.length;
-
-  const pairedTeamIds = new Set<string>();
-  round2Matches.forEach(m => {
-    if (!m.completed) {
-      pairedTeamIds.add(m.team_a_id);
-      pairedTeamIds.add(m.team_b_id);
-    }
-  });
-  const unpairedTeams = teams.filter(t => !pairedTeamIds.has(t.id));
-
-  // Determine Game State Step Index for the Progress Rail
-  const currentRoundIdx = payload?.current_round_index ?? 0;
-  const isLobby = payload?.state === 'LOBBY_TEAM_FORMATION';
-  const isRoundLeaderboard = payload?.state === 'ROUND_LEADERBOARD';
-  const isRoundActive = payload?.state === 'ROUND_ACTIVE';
-
-  const currentStep = isLobby
-    ? 0
-    : isRoundActive && currentRoundIdx === 0
-    ? 1
-    : isRoundActive && currentRoundIdx === 1
-    ? 2
-    : isRoundActive && currentRoundIdx === 2
-    ? 3
-    : 4;
-
-  const timeLeftSeconds = payload?.round_ends_at
-    ? Math.max(0, Math.floor((payload.round_ends_at - (payload.server_now || Date.now())) / 1000))
-    : 0;
+  const phase = view?.phase;
+  const nameOf = (id: string | null | undefined) => (id ? view?.teams.find(t => t.id === id)?.name ?? id : '-');
+  const left = phase?.endsAt != null ? (phase.paused && phase.pausedAt ? phase.endsAt - phase.pausedAt : phase.endsAt - (Date.now() + offsetRef.current)) : null;
+  const next = phase ? NEXT_ACTION[phase.name] : undefined;
 
   return (
-    <div className="space-y-4 py-3 max-w-5xl mx-auto">
-      {/* ===================================================================== */}
-      {/* HEADER: STATUS, QUICK ACTIONS & MODAL TRIGGERS                         */}
-      {/* ===================================================================== */}
-      <div className="bg-[#10121a] border border-[#2a2e3d] rounded-2xl p-4 shadow-xl flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center space-x-3">
-          <div className="w-9 h-9 rounded-xl bg-[#c4a45a]/20 border border-[#c4a45a] flex items-center justify-center text-[#c4a45a] shadow-gold-glow">
-            <ShieldAlert className="w-5 h-5" />
+    <div className="min-h-screen bg-[#08090c] text-[#f4f0e8] underworld-bg-mesh">
+      <div className="max-w-4xl mx-auto p-4 space-y-4">
+        <header className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <Shield className="w-5 h-5 text-[#c4a45a]" />
+            <h1 className="text-xl font-serif font-black">Game master</h1>
           </div>
-          <div>
-            <div className="flex items-center space-x-2">
-              <h2 className="text-sm font-serif font-black text-[#f4f0e8] uppercase tracking-wide">
-                Game Master Cockpit
-              </h2>
-              <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold ${
-                isLobby
-                  ? 'bg-amber-950/80 text-amber-300 border border-amber-500/40'
-                  : isRoundActive
-                  ? 'bg-emerald-950/80 text-emerald-300 border border-emerald-500/40'
-                  : 'bg-purple-950/80 text-purple-300 border border-purple-500/40'
-              }`}>
-                {isLobby
-                  ? '● LOBBY: CREW FORMATION'
-                  : isRoundActive
-                  ? `● ACTIVE: R${currentRoundIdx + 1} (${timeLeftSeconds}s left)`
-                  : '● LEADERBOARD & INTERMISSION'}
-              </span>
-            </div>
-            <span className="text-[10px] font-mono text-[#8e95a5]">
-              {totalAttendees} Shades in Venue • {teams.length} Crews • Target Size: {targetCrewSize}
+          <div className="flex items-center gap-2">
+            <span data-testid="admin-online" className={`text-xs font-mono ${online ? 'text-emerald-400' : 'text-red-400'}`}>
+              {online ? 'CONNECTED' : 'SERVER NOT REACHABLE'}
             </span>
+            <button
+              className={BTN}
+              onClick={() => {
+                setAdminToken('');
+                setToken('');
+                setView(null);
+              }}
+            >
+              Sign out
+            </button>
           </div>
+        </header>
+
+        {/* Status strip */}
+        <div data-testid="admin-status" className={`${BOX} grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm`}>
+          <Stat label="Phones connected" value={health ? String(health.clients) : '-'} />
+          <Stat label="Event-loop lag" value={health ? `${health.eventLoopLagMs.toFixed(1)} ms` : '-'} warn={!!health && health.eventLoopLagMs > 100} />
+          <Stat label="Memory" value={health ? `${health.rssMB} MB (heap ${health.heapUsedMB})` : '-'} />
+          <Stat label="Snapshot age" value={health ? (health.snapshotAgeSec == null ? 'none yet' : `${health.snapshotAgeSec.toFixed(0)} s${health.lastSnapshotOk ? '' : ' FAILING'}`) : '-'} warn={!!health && !health.lastSnapshotOk} />
+          <Stat label="State version" value={view ? String(view.v) : '-'} />
+          <Stat label="Players / crews" value={view ? `${view.counts.players} / ${view.counts.teams}` : '-'} />
+          <Stat label="Cmds per s" value={health ? health.commandsPerSec.toFixed(1) : '-'} />
+          <Stat label="Uptime" value={health ? `${Math.floor(health.uptimeSec / 60)} min` : '-'} />
         </div>
 
-        <div className="flex items-center space-x-2">
-          {/* Join QR Button */}
-          <button
-            onClick={() => setShowQrModal(true)}
-            className="px-3 py-1.5 rounded-xl border border-[#c4a45a]/60 bg-[#161922] hover:bg-[#c4a45a] hover:text-[#08090c] text-xs font-mono font-bold text-[#c4a45a] flex items-center space-x-1.5 transition-all shadow-sm"
-            title="Display large scannable QR code for players"
-          >
-            <QrCode className="w-4 h-4" />
-            <span className="hidden sm:inline">Join QR</span>
-          </button>
+        {/* Phase card */}
+        {phase && (
+          <div className={`${BOX}`}>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <div className={H}>Current phase</div>
+                <div data-testid="admin-phase" className="text-2xl font-serif font-black">
+                  {phase.name}
+                  {phase.step ? ` / ${phase.step}` : ''}
+                  {phase.name === 'R2_CLASH' ? ` (clash ${phase.clash})` : ''}
+                  {phase.name === 'R3_ACTIVE' ? ` (wave ${phase.wave})` : ''}
+                </div>
+                {phase.paused && <div className="text-amber-300 font-bold text-sm">PAUSED</div>}
+              </div>
+              {left !== null && (
+                <div data-testid="admin-countdown" className={`text-5xl font-mono font-black tabular-nums ${phase.paused ? 'text-amber-300' : ''}`}>
+                  {formatClock(left)}
+                </div>
+              )}
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {next && (
+                <button data-testid="admin-next" disabled={busy} className={BTN_PRIMARY} onClick={() => void run(next.label, next.type)}>
+                  <Play className="w-4 h-4" />
+                  {next.label}
+                </button>
+              )}
+              {phase.endsAt != null && (
+                <button data-testid="admin-skip" disabled={busy} className={BTN} onClick={() => void run('Skip step', 'ADMIN_SKIP_STEP', { phaseSeq: phase.phaseSeq })}>
+                  <SkipForward className="w-4 h-4" />
+                  Skip step
+                </button>
+              )}
+              {phase.paused ? (
+                <button data-testid="admin-resume" disabled={busy} className={BTN} onClick={() => void run('Resume', 'ADMIN_RESUME')}>
+                  <Play className="w-4 h-4" />
+                  Resume
+                </button>
+              ) : (
+                <button data-testid="admin-pause" disabled={busy} className={BTN} onClick={() => void run('Pause', 'ADMIN_PAUSE')}>
+                  <Pause className="w-4 h-4" />
+                  Pause
+                </button>
+              )}
+              {phase.endsAt != null && (
+                <>
+                  <button disabled={busy} className={BTN} onClick={() => void run('+30 s', 'ADMIN_ADJUST_DEADLINE', { seconds: 30 })}>
+                    <Timer className="w-4 h-4" />
+                    +30 s
+                  </button>
+                  <button disabled={busy} className={BTN} onClick={() => void run('-30 s', 'ADMIN_ADJUST_DEADLINE', { seconds: -30 })}>
+                    <Timer className="w-4 h-4" />
+                    -30 s
+                  </button>
+                </>
+              )}
+              {phase.name === 'R3_ACTIVE' && (
+                <button disabled={busy} className={BTN_RED} onClick={() => confirm('End Round 3 now?') && void run('End Round 3', 'ADMIN_END_R3')}>
+                  End Round 3
+                </button>
+              )}
+              <button
+                data-testid="admin-resync"
+                disabled={busy}
+                className={BTN}
+                onClick={async () => {
+                  const r = await adminPost('/api/admin/resync', {});
+                  setLog(`${new Date().toLocaleTimeString()} Resync all clients: ${r.ok ? `OK (${String(r.body?.notified ?? '?')} notified)` : 'FAILED'}`);
+                }}
+              >
+                <RefreshCw className="w-4 h-4" />
+                Resync all clients
+              </button>
+            </div>
+            <div className="text-xs font-mono text-[#8e95a5]" data-testid="admin-log">
+              {log || 'No actions yet.'}
+            </div>
+          </div>
+        )}
 
-          {/* Live Standings Button */}
-          <button
-            onClick={() => setShowAdminLeaderboard(true)}
-            className="px-3 py-1.5 rounded-xl border border-[#2a2e3d] bg-[#161922] hover:border-[#c4a45a] text-xs font-mono font-bold text-[#f4f0e8] flex items-center space-x-1.5 transition-all"
-            title="Inspect current standings privately"
-          >
-            <Trophy className="w-4 h-4 text-[#c4a45a]" />
-            <span className="hidden sm:inline">Standings</span>
-          </button>
-
-          {/* Reset Game Button */}
-          <button
-            onClick={() => setShowResetModal(true)}
-            className="px-2.5 py-1.5 rounded-xl border border-red-500/40 bg-red-950/30 hover:bg-red-900/50 text-red-300 text-xs font-mono transition-all"
-            title="Reset game to lobby"
-          >
-            <RotateCcw className="w-4 h-4" />
-          </button>
-
-          {/* Lock / Log Out */}
-          <button
-            onClick={handleLogout}
-            className="px-2.5 py-1.5 rounded-xl border border-amber-500/40 bg-amber-950/30 hover:bg-amber-900/50 text-amber-300 text-xs font-mono font-bold flex items-center space-x-1.5 transition-all shadow-sm"
-            title="Lock Game Master Cockpit & Log Out"
-          >
-            <Lock className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">Lock</span>
-          </button>
-
-          {/* Exit Admin */}
-          {onClose && (
-            <button
-              onClick={onClose}
-              className="px-3 py-1.5 rounded-xl border border-[#2a2e3d] bg-[#161922] text-xs font-mono text-[#8e95a5] hover:text-[#f4f0e8] transition-colors"
-            >
-              Exit
+        {/* Tabs */}
+        <nav className="flex flex-wrap gap-2">
+          {(
+            [
+              ['game', 'Announcements', Megaphone],
+              ['teams', 'Crews', Users],
+              ['players', 'Players', Eye],
+              ['round2', 'Round 2 pairing', Activity],
+              ['settings', 'Settings & backup', RotateCcw],
+            ] as [Tab, string, React.ComponentType<{ className?: string }>][]
+          ).map(([id, label, Icon]) => (
+            <button key={id} data-testid={`tab-${id}`} onClick={() => setTab(id)} className={`${BTN} ${tab === id ? '!border-[#c4a45a] !bg-[#c4a45a]/15' : ''}`}>
+              <Icon className="w-4 h-4" />
+              {label}
             </button>
-          )}
-        </div>
+          ))}
+        </nav>
+
+        {view && tab === 'game' && <AnnounceTab view={view} setLog={setLog} refreshSoon={refreshSoon} />}
+        {view && tab === 'teams' && <TeamsTab view={view} run={run} busy={busy} />}
+        {view && tab === 'players' && <PlayersTab view={view} run={run} busy={busy} nameOf={nameOf} />}
+        {view && tab === 'round2' && <PairingTab view={view} run={run} busy={busy} nameOf={nameOf} />}
+        {view && tab === 'settings' && <SettingsTab view={view} run={run} busy={busy} setLog={setLog} />}
+        {!view && <div className="text-sm text-[#8e95a5] font-mono">Loading the game state…</div>}
       </div>
+    </div>
+  );
+};
 
-      {/* ===================================================================== */}
-      {/* UNIVERSAL LIVE TIME & PACING CONTROLS (ALWAYS AVAILABLE)               */}
-      {/* ===================================================================== */}
-      <div className="bg-[#10121a] border border-[#2a2e3d] rounded-2xl p-3 shadow-lg flex flex-wrap items-center justify-between gap-2 text-xs font-mono">
-        <div className="flex items-center space-x-2">
-          <Clock className="w-4 h-4 text-[#c4a45a]" />
-          <span className="text-[#8e95a5]">Pacing Controls:</span>
-          <button
-            onClick={handleTimePause}
-            disabled={!isRoundActive}
-            className="px-2.5 py-1 rounded-lg border border-[#2a2e3d] bg-[#161922] hover:border-[#c4a45a] text-[#f4f0e8] flex items-center space-x-1 disabled:opacity-40 transition-all font-bold"
-          >
-            {payload?.round_is_paused ? <Play className="w-3.5 h-3.5 text-emerald-400" /> : <Pause className="w-3.5 h-3.5 text-amber-400" />}
-            <span>{payload?.round_is_paused ? 'Resume' : 'Pause'}</span>
-          </button>
-        </div>
+type Run = (label: string, type: string, payload?: unknown, ok?: () => void) => Promise<{ ok: boolean }>;
 
-        <div className="flex items-center space-x-1.5 flex-wrap">
-          <button
-            onClick={() => handleUniversalTimeAdjust(-30)}
-            className="px-2.5 py-1 rounded-lg bg-[#161922] border border-red-500/30 hover:border-red-400 text-red-300 font-bold"
-          >
-            -30s
-          </button>
-          <button
-            onClick={() => handleUniversalTimeAdjust(-15)}
-            className="px-2.5 py-1 rounded-lg bg-[#161922] border border-red-500/30 hover:border-red-400 text-red-300 font-bold"
-          >
-            -15s
-          </button>
-          <button
-            onClick={() => handleUniversalTimeAdjust(15)}
-            className="px-2.5 py-1 rounded-lg bg-[#161922] border border-emerald-500/40 hover:border-emerald-400 text-emerald-300 font-bold"
-          >
-            +15s
-          </button>
-          <button
-            onClick={() => handleUniversalTimeAdjust(30)}
-            className="px-2.5 py-1 rounded-lg bg-[#161922] border border-emerald-500/40 hover:border-emerald-400 text-emerald-300 font-bold"
-          >
-            +30s
-          </button>
-          <button
-            onClick={() => handleUniversalTimeAdjust(60)}
-            className="px-2.5 py-1 rounded-lg bg-[#161922] border border-emerald-500/40 hover:border-emerald-400 text-emerald-300 font-bold"
-          >
-            +1m
-          </button>
+const Stat: React.FC<{ label: string; value: string; warn?: boolean }> = ({ label, value, warn }) => (
+  <div>
+    <div className="text-[10px] font-mono uppercase text-[#8e95a5]">{label}</div>
+    <div className={`font-mono font-bold ${warn ? 'text-red-400' : 'text-[#f4f0e8]'}`}>{value}</div>
+  </div>
+);
 
-          {/* Contextual Skip Phase Shortcut */}
-          {isRoundActive && currentRoundIdx === 1 && (
-            <button
-              onClick={() => handleR2SkipPhase()}
-              className="px-3 py-1 rounded-lg bg-purple-900/60 border border-purple-500/50 hover:bg-purple-800 text-purple-200 font-bold flex items-center space-x-1 ml-1"
-              title="Force skip clash phase for all Round 2 tables"
-            >
-              <FastForward className="w-3.5 h-3.5 text-purple-300" />
-              <span>Skip Clash</span>
-            </button>
-          )}
-
-          {isRoundActive && currentRoundIdx === 2 && (
-            <button
-              onClick={handleR3NextPhase}
-              className="px-3 py-1 rounded-lg bg-amber-900/60 border border-amber-500/50 hover:bg-amber-800 text-amber-200 font-bold flex items-center space-x-1 ml-1"
-              title="Advance Round 3 wave to next phase"
-            >
-              <FastForward className="w-3.5 h-3.5 text-amber-300" />
-              <span>Next Phase</span>
-            </button>
-          )}
-        </div>
-      </div>
-
-      {/* ===================================================================== */}
-      {/* 2 PRIMARY TABS: LIVE COCKPIT vs CREWS & ROSTER                        */}
-      {/* ===================================================================== */}
-      <div className="grid grid-cols-2 gap-2 bg-[#10121a] border border-[#2a2e3d] p-1.5 rounded-2xl max-w-lg mx-auto">
-        <button
-          onClick={() => setActiveTab('cockpit')}
-          className={`py-2 px-4 rounded-xl text-xs font-mono font-bold flex items-center justify-center space-x-2 transition-all ${
-            activeTab === 'cockpit'
-              ? 'bg-[#c4a45a] text-[#08090c] shadow-gold-glow'
-              : 'text-[#8e95a5] hover:text-[#f4f0e8]'
-          }`}
-        >
-          <Compass className="w-4 h-4" />
-          <span>🎮 Live Game Cockpit</span>
+// ------------------------------------------------------------------ announcements
+const AnnounceTab: React.FC<{ view: AdminViewData; setLog: (s: string) => void; refreshSoon: () => void }> = ({ view, setLog, refreshSoon }) => {
+  const [text, setText] = useState('');
+  const send = async (t: string | null) => {
+    const r = await adminPost('/api/admin/notice', { text: t });
+    setLog(`${new Date().toLocaleTimeString()} Notice: ${r.ok ? 'OK' : 'FAILED'}`);
+    refreshSoon();
+  };
+  return (
+    <div className={BOX}>
+      <div className={H}>Banner on every phone and the projector</div>
+      <div className="text-sm text-[#cbd5e1]">Current: {view.notice ? `"${view.notice}"` : 'none'}</div>
+      <div className="flex flex-wrap gap-2">
+        <input value={text} onChange={e => setText(e.target.value)} maxLength={140} placeholder="Back in two minutes" aria-label="Notice text" className={`${INPUT} flex-1 min-w-[220px]`} />
+        <button className={BTN_PRIMARY} onClick={() => text.trim() && void send(text.trim()).then(() => setText(''))}>
+          Show
         </button>
+        <button className={BTN} onClick={() => void send(null)}>
+          Clear
+        </button>
+      </div>
+    </div>
+  );
+};
 
-        <button
-          onClick={() => setActiveTab('roster')}
-          className={`py-2 px-4 rounded-xl text-xs font-mono font-bold flex items-center justify-center space-x-2 transition-all ${
-            activeTab === 'roster'
-              ? 'bg-[#c4a45a] text-[#08090c] shadow-gold-glow'
-              : 'text-[#8e95a5] hover:text-[#f4f0e8]'
-          }`}
-        >
+// ------------------------------------------------------------------ crews
+const TeamsTab: React.FC<{ view: AdminViewData; run: Run; busy: boolean }> = ({ view, run, busy }) => {
+  const [delta, setDelta] = useState(50);
+  const inR1 = view.phase.name === 'R1_ACTIVE';
+  return (
+    <div className={BOX}>
+      <div className="flex items-center justify-between gap-3">
+        <div className={H}>Crews ({view.teams.length})</div>
+        <label className="flex items-center gap-2 text-xs font-mono text-[#a9b4c7]">
+          Adjust amount
+          <input type="number" value={delta} onChange={e => setDelta(Number(e.target.value) || 0)} className={`${INPUT} w-24`} aria-label="Adjust amount" />
+        </label>
+      </div>
+      {view.phase.name === 'LOBBY' && (
+        <button className={BTN} disabled={busy} onClick={() => void run('Auto-group', 'ADMIN_AUTO_GROUP')}>
           <Users className="w-4 h-4" />
-          <span>👥 Crews & Roster ({teams.length})</span>
+          Auto-group players without a crew
+        </button>
+      )}
+      <div className="space-y-2">
+        {view.teams.map(t => {
+          const members = view.players.filter(p => p.teamId === t.id);
+          const r3 = view.r3?.teams[t.id];
+          return (
+            <div key={t.id} data-testid="admin-team" className="rounded-xl border border-[#2a2e3d] bg-[#161922] p-3 space-y-2">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <span className="font-serif font-black">{t.name}</span> <span className="text-lg">{t.emojiCode}</span>{' '}
+                  <span className="text-xs font-mono text-[#8e95a5]">battle code {t.battleCode}</span>
+                </div>
+                <div className="font-mono font-bold text-[#e5cb87]">
+                  {t.score} pts <span className="text-xs text-[#8e95a5]">(R1 {t.r1Points}, R2 {t.r2Points}, adj {t.adminAdjust})</span>
+                </div>
+              </div>
+              <div className="text-xs text-[#a9b4c7]">
+                {members.length} members: {members.map(m => `${m.name} (${m.role})`).join(', ') || 'none'}
+                {t.r1 ? ` • codeword ${t.r1.codeword}${t.r1.solved ? ' (solved)' : ''}` : ''}
+                {r3 ? ` • ${r3.escaped ? `escaped #${r3.escapeRank}` : `${r3.distance} m`}${r3.honourBonus ? ' • honour' : ''}` : ''}
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <button className={BTN} disabled={busy} onClick={() => void run(`${t.name} +${delta} pts`, 'ADMIN_ADJUST_SCORE', { teamId: t.id, delta })}>
+                  +{delta} pts
+                </button>
+                <button className={BTN} disabled={busy} onClick={() => void run(`${t.name} -${delta} pts`, 'ADMIN_ADJUST_SCORE', { teamId: t.id, delta: -delta })}>
+                  -{delta} pts
+                </button>
+                {inR1 && !t.r1?.solved && (
+                  <button className={BTN} disabled={busy} onClick={() => void run(`Mark ${t.name} solved`, 'ADMIN_MARK_R1_SOLVED', { teamId: t.id })}>
+                    Mark R1 solved
+                  </button>
+                )}
+                {r3 && !r3.escaped && (
+                  <>
+                    <button className={BTN} disabled={busy} onClick={() => void run(`${t.name} +${delta} m`, 'ADMIN_ADJUST_DISTANCE', { teamId: t.id, delta })}>
+                      +{delta} m
+                    </button>
+                    <button className={BTN} disabled={busy} onClick={() => void run(`${t.name} -${delta} m`, 'ADMIN_ADJUST_DISTANCE', { teamId: t.id, delta: -delta })}>
+                      -{delta} m
+                    </button>
+                    <button className={BTN} disabled={busy} onClick={() => void run(`Toggle honour ${t.name}`, 'ADMIN_TOGGLE_HONOUR', { teamId: t.id })}>
+                      Toggle honour bonus
+                    </button>
+                  </>
+                )}
+                <button
+                  className={BTN_RED}
+                  disabled={busy}
+                  onClick={() => confirm(`Delete crew "${t.name}"? Its players become unassigned.`) && void run(`Delete ${t.name}`, 'ADMIN_DELETE_TEAM', { teamId: t.id })}
+                >
+                  <Trash2 className="w-4 h-4" />
+                  Delete
+                </button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      {view.phase.name === 'R3_ACTIVE' && <SuddenDeathForm view={view} run={run} busy={busy} />}
+    </div>
+  );
+};
+
+const SuddenDeathForm: React.FC<{ view: AdminViewData; run: Run; busy: boolean }> = ({ view, run, busy }) => {
+  const [a, setA] = useState('');
+  const [b, setB] = useState('');
+  return (
+    <div className="rounded-xl border border-red-500/40 p-3 space-y-2">
+      <div className={H}>Trigger Sudden Death</div>
+      <div className="flex flex-wrap gap-2">
+        <TeamSelect view={view} value={a} onChange={setA} label="Crew A" />
+        <TeamSelect view={view} value={b} onChange={setB} label="Crew B" />
+        <button className={BTN_RED} disabled={busy || !a || !b || a === b} onClick={() => void run('Sudden death', 'ADMIN_TRIGGER_SUDDEN_DEATH', { teamA: a, teamB: b })}>
+          Start standoff
         </button>
       </div>
+    </div>
+  );
+};
 
-      {/* ===================================================================== */}
-      {/* TAB 1: LIVE GAME COCKPIT                                              */}
-      {/* ===================================================================== */}
-      {activeTab === 'cockpit' && (
-        <div className="space-y-4">
-          {/* Status Message Banners */}
-          {r2Msg && (
-            <div className="p-3 rounded-xl bg-purple-950/60 border border-purple-500/50 text-purple-200 text-xs font-mono flex items-center space-x-2">
-              <CheckCircle2 className="w-4 h-4 text-purple-400 flex-shrink-0" />
-              <span>{r2Msg}</span>
+const TeamSelect: React.FC<{ view: AdminViewData; value: string; onChange: (v: string) => void; label: string; only?: string[] }> = ({ view, value, onChange, label, only }) => (
+  <select aria-label={label} value={value} onChange={e => onChange(e.target.value)} className={`${INPUT} min-w-[160px]`}>
+    <option value="">{label}</option>
+    {view.teams
+      .filter(t => !only || only.includes(t.id))
+      .map(t => (
+        <option key={t.id} value={t.id}>
+          {t.name} ({t.battleCode})
+        </option>
+      ))}
+  </select>
+);
+
+// ------------------------------------------------------------------ players
+const PlayersTab: React.FC<{ view: AdminViewData; run: Run; busy: boolean; nameOf: (id: string | null) => string }> = ({ view, run, busy, nameOf }) => {
+  const [name, setName] = useState('');
+  const [teamId, setTeamId] = useState('');
+  const [filter, setFilter] = useState('');
+  const players = view.players.filter(p => !filter || p.name.toLowerCase().includes(filter.toLowerCase()));
+  return (
+    <div className={BOX}>
+      <div className={H}>Players ({view.players.length}, {view.counts.connected} connected)</div>
+      <div className="flex flex-wrap gap-2">
+        <input value={filter} onChange={e => setFilter(e.target.value)} placeholder="Filter by name" aria-label="Filter players" className={`${INPUT} flex-1 min-w-[160px]`} />
+      </div>
+      <div className="flex flex-wrap gap-2 items-center rounded-xl border border-[#2a2e3d] p-2">
+        <input value={name} onChange={e => setName(e.target.value)} placeholder="New player name" aria-label="New player name" className={`${INPUT} flex-1 min-w-[160px]`} />
+        <TeamSelect view={view} value={teamId} onChange={setTeamId} label="No crew" />
+        <button className={BTN} disabled={busy} onClick={() => void run('Add player', 'ADMIN_ADD_PLAYER', { name, ...(teamId ? { teamId } : {}) }, () => setName(''))}>
+          Add player
+        </button>
+      </div>
+      <div className="max-h-[480px] overflow-y-auto space-y-1.5">
+        {players.map(p => (
+          <div key={p.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-[#161922] border border-[#2a2e3d] px-3 py-2">
+            <div className="min-w-0">
+              <span className={`inline-block w-2 h-2 rounded-full mr-2 ${p.connected ? 'bg-emerald-400' : 'bg-[#3a4157]'}`} />
+              <span className="font-bold">{p.name}</span> <span className="text-xs text-[#8e95a5]">{p.role} • {p.teamId ? nameOf(p.teamId) : 'no crew'}</span>
             </div>
-          )}
-          {r3Msg && (
-            <div className="p-3 rounded-xl bg-amber-950/60 border border-amber-500/50 text-amber-200 text-xs font-mono flex items-center space-x-2">
-              <CheckCircle2 className="w-4 h-4 text-amber-400 flex-shrink-0" />
-              <span>{r3Msg}</span>
-            </div>
-          )}
-
-          {/* STAGE TIMELINE RAIL */}
-          <div className="bg-[#10121a] border border-[#2a2e3d] rounded-2xl p-4 shadow-xl">
-            <span className="text-[10px] font-mono uppercase tracking-widest text-[#8e95a5] block mb-2">
-              Stage Progression Rail (Tap to switch stage)
-            </span>
-            <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
-              {[
-                { label: '1. Lobby Formation', state: 'LOBBY_TEAM_FORMATION', roundIdx: undefined, step: 0 },
-                { label: '2. Round 1: Words', state: 'ROUND_ACTIVE', roundIdx: 0, step: 1 },
-                { label: '3. Round 2: Mist', state: 'ROUND_ACTIVE', roundIdx: 1, step: 2 },
-                { label: '4. Round 3: Escape', state: 'ROUND_ACTIVE', roundIdx: 2, step: 3 },
-                { label: '5. Grand Finale', state: 'ROUND_LEADERBOARD', roundIdx: 2, step: 4 },
-              ].map((item) => {
-                const isCurrent = currentStep === item.step;
-                const isPassed = currentStep > item.step;
-                return (
-                  <button
-                    key={item.label}
-                    onClick={() => {
-                      if (confirm(`Advance game to "${item.label}"?`)) {
-                        handleStateChange(item.state, item.roundIdx);
-                      }
-                    }}
-                    className={`p-2.5 rounded-xl border text-left transition-all relative overflow-hidden ${
-                      isCurrent
-                        ? 'bg-gradient-to-r from-[#c4a45a]/20 to-[#161922] border-[#c4a45a] text-[#f4f0e8] shadow-gold-glow'
-                        : isPassed
-                        ? 'bg-[#161922]/40 border-emerald-500/30 text-emerald-300'
-                        : 'bg-[#161922]/20 border-[#2a2e3d] text-[#8e95a5] hover:border-[#8e95a5]'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between text-[10px] font-mono font-bold mb-1">
-                      <span>{isPassed ? '✓ DONE' : isCurrent ? '● ACTIVE' : 'PENDING'}</span>
-                      {isCurrent && <span className="w-1.5 h-1.5 rounded-full bg-[#c4a45a] animate-ping" />}
-                    </div>
-                    <span className="text-xs font-serif font-bold block truncate">{item.label}</span>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* DYNAMIC CONTEXT-AWARE STAGE CARD */}
-
-          {/* CONTEXT 1: LOBBY & CREW FORMATION */}
-          {isLobby && (
-            <div className="bg-[#10121a] border border-amber-500/40 rounded-2xl p-5 shadow-xl space-y-4">
-              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#2a2e3d] pb-3">
-                <div>
-                  <span className="text-[10px] font-mono uppercase text-amber-400 font-bold tracking-wider">
-                    Stage 1 Active: Pub Gathering & Crew Formation
-                  </span>
-                  <h3 className="text-base font-serif font-black text-[#f4f0e8]">
-                    Pre-Game Lobby Orchestration
-                  </h3>
-                </div>
-                <div className="flex items-center space-x-2 text-xs font-mono">
-                  <span className="px-2.5 py-1 rounded-lg bg-[#161922] border border-[#2a2e3d] text-amber-300">
-                    {unassigned.length} Unassigned Shades
-                  </span>
-                  <span className="px-2.5 py-1 rounded-lg bg-[#161922] border border-[#2a2e3d] text-[#c4a45a]">
-                    {teams.length} Crews Formed
-                  </span>
-                </div>
-              </div>
-
-              {/* Target Crew Size Stepper */}
-              <div className="p-3.5 rounded-xl bg-[#161922] border border-[#2a2e3d] flex flex-wrap items-center justify-between gap-3">
-                <div>
-                  <span className="text-xs font-serif font-bold text-[#f4f0e8] block">
-                    Target Crew Size
-                  </span>
-                  <p className="text-[10px] text-[#8e95a5]">
-                    Attendees auto-group into teams of this size.
-                  </p>
-                </div>
-
-                <div className="flex items-center space-x-2">
-                  <div className="flex items-center bg-[#10121a] border border-[#2a2e3d] rounded-xl p-1">
-                    <button
-                      onClick={() => handleTargetCrewSizeChange(targetCrewSize - 1)}
-                      disabled={targetCrewSize <= 2}
-                      className="w-7 h-7 rounded-lg bg-[#161922] text-[#f4f0e8] hover:bg-[#c4a45a] hover:text-[#08090c] font-mono font-bold flex items-center justify-center disabled:opacity-30 transition-all"
-                    >
-                      -
-                    </button>
-                    <span className="px-3 font-mono font-bold text-xs text-[#c4a45a]">
-                      {targetCrewSize} Shades
-                    </span>
-                    <button
-                      onClick={() => handleTargetCrewSizeChange(targetCrewSize + 1)}
-                      disabled={targetCrewSize >= 8}
-                      className="w-7 h-7 rounded-lg bg-[#161922] text-[#f4f0e8] hover:bg-[#c4a45a] hover:text-[#08090c] font-mono font-bold flex items-center justify-center disabled:opacity-30 transition-all"
-                    >
-                      +
-                    </button>
-                  </div>
-
-                  <div className="hidden sm:flex items-center space-x-1 text-[10px] font-mono">
-                    {[3, 4, 5, 6].map(num => (
-                      <button
-                        key={num}
-                        onClick={() => handleTargetCrewSizeChange(num)}
-                        className={`w-6 h-6 rounded-lg transition-all ${
-                          targetCrewSize === num
-                            ? 'bg-[#c4a45a] text-[#08090c] font-bold shadow-gold-glow'
-                            : 'bg-[#10121a] border border-[#2a2e3d] text-[#8e95a5] hover:text-[#f4f0e8]'
-                        }`}
-                      >
-                        {num}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </div>
-
-              {/* Lobby Actions */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <button
-                  onClick={handleAutoGroup}
-                  disabled={unassigned.length === 0}
-                  className="py-3 px-4 rounded-xl bg-gradient-to-r from-[#161922] to-[#202533] border border-[#c4a45a]/60 hover:border-[#c4a45a] text-xs font-mono font-bold text-[#f4f0e8] flex items-center justify-center space-x-2 transition-all disabled:opacity-40 shadow-sm"
-                >
-                  <Users className="w-4 h-4 text-[#c4a45a]" />
-                  <span>⚡ Auto-Group Unassigned ({unassigned.length})</span>
-                </button>
-
-                <button
-                  onClick={handleRebalanceRoles}
-                  disabled={unassigned.length === 0}
-                  className="py-3 px-4 rounded-xl bg-[#161922] border border-[#2a2e3d] hover:border-[#c4a45a] text-xs font-mono font-bold text-[#8e95a5] hover:text-[#f4f0e8] flex items-center justify-center space-x-2 transition-all disabled:opacity-40"
-                >
-                  <UserCheck className="w-4 h-4 text-emerald-400" />
-                  <span>⚖️ Auto-Balance Roles</span>
-                </button>
-              </div>
-
-              {/* Preview of Assigned R1 Codewords for Formed Crews */}
-              {teams.length > 0 && (
-                <div className="p-3 rounded-xl bg-[#161922] border border-[#2a2e3d] space-y-2">
-                  <div className="flex items-center justify-between text-[10px] font-mono uppercase text-[#8e95a5]">
-                    <span className="flex items-center space-x-1.5 font-bold text-cyan-400">
-                      <Key className="w-3.5 h-3.5 text-cyan-400" />
-                      <span>Round 1 Assigned Codewords ({teams.length} Crews)</span>
-                    </span>
-                    <span>Ready for Launch</span>
-                  </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 max-h-36 overflow-y-auto">
-                    {teams.map(t => (
-                      <div key={t.id} className="flex items-center justify-between bg-[#10121a] px-2.5 py-1.5 rounded-lg border border-[#2a2e3d]/60 text-[10px] font-mono">
-                        <span className="text-[#f4f0e8] font-bold truncate mr-2">{t.name}</span>
-                        <span className="text-cyan-300 font-bold bg-cyan-950/80 border border-cyan-500/40 px-1.5 py-0.5 rounded shrink-0">{t.assignedCodeword || 'CRIMSON SHADOW'}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Launch Round 1 CTA */}
-              <button
-                onClick={() => {
-                  if (confirm('Launch Round 1: ASCII Splitter for all crews?')) {
-                    handleStateChange('ROUND_ACTIVE', 0);
-                  }
-                }}
-                disabled={teams.length === 0}
-                className="w-full py-3.5 rounded-xl bg-gradient-to-r from-[#c4a45a] to-[#e5cb87] hover:from-[#d8b86e] hover:to-[#f0d89e] text-[#08090c] font-serif font-black text-sm tracking-wide shadow-gold-glow flex items-center justify-center space-x-2 transition-all disabled:opacity-50 cursor-pointer"
-              >
-                <span>🚀 Launch Round 1: ASCII Splitter ➔</span>
-              </button>
-            </div>
-          )}
-
-          {/* CONTEXT 2: ROUND 1 (ASCII SPLITTER) */}
-          {isRoundActive && currentRoundIdx === 0 && (
-            <div className="bg-[#10121a] border border-cyan-500/40 rounded-2xl p-5 shadow-xl space-y-4">
-              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#2a2e3d] pb-3">
-                <div>
-                  <span className="text-[10px] font-mono uppercase text-cyan-400 font-bold tracking-wider">
-                    Round 1 Active: The Shattered Tablet
-                  </span>
-                  <h3 className="text-base font-serif font-black text-[#f4f0e8]">
-                    Asymmetric Codeword Coordination
-                  </h3>
-                </div>
-                <div className="text-right">
-                  <span className="text-lg font-mono font-black text-[#c4a45a]">
-                    {Math.floor(timeLeftSeconds / 60)}:{(timeLeftSeconds % 60).toString().padStart(2, '0')}
-                  </span>
-                  <span className="text-[10px] font-mono text-[#8e95a5] block">Time Remaining</span>
-                </div>
-              </div>
-
-              {/* Status Notice */}
-              {r1Msg && (
-                <div className="p-3 rounded-xl bg-cyan-950/60 border border-cyan-500/50 text-cyan-200 text-xs font-mono flex items-center space-x-2">
-                  <CheckCircle2 className="w-4 h-4 text-cyan-400 flex-shrink-0" />
-                  <span>{r1Msg}</span>
-                </div>
-              )}
-
-              {/* Active Codewords by Crew */}
-              <div className="space-y-2.5">
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] font-mono text-[#8e95a5] uppercase tracking-wider block">
-                    Active Crew Codewords & Submission Status
-                  </span>
-                  <span className="text-[10px] font-mono text-cyan-400">
-                    {teams.filter(t => (t.score || 0) > 0).length} of {teams.length} Solved
-                  </span>
-                </div>
-
-                {/* Instant Search Filter for Multi-Admin Pub Walkarounds */}
-                <div className="relative">
-                  <Search className="w-3.5 h-3.5 text-[#8e95a5] absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-                  <input
-                    type="text"
-                    value={r1Search}
-                    onChange={(e) => setR1Search(e.target.value)}
-                    placeholder="Search crew by name or battle code to resolve network lag..."
-                    className="w-full bg-[#161922] border border-[#2a2e3d] rounded-xl pl-9 pr-8 py-2 text-xs text-[#f4f0e8] placeholder-[#8e95a5]/60 outline-none font-mono focus:border-cyan-500"
-                  />
-                  {r1Search && (
-                    <button
-                      onClick={() => setR1Search('')}
-                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#8e95a5] hover:text-[#f4f0e8]"
-                    >
-                      <X className="w-3.5 h-3.5" />
-                    </button>
-                  )}
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  {teams
-                    .filter(t => {
-                      if (!r1Search.trim()) return true;
-                      const q = r1Search.toLowerCase().trim();
-                      return t.name.toLowerCase().includes(q) || (t.battle_code || '').toLowerCase().includes(q);
-                    })
-                    .map(t => {
-                      const hasSubmitted = (t.score || 0) > 0;
-                      return (
-                        <div
-                          key={t.id}
-                          className="p-3 rounded-xl bg-[#161922] border border-[#2a2e3d] flex items-center justify-between text-xs font-mono gap-2"
-                        >
-                          <div className="min-w-0 flex-1">
-                            <div className="font-bold text-[#f4f0e8] flex items-center space-x-1.5 truncate">
-                              <span className="truncate">{t.name}</span>
-                              {t.battle_code && (
-                                <span className="text-[10px] text-[#c4a45a] shrink-0">[{t.battle_code}]</span>
-                              )}
-                            </div>
-                            <span className="text-[10px] text-[#8e95a5] block truncate">
-                              Word: <strong className="text-cyan-300">{t.assignedCodeword || 'CRIMSON SHADOW'}</strong>
-                            </span>
-                          </div>
-
-                          <div className="shrink-0">
-                            {hasSubmitted ? (
-                              <span className="px-2 py-0.5 rounded bg-emerald-950/80 border border-emerald-500/50 text-emerald-300 text-[10px] font-bold">
-                                ✓ Solved (+{t.score} PTS)
-                              </span>
-                            ) : (
-                              <div className="flex items-center space-x-1.5">
-                                <span className="px-2 py-0.5 rounded bg-amber-950/60 border border-amber-500/40 text-amber-300 text-[10px]">
-                                  Solving...
-                                </span>
-                                <button
-                                  onClick={() => handleMarkRound1Solved(t.id, t.name)}
-                                  className="px-2 py-0.5 rounded-lg bg-emerald-950/80 border border-emerald-500/50 hover:bg-emerald-900 text-emerald-300 text-[10px] font-mono font-bold flex items-center space-x-1 shadow-sm transition-all"
-                                  title="Manually mark solved if team's phone connection timed out on submit"
-                                >
-                                  <Check className="w-3 h-3 text-emerald-400" />
-                                  <span>Mark Solved</span>
-                                </button>
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    })}
-                </div>
-              </div>
-
-              {/* Advance to Round 2 */}
-              <button
-                onClick={() => {
-                  if (confirm('Conclude Round 1 and advance to Round 2 (Shades in the Mist)?')) {
-                    handleStateChange('ROUND_ACTIVE', 1);
-                  }
-                }}
-                className="w-full py-3 rounded-xl bg-[#161922] border border-cyan-500/60 hover:bg-cyan-950/40 text-cyan-200 font-serif font-bold text-xs flex items-center justify-center space-x-2 transition-all"
-              >
-                <span>Advance to Round 2: Shades in the Mist ➔</span>
-              </button>
-            </div>
-          )}
-
-          {/* CONTEXT 3: ROUND 2 (SHADES IN THE MIST) */}
-          {isRoundActive && currentRoundIdx === 1 && (
-            <div className="bg-[#10121a] border border-purple-500/40 rounded-2xl p-5 shadow-xl space-y-4">
-              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#2a2e3d] pb-3">
-                <div>
-                  <span className="text-[10px] font-mono uppercase text-purple-400 font-bold tracking-wider">
-                    Round 2 Active: Prisoner&apos;s Dilemma
-                  </span>
-                  <h3 className="text-base font-serif font-black text-[#f4f0e8]">
-                    Clash Arena Matchmaking & Orchestration
-                  </h3>
-                </div>
-                <div className="flex items-center space-x-2 text-xs font-mono">
-                  <span className="px-2.5 py-1 rounded-lg bg-[#161922] border border-[#2a2e3d] text-purple-300">
-                    {round2Matches.length} Matches Paired
-                  </span>
-                  <span className="px-2.5 py-1 rounded-lg bg-[#161922] border border-[#2a2e3d] text-amber-300">
-                    {unpairedTeams.length} Unlinked
-                  </span>
-                </div>
-              </div>
-
-              {/* Auto-Pair Unlinked Teams Button */}
-              <div className="flex items-center space-x-2">
-                <button
-                  onClick={handleR2AutoPair}
-                  disabled={unpairedTeams.length < 2}
-                  className="flex-1 py-3 bg-gradient-to-r from-purple-900 to-indigo-900 hover:from-purple-800 hover:to-indigo-800 border border-purple-500/50 text-[#f4f0e8] font-serif font-bold text-xs rounded-xl shadow-md flex items-center justify-center space-x-2 transition-all disabled:opacity-40 cursor-pointer"
-                >
-                  <Swords className="w-4 h-4 text-purple-300" />
-                  <span>⚡ Auto-Pair All Unlinked Crews ({unpairedTeams.length})</span>
-                </button>
-                <button
-                  onClick={handleR2ResetMatches}
-                  className="px-3 py-3 rounded-xl bg-red-950/40 border border-red-500/30 hover:bg-red-900/60 text-red-300 font-mono text-xs transition-colors flex items-center space-x-1"
-                  title="Reset all matches"
-                >
-                  <RotateCcw className="w-3.5 h-3.5" />
-                  <span>Reset</span>
-                </button>
-              </div>
-
-              {/* Manual Pairing Drawer */}
-              <div className="border border-[#2a2e3d] rounded-xl overflow-hidden bg-[#161922]">
-                <button
-                  type="button"
-                  onClick={() => setShowManualPairing(!showManualPairing)}
-                  className="w-full px-3.5 py-2.5 flex items-center justify-between text-left hover:bg-[#1a1e29] transition-colors"
-                >
-                  <span className="text-[10px] font-mono text-[#8e95a5] uppercase">
-                    Manual Table Pairing Override {showManualPairing ? '' : '(Click to open)'}
-                  </span>
-                  {showManualPairing ? (
-                    <ChevronUp className="w-3.5 h-3.5 text-[#c4a45a]" />
-                  ) : (
-                    <ChevronDown className="w-3.5 h-3.5 text-[#8e95a5]" />
-                  )}
-                </button>
-
-                {showManualPairing && (
-                  <div className="p-3.5 pt-1 space-y-2 border-t border-[#2a2e3d]/60">
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                      <div>
-                        <label className="text-[9px] font-mono text-[#8e95a5] block mb-0.5">Squad Alpha:</label>
-                        <select
-                          value={manualTeamA}
-                          onChange={(e) => setManualTeamA(e.target.value)}
-                          className="w-full bg-[#10121a] border border-[#2a2e3d] rounded-lg p-2 text-xs text-[#f4f0e8] outline-none"
-                        >
-                          <option value="">-- Choose Squad Alpha --</option>
-                          {teams.map(t => (
-                            <option key={t.id} value={t.id} disabled={t.id === manualTeamB}>
-                              {t.name} [{t.battle_code || '--'}] {pairedTeamIds.has(t.id) ? '(Already Paired)' : ''}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                      <div>
-                        <label className="text-[9px] font-mono text-[#8e95a5] block mb-0.5">Squad Beta (Opponent):</label>
-                        <select
-                          value={manualTeamB}
-                          onChange={(e) => setManualTeamB(e.target.value)}
-                          className="w-full bg-[#10121a] border border-[#2a2e3d] rounded-lg p-2 text-xs text-[#f4f0e8] outline-none"
-                        >
-                          <option value="">-- Choose Squad Beta --</option>
-                          {teams.map(t => (
-                            <option key={t.id} value={t.id} disabled={t.id === manualTeamA}>
-                              {t.name} [{t.battle_code || '--'}] {pairedTeamIds.has(t.id) ? '(Already Paired)' : ''}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                    </div>
-                    <button
-                      onClick={handleR2ManualPair}
-                      disabled={!manualTeamA || !manualTeamB || manualTeamA === manualTeamB}
-                      className="w-full py-2 bg-[#161922] border border-purple-500/60 hover:bg-purple-900 text-purple-200 text-xs font-mono font-bold rounded-lg transition-all disabled:opacity-40"
-                    >
-                      Link Selected Squads
-                    </button>
-                  </div>
-                )}
-              </div>
-
-              {/* Active Matches Summary */}
-              {round2Matches.length > 0 && (
-                <div className="space-y-2">
-                  <span className="text-[10px] font-mono text-[#8e95a5] uppercase tracking-wider block">
-                    Live Paired Matches Monitor
-                  </span>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                    {round2Matches.map((m, idx) => {
-                      const tA = teams.find(t => t.id === m.team_a_id);
-                      const tB = teams.find(t => t.id === m.team_b_id);
-                      const isCompleted = m.completed || (m.clash_data && m.clash_data.length >= 3);
-                      const moralA = evaluateTeamRound2MoralStatus(m.team_a_id, round2Matches, teams);
-                      const moralB = evaluateTeamRound2MoralStatus(m.team_b_id, round2Matches, teams);
-
-                      return (
-                        <div
-                          key={m.id || idx}
-                          className="p-3 rounded-xl bg-[#161922] border border-[#2a2e3d] text-xs font-mono space-y-1.5"
-                        >
-                          <div className="flex items-center justify-between">
-                            <span className="font-bold text-[#f4f0e8]">
-                              {tA?.name || 'Squad A'} <span className="text-[#8e95a5]">vs</span> {tB?.name || 'Squad B'}
-                            </span>
-                            <span className="px-1.5 py-0.5 rounded text-[10px] bg-purple-950 border border-purple-500/40 text-purple-300 font-bold">
-                              {isCompleted ? 'Match Concluded' : `Clash ${m.current_clash} • ${m.current_phase}`}
-                            </span>
-                          </div>
-                          <div className="flex items-center justify-between text-[10px] text-[#8e95a5]">
-                            <span>Battle Codes: [{tA?.battle_code || '--'}] vs [{tB?.battle_code || '--'}]</span>
-                            {!isCompleted && (
-                              <button
-                                onClick={() => handleR2SkipPhase(m.id)}
-                                className="text-purple-300 hover:underline"
-                              >
-                                Skip Phase ⏭️
-                              </button>
-                            )}
-                          </div>
-                          {isCompleted && (
-                            <div className="pt-2 border-t border-[#2a2e3d]/60 flex flex-wrap items-center justify-between gap-1 text-[10px]">
-                              <div className="flex items-center space-x-1.5">
-                                <span className="text-[#8e95a5]">{tA?.name || 'Squad A'}:</span>
-                                {renderMoralBadge(moralA)}
-                              </div>
-                              <div className="flex items-center space-x-1.5">
-                                <span className="text-[#8e95a5]">{tB?.name || 'Squad B'}:</span>
-                                {renderMoralBadge(moralB)}
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-
-              {/* Advance to Round 3 */}
-              <button
-                onClick={() => {
-                  if (confirm('Conclude Round 2 and advance to Round 3 (Escape Royale)?')) {
-                    handleStateChange('ROUND_ACTIVE', 2);
-                  }
-                }}
-                className="w-full py-3 rounded-xl bg-[#161922] border border-purple-500/60 hover:bg-purple-950/40 text-purple-200 font-serif font-bold text-xs flex items-center justify-center space-x-2 transition-all"
-              >
-                <span>Advance to Round 3: Escape from Tartarus ➔</span>
-              </button>
-            </div>
-          )}
-
-          {/* CONTEXT 4: ROUND 3 (THE ODYSSEY ESCAPE ROYALE) */}
-          {isRoundActive && currentRoundIdx === 2 && (
-            <div className="bg-[#10121a] border border-amber-500/40 rounded-2xl p-5 shadow-xl space-y-4">
-              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#2a2e3d] pb-3">
-                <div>
-                  <span className="text-[10px] font-mono uppercase text-amber-400 font-bold tracking-wider">
-                    Round 3 Active: The Final Escape
-                  </span>
-                  <h3 className="text-base font-serif font-black text-[#f4f0e8]">
-                    Escape from Tartarus (Escape Royale)
-                  </h3>
-                </div>
-                <div className="flex items-center space-x-2 text-xs font-mono">
-                  <span className="px-2.5 py-1 rounded-lg bg-[#161922] border border-[#2a2e3d] text-[#8e95a5]">
-                    Wave: <strong className="text-[#f4f0e8]">{payload?.round3_session?.current_wave || 1}</strong>
-                  </span>
-                  <span className="px-2.5 py-1 rounded-lg bg-amber-950/80 border border-amber-500/40 text-amber-300 font-bold">
-                    {payload?.round3_session?.current_phase || 'BLUFF'}
-                  </span>
-                  <button
-                    onClick={handleR3ResetSession}
-                    className="p-1 rounded bg-[#161922] border border-red-500/30 text-red-300 hover:bg-red-900/40 text-[10px]"
-                    title="Reset Round 3 Waves"
-                  >
-                    <RotateCcw className="w-3 h-3" />
-                  </button>
-                </div>
-              </div>
-
-              {/* Round 3 Wave Pacing Controls */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                <button
-                  onClick={() => handleR3AdjustTimer(15)}
-                  className="p-2.5 rounded-xl bg-[#161922] border border-[#2a2e3d] hover:border-[#c4a45a] text-xs font-mono font-bold text-[#f4f0e8] flex items-center justify-center space-x-1"
-                >
-                  <span>+15s Wave</span>
-                </button>
-                <button
-                  onClick={() => handleR3AdjustTimer(30)}
-                  className="p-2.5 rounded-xl bg-[#161922] border border-[#2a2e3d] hover:border-[#c4a45a] text-xs font-mono font-bold text-[#f4f0e8] flex items-center justify-center space-x-1"
-                >
-                  <span>+30s Wave</span>
-                </button>
-                <button
-                  onClick={handleR3NextPhase}
-                  className="p-2.5 rounded-xl bg-gradient-to-r from-amber-600 to-amber-500 hover:from-amber-500 hover:to-amber-400 text-xs font-mono font-bold text-[#08090c] shadow-md flex items-center justify-center space-x-1"
-                >
-                  <FastForward className="w-3.5 h-3.5 text-[#08090c]" />
-                  <span>Next Phase ⏭️</span>
-                </button>
-                <button
-                  onClick={handleR3ForceWave}
-                  className="p-2.5 rounded-xl bg-[#161922] border border-sky-500/50 hover:bg-sky-950/60 text-xs font-mono font-bold text-sky-300 flex items-center justify-center space-x-1"
-                >
-                  <span>Force Wave 🌊</span>
-                </button>
-              </div>
-
-              {/* Fleet Progress Toward 1,000m London Portal */}
-              <div className="space-y-2">
-                <div className="flex items-center justify-between text-[10px] font-mono text-[#8e95a5]">
-                  <span>Fleet Escape Distance (Target: {payload?.config?.round3?.target_distance_meters || 1000}m)</span>
-                  <span>Overrides (+/- 50m)</span>
-                </div>
-
-                <div className="space-y-2">
-                  {teams.map((t) => {
-                    const state = payload?.round3_session?.team_states?.[t.id];
-                    const dist = state?.current_distance_meters || 0;
-                    const escaped = state?.has_escaped;
-                    const targetDist = payload?.config?.round3?.target_distance_meters || 1000;
-                    const pct = Math.min(100, Math.max(0, Math.round((dist / targetDist) * 100)));
-                    const moral = evaluateTeamRound2MoralStatus(t.id, round2Matches, teams);
-
-                    return (
-                      <div
-                        key={t.id}
-                        className="p-3 rounded-xl bg-[#161922] border border-[#2a2e3d] flex items-center justify-between gap-3 text-xs font-mono"
-                      >
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center space-x-2 mb-1">
-                            <span className="font-serif font-bold text-[#f4f0e8] truncate">{t.name}</span>
-                            {escaped && (
-                              <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-[#c4a45a] text-[#08090c]">
-                                {state?.escape_rank === 1 ? '🥇 GOLD' : state?.escape_rank === 2 ? '🥈 SILVER' : '🥉 BRONZE'}
-                              </span>
-                            )}
-                            {renderMoralBadge(moral, state?.honor_bonus_granted)}
-                            <span className="text-[10px] text-[#c4a45a] ml-auto">
-                              {dist}m / {targetDist}m ({pct}%)
-                            </span>
-                          </div>
-                          <div className="h-1.5 w-full bg-[#10121a] rounded-full overflow-hidden border border-[#2a2e3d]">
-                            <div
-                              className={`h-full transition-all duration-500 ${
-                                escaped ? 'bg-gradient-to-r from-emerald-500 to-[#c4a45a]' : 'bg-[#c4a45a]'
-                              }`}
-                              style={{ width: `${pct}%` }}
-                            />
-                          </div>
-                        </div>
-
-                        <div className="flex items-center space-x-1 shrink-0">
-                          <button
-                            onClick={() => handleR3AdjustDistance(t.id, -50)}
-                            className="px-2 py-1 rounded bg-[#10121a] border border-[#2a2e3d] hover:border-red-400 text-[10px] text-red-300 font-bold"
-                          >
-                            -50m
-                          </button>
-                          <button
-                            onClick={() => handleR3AdjustDistance(t.id, 50)}
-                            className="px-2 py-1 rounded bg-[#10121a] border border-[#2a2e3d] hover:border-emerald-400 text-[10px] text-emerald-300 font-bold"
-                          >
-                            +50m
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Sudden Death Duel Launcher */}
-              <div className="p-3.5 rounded-xl bg-[#161922] border border-red-500/30 space-y-2">
-                <div className="flex items-center space-x-2 text-red-400 text-xs font-serif font-bold">
-                  <Swords className="w-4 h-4" />
-                  <span>Narrow Gate Sudden Death Standoff</span>
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs font-mono">
-                  <select
-                    value={sdTeamA}
-                    onChange={(e) => setSdTeamA(e.target.value)}
-                    className="w-full bg-[#10121a] border border-[#2a2e3d] rounded-lg p-2 text-[#f4f0e8] outline-none"
-                  >
-                    <option value="">-- Contender Crew A --</option>
-                    {teams.map(t => (
-                      <option key={t.id} value={t.id} disabled={t.id === sdTeamB}>{t.name}</option>
-                    ))}
-                  </select>
-                  <select
-                    value={sdTeamB}
-                    onChange={(e) => setSdTeamB(e.target.value)}
-                    className="w-full bg-[#10121a] border border-[#2a2e3d] rounded-lg p-2 text-[#f4f0e8] outline-none"
-                  >
-                    <option value="">-- Contender Crew B --</option>
-                    {teams.map(t => (
-                      <option key={t.id} value={t.id} disabled={t.id === sdTeamA}>{t.name}</option>
-                    ))}
-                  </select>
-                </div>
-                <button
-                  onClick={handleR3TriggerSuddenDeath}
-                  disabled={!sdTeamA || !sdTeamB || sdTeamA === sdTeamB}
-                  className="w-full py-2 bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-500 hover:to-rose-500 text-white font-mono font-bold text-xs rounded-lg transition-all disabled:opacity-40"
-                >
-                  ⚡ Trigger Sudden Death Standoff
-                </button>
-              </div>
-
-              {/* Conclude to Ceremony */}
-              <button
-                onClick={() => {
-                  if (confirm('Conclude Round 3 and prepare Final Ceremony?')) {
-                    handleStateChange('ROUND_LEADERBOARD', 2);
-                  }
-                }}
-                className="w-full py-3 rounded-xl bg-[#161922] border border-amber-500/60 hover:bg-amber-950/40 text-amber-200 font-serif font-bold text-xs flex items-center justify-center space-x-2 transition-all"
-              >
-                <span>Conclude Round 3 & Prepare Ceremony ➔</span>
-              </button>
-            </div>
-          )}
-
-          {/* CONTEXT 5: FINAL LEADERBOARD & CEREMONY */}
-          {isRoundLeaderboard && (
-            <div className="bg-gradient-to-r from-[#161922] via-[#202533] to-[#161922] border border-[#c4a45a] rounded-2xl p-6 shadow-2xl space-y-4 text-center">
-              <div className="w-14 h-14 rounded-2xl bg-[#c4a45a]/20 border border-[#c4a45a] flex items-center justify-center mx-auto text-[#c4a45a] shadow-gold-glow">
-                <Trophy className="w-7 h-7" />
-              </div>
-              <div>
-                <h3 className="text-lg font-serif font-black text-[#f4f0e8] uppercase">
-                  Grand Final Underworld Ceremony
-                </h3>
-                <p className="text-xs text-[#8e95a5] max-w-md mx-auto mt-1">
-                  All rounds have concluded. All player phones are ready to receive the synchronized celebration and final podium standings.
-                </p>
-              </div>
-
-              <button
-                onClick={() => {
-                  handleStateChange('ROUND_LEADERBOARD', 2);
-                  alert('Final Leaderboard broadcast active on all screens!');
-                }}
-                className="px-6 py-3.5 rounded-xl bg-gradient-to-r from-[#c4a45a] to-[#edd99e] hover:from-[#d8b86e] hover:to-[#f5e4b3] text-[#08090c] font-serif font-black text-sm shadow-gold-glow transition-all"
-              >
-                🏆 Broadcast Final Ceremony to Pub Phones
-              </button>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* ===================================================================== */}
-      {/* TAB 2: CREWS & ROSTER (PEOPLE & ATTENDEE MANAGEMENT)                  */}
-      {/* ===================================================================== */}
-      {activeTab === 'roster' && (
-        <div className="space-y-4">
-          {/* Target Crew Size Stepper at Top of Roster */}
-          <div className="bg-[#10121a] border border-[#2a2e3d] rounded-2xl p-4 shadow-xl flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <span className="text-xs font-serif font-bold text-[#f4f0e8] block">
-                Target Crew Size Setting
-              </span>
-              <p className="text-[10px] text-[#8e95a5]">
-                Determines how many seats are allocated per squad.
-              </p>
-            </div>
-
-            <div className="flex items-center space-x-2">
-              <div className="flex items-center bg-[#161922] border border-[#2a2e3d] rounded-xl p-1">
-                <button
-                  onClick={() => handleTargetCrewSizeChange(targetCrewSize - 1)}
-                  disabled={targetCrewSize <= 2}
-                  className="w-7 h-7 rounded-lg bg-[#10121a] text-[#f4f0e8] hover:bg-[#c4a45a] hover:text-[#08090c] font-mono font-bold flex items-center justify-center disabled:opacity-30 transition-all"
-                >
-                  -
-                </button>
-                <span className="px-3 font-mono font-bold text-xs text-[#c4a45a]">
-                  {targetCrewSize} Shades
-                </span>
-                <button
-                  onClick={() => handleTargetCrewSizeChange(targetCrewSize + 1)}
-                  disabled={targetCrewSize >= 8}
-                  className="w-7 h-7 rounded-lg bg-[#10121a] text-[#f4f0e8] hover:bg-[#c4a45a] hover:text-[#08090c] font-mono font-bold flex items-center justify-center disabled:opacity-30 transition-all"
-                >
-                  +
-                </button>
-              </div>
-
-              <div className="flex items-center space-x-1 text-[10px] font-mono">
-                {[3, 4, 5, 6].map(num => (
-                  <button
-                    key={num}
-                    onClick={() => handleTargetCrewSizeChange(num)}
-                    className={`w-6 h-6 rounded-lg transition-all ${
-                      targetCrewSize === num
-                        ? 'bg-[#c4a45a] text-[#08090c] font-bold shadow-gold-glow'
-                        : 'bg-[#161922] border border-[#2a2e3d] text-[#8e95a5] hover:text-[#f4f0e8]'
-                    }`}
-                  >
-                    {num}
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
-
-          {/* Formed Crews Directory */}
-          <div className="bg-[#10121a] border border-[#2a2e3d] rounded-2xl p-5 shadow-xl space-y-4">
-            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#2a2e3d] pb-3">
-              <div>
-                <span className="text-[10px] font-mono uppercase text-[#c4a45a] font-bold tracking-wider">
-                  Squads Directory
-                </span>
-                <h3 className="text-base font-serif font-black text-[#f4f0e8]">
-                  Formed Crews & Slot Management ({teams.length})
-                </h3>
-              </div>
-
-              <div className="flex items-center space-x-2">
-                <button
-                  onClick={() => setExpandedCrewIds(new Set(teams.map(t => t.id)))}
-                  className="px-2.5 py-1 rounded-lg bg-[#161922] border border-[#2a2e3d] hover:border-[#8e95a5] text-[10px] font-mono text-[#8e95a5]"
-                >
-                  Expand All
-                </button>
-                <button
-                  onClick={() => setExpandedCrewIds(new Set())}
-                  className="px-2.5 py-1 rounded-lg bg-[#161922] border border-[#2a2e3d] hover:border-[#8e95a5] text-[10px] font-mono text-[#8e95a5]"
-                >
-                  Collapse All
-                </button>
-              </div>
-            </div>
-
-            {/* Fast Crew Search Bar */}
-            <div className="relative">
-              <Search className="w-4 h-4 text-[#8e95a5] absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-              <input
-                type="text"
-                value={crewSearch}
-                onChange={(e) => setCrewSearch(e.target.value)}
-                placeholder="Search crews by name, battle code (e.g. 49), or player name..."
-                className="w-full bg-[#161922] border border-[#2a2e3d] rounded-xl pl-9 pr-8 py-2.5 text-xs text-[#f4f0e8] placeholder-[#8e95a5]/60 outline-none focus:border-[#c4a45a] font-mono"
-              />
-              {crewSearch && (
-                <button
-                  onClick={() => setCrewSearch('')}
-                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#8e95a5] hover:text-[#f4f0e8]"
-                >
-                  <X className="w-3.5 h-3.5" />
-                </button>
-              )}
-            </div>
-
-            {/* Crew Cards */}
-            <div className="space-y-3">
-              {teams
-                .filter(t => {
-                  if (!crewSearch.trim()) return true;
-                  const q = crewSearch.toLowerCase().trim();
-                  return (
-                    t.name.toLowerCase().includes(q) ||
-                    (t.battle_code || '').toLowerCase().includes(q) ||
-                    t.members.some(m => m.name.toLowerCase().includes(q) || m.roleName.toLowerCase().includes(q))
-                  );
-                })
-                .map((t) => {
-                  const isExpanded = expandedCrewIds.has(t.id);
-                  const isFull = t.members.length >= targetCrewSize;
-                  const moral = evaluateTeamRound2MoralStatus(t.id, round2Matches, teams);
-
-                  return (
-                    <div
-                      key={t.id}
-                      className="rounded-xl border border-[#2a2e3d] bg-[#161922] overflow-hidden transition-all"
-                    >
-                      {/* Crew Header */}
-                      <div className="p-3 flex items-center justify-between gap-2 hover:bg-[#1f2330] transition-colors">
-                        <div
-                          onClick={() => toggleCrewExpand(t.id)}
-                          className="flex items-center space-x-2.5 flex-1 min-w-0 cursor-pointer"
-                        >
-                          <span className="font-mono font-bold text-xs text-[#c4a45a]">
-                            [{t.battle_code || '--'}]
-                          </span>
-
-                          {t.emoji_code && (
-                            <span className="text-xs px-1.5 py-0.5 rounded bg-[#10121a] border border-[#2a2e3d] tracking-widest" title={`Emoji Join Code: ${t.emoji_code}`}>
-                              {t.emoji_code}
-                            </span>
-                          )}
-
-                          <span className="px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-[#10121a] text-[#c4a45a] border border-[#2a2e3d]">
-                            {t.score || 0} pts
-                          </span>
-
-                          {renderMoralBadge(moral)}
-
-                          {editingCrewId === t.id ? (
-                            <div className="flex items-center space-x-1" onClick={e => e.stopPropagation()}>
-                              <input
-                                type="text"
-                                value={editingCrewName}
-                                onChange={(e) => setEditingCrewName(e.target.value)}
-                                className="bg-[#10121a] border border-[#c4a45a] rounded px-2 py-0.5 text-xs text-[#f4f0e8] font-serif font-bold outline-none"
-                              />
-                              <button
-                                onClick={() => handleRenameTeam(t.id)}
-                                className="p-1 rounded bg-[#c4a45a] text-[#08090c]"
-                              >
-                                <Check className="w-3 h-3" />
-                              </button>
-                              <button
-                                onClick={() => setEditingCrewId(null)}
-                                className="p-1 rounded bg-[#10121a] text-[#8e95a5]"
-                              >
-                                <X className="w-3 h-3" />
-                              </button>
-                            </div>
-                          ) : (
-                            <h4 className="text-xs font-serif font-bold text-[#f4f0e8] truncate">
-                              {t.name}
-                            </h4>
-                          )}
-
-                          <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold ${
-                            isFull
-                              ? 'bg-emerald-950/60 border border-emerald-500/40 text-emerald-300'
-                              : 'bg-amber-950/60 border border-amber-500/40 text-amber-300'
-                          }`}>
-                            {t.members.length}/{targetCrewSize} Seats
-                          </span>
-
-                          <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-cyan-950/80 border border-cyan-500/40 text-cyan-300 font-bold flex items-center space-x-1 shrink-0" title="Assigned Round 1 Codeword">
-                            <Key className="w-3 h-3 text-cyan-400" />
-                            <span>R1: {t.assignedCodeword || 'CRIMSON SHADOW'}</span>
-                          </span>
-                        </div>
-
-                        <div className="flex items-center space-x-1.5 shrink-0">
-                          <button
-                            onClick={() => {
-                              setEditingCrewId(t.id);
-                              setEditingCrewName(t.name);
-                            }}
-                            className="p-1 rounded bg-[#10121a] border border-[#2a2e3d] hover:border-[#c4a45a] text-[#8e95a5] hover:text-[#f4f0e8]"
-                            title="Rename crew"
-                          >
-                            <Edit2 className="w-3 h-3" />
-                          </button>
-
-                          <button
-                            onClick={() => handleDeleteTeam(t.id, t.name)}
-                            className="p-1 rounded bg-red-950/30 border border-red-500/30 hover:bg-red-900/60 text-red-300"
-                            title="Disband crew and move members to lobby"
-                          >
-                            <Trash2 className="w-3 h-3" />
-                          </button>
-
-                          <button
-                            onClick={() => toggleCrewExpand(t.id)}
-                            className="p-1 text-[#8e95a5]"
-                          >
-                            {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-                          </button>
-                        </div>
-                      </div>
-
-                      {/* Expanded Member List & Slot Filling */}
-                      {isExpanded && (
-                        <div className="p-3 pt-0 border-t border-[#2a2e3d]/60 space-y-2 bg-[#12151e]">
-                          <span className="text-[10px] font-mono text-[#8e95a5] block pt-2">
-                            Assigned Members ({t.members.length}):
-                          </span>
-
-                          <div className="space-y-1.5">
-                            {t.members.map((m, mIdx) => {
-                              const mRoleId = roles.find(r => r.name.toLowerCase() === (m.roleName || '').toLowerCase())?.id || '';
-                              return (
-                                <div
-                                  key={m.id || mIdx}
-                                  className="p-2 rounded-lg bg-[#161922] border border-[#2a2e3d] flex items-center justify-between text-xs font-mono"
-                                >
-                                  <div className="flex items-center space-x-2">
-                                    <span
-                                      className="w-2.5 h-2.5 rounded-full flex-shrink-0"
-                                      style={{ backgroundColor: m.roleColor || '#c4a45a' }}
-                                    />
-                                    <span className="text-[#f4f0e8] font-bold">{m.name}</span>
-                                    <span className="text-[10px] text-[#8e95a5]">({m.roleName || 'No Role'})</span>
-                                  </div>
-
-                                  <div className="flex items-center space-x-1.5">
-                                    {m.id && (
-                                      <>
-                                        {/* Role Switcher */}
-                                        <select
-                                          value={mRoleId}
-                                          onChange={(e) => handleRoleChange(m.id!, e.target.value)}
-                                          className="bg-[#10121a] border border-[#2a2e3d] text-[10px] text-[#8e95a5] rounded px-1.5 py-0.5 outline-none"
-                                        >
-                                          {roles.map(r => (
-                                            <option key={r.id} value={r.id}>{r.name}</option>
-                                          ))}
-                                        </select>
-
-                                        {/* Eject from Crew (Frees slot!) */}
-                                        <button
-                                          onClick={() => handleMovePlayer(m.id!, null)}
-                                          className="px-2 py-0.5 rounded bg-amber-950/50 border border-amber-500/40 hover:bg-amber-900 text-amber-200 text-[10px] font-bold transition-all"
-                                          title="Eject player back to unassigned lobby (frees their seat)"
-                                        >
-                                          ⏏️ Eject
-                                        </button>
-
-                                        {/* Remove Player Permanently */}
-                                        <button
-                                          onClick={() => handleRemovePlayer(m.id!)}
-                                          className="p-1 rounded bg-red-950/40 border border-red-500/30 hover:bg-red-900 text-red-300"
-                                          title="Permanently remove player from game"
-                                        >
-                                          <UserX className="w-3 h-3" />
-                                        </button>
-                                      </>
-                                    )}
-                                  </div>
-                                </div>
-                              );
-                            })}
-                          </div>
-
-                          {/* Empty Slot Dropdown (Add unassigned player directly into this crew!) */}
-                          {unassigned.length > 0 && (
-                            <div className="pt-2 border-t border-[#2a2e3d]/40 flex items-center space-x-2">
-                              <span className="text-[10px] font-mono text-[#c4a45a] font-bold shrink-0">
-                                + Fill Seat:
-                              </span>
-                              <select
-                                onChange={(e) => {
-                                  if (e.target.value) {
-                                    handleMovePlayer(e.target.value, t.id);
-                                    e.target.value = '';
-                                  }
-                                }}
-                                defaultValue=""
-                                className="flex-1 bg-[#10121a] border border-[#c4a45a]/50 text-xs text-[#f4f0e8] rounded-lg px-2 py-1 outline-none font-mono"
-                              >
-                                <option value="" disabled>-- Select an unassigned shade to seat here --</option>
-                                {unassigned.map(p => (
-                                  <option key={p.id} value={p.id}>
-                                    {p.name} ({p.roleName || 'No Role'})
-                                  </option>
-                                ))}
-                              </select>
-                            </div>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-            </div>
-          </div>
-
-          {/* Unassigned Shades Lobby Pool */}
-          <div className="bg-[#10121a] border border-[#2a2e3d] rounded-2xl p-5 shadow-xl space-y-3">
-            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#2a2e3d] pb-2">
-              <div>
-                <span className="text-[10px] font-mono uppercase text-[#c4a45a] font-bold tracking-wider">
-                  Unassigned Shades Pool
-                </span>
-                <h4 className="text-xs font-serif font-bold text-[#f4f0e8]">
-                  Players in Lobby Waiting for Teams ({unassigned.length})
-                </h4>
-              </div>
-
-              {unassigned.length > 0 && (
-                <div className="flex items-center space-x-2">
-                  <button
-                    onClick={handleAutoGroup}
-                    className="px-2.5 py-1 bg-gradient-to-r from-[#c4a45a] to-[#e5cb87] text-[#08090c] rounded-lg text-[10px] font-mono font-bold shadow-sm"
-                  >
-                    ⚡ Auto-Group into Crews
-                  </button>
-                  <button
-                    onClick={handleRebalanceRoles}
-                    className="px-2.5 py-1 bg-[#161922] border border-[#2a2e3d] hover:border-[#c4a45a] text-[#8e95a5] hover:text-[#f4f0e8] rounded-lg text-[10px] font-mono"
-                  >
-                    ⚖️ Auto-Balance Roles
-                  </button>
-                </div>
-              )}
-            </div>
-
-            {unassigned.length === 0 ? (
-              <div className="p-6 text-center text-xs font-mono text-[#8e95a5]">
-                ✓ All attendees are currently seated in active crews!
-              </div>
-            ) : (
-              <div className="space-y-1.5">
-                {unassigned.map(p => (
-                  <div
-                    key={p.id}
-                    className="p-2.5 rounded-xl bg-[#161922] border border-[#2a2e3d] flex flex-wrap items-center justify-between gap-2 text-xs font-mono"
-                  >
-                    <div className="flex items-center space-x-2">
-                      <span
-                        className="w-2.5 h-2.5 rounded-full flex-shrink-0"
-                        style={{ backgroundColor: p.roleColor || '#c4a45a' }}
-                      />
-                      <span className="text-[#f4f0e8] font-bold">{p.name}</span>
-                      <span className="text-[10px] text-[#8e95a5]">({p.roleName || 'No Role'})</span>
-                    </div>
-
-                    <div className="flex items-center space-x-2">
-                      {/* Place into crew dropdown */}
-                      <select
-                        onChange={(e) => {
-                          if (e.target.value) {
-                            handleMovePlayer(p.id, e.target.value);
-                          }
-                        }}
-                        defaultValue=""
-                        className="bg-[#10121a] border border-[#2a2e3d] text-[10px] text-[#f4f0e8] rounded-lg px-2 py-1 outline-none"
-                      >
-                        <option value="" disabled>Seat in Crew...</option>
-                        {teams.map(t => (
-                          <option key={t.id} value={t.id}>
-                            {t.name} ({t.members.length}/{targetCrewSize})
-                          </option>
-                        ))}
-                      </select>
-
-                      {/* Change role */}
-                      <select
-                        value={p.roleId || ''}
-                        onChange={(e) => handleRoleChange(p.id, e.target.value)}
-                        className="bg-[#10121a] border border-[#2a2e3d] text-[10px] text-[#8e95a5] rounded-lg px-2 py-1 outline-none"
-                      >
-                        {roles.map(r => (
-                          <option key={r.id} value={r.id}>{r.name}</option>
-                        ))}
-                      </select>
-
-                      {/* Delete */}
-                      <button
-                        onClick={() => handleRemovePlayer(p.id)}
-                        className="p-1 rounded bg-red-950/40 border border-red-500/30 hover:bg-red-900 text-red-300"
-                        title="Remove player"
-                      >
-                        <UserX className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Add Offline Player Form */}
-          <div className="bg-[#10121a] border border-[#2a2e3d] rounded-2xl p-4 shadow-xl space-y-2">
-            <span className="text-[10px] font-mono uppercase tracking-wider text-[#c4a45a] font-bold">
-              Add Offline Player Manually
-            </span>
-            <form onSubmit={handleAddPlayer} className="flex items-center space-x-2">
-              <input
-                type="text"
-                value={newPlayerName}
-                onChange={(e) => setNewPlayerName(e.target.value)}
-                placeholder="Walk-in player name..."
-                className="flex-1 bg-[#161922] border border-[#2a2e3d] rounded-xl px-3 py-2 text-xs text-[#f4f0e8] outline-none font-mono"
-              />
+            <div className="flex gap-2">
               <select
-                value={newPlayerRoleId}
-                onChange={(e) => setNewPlayerRoleId(e.target.value)}
-                className="bg-[#161922] border border-[#2a2e3d] rounded-xl px-2 py-2 text-xs text-[#f4f0e8] outline-none font-mono"
+                aria-label={`Move ${p.name}`}
+                value={p.teamId ?? ''}
+                onChange={e => void run(`Move ${p.name}`, 'ADMIN_MOVE_PLAYER', { playerId: p.id, teamId: e.target.value || null })}
+                className={`${INPUT} max-w-[180px]`}
               >
-                {roles.map(r => (
-                  <option key={r.id} value={r.id}>{r.name}</option>
+                <option value="">No crew</option>
+                {view.teams.map(t => (
+                  <option key={t.id} value={t.id}>
+                    {t.name}
+                  </option>
                 ))}
               </select>
-              <button
-                type="submit"
-                className="px-4 py-2 bg-[#c4a45a] hover:bg-[#d8b86e] text-[#08090c] font-bold text-xs rounded-xl font-serif shadow-gold-glow transition-all"
-              >
-                Add
-              </button>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* ===================================================================== */}
-      {/* MODAL 1: LARGE JOIN QR CODE FOR THE PUB ROOM                           */}
-      {/* ===================================================================== */}
-      {showQrModal && (
-        <div className="fixed inset-0 z-[100000] bg-black/85 backdrop-blur-md flex items-center justify-center p-4">
-          <div className="bg-[#10121a] border border-[#c4a45a] rounded-3xl max-w-md w-full p-6 shadow-2xl space-y-4 text-center relative">
-            <button
-              onClick={() => setShowQrModal(false)}
-              className="absolute right-4 top-4 p-1.5 rounded-lg text-[#8e95a5] hover:text-[#f4f0e8] hover:bg-[#161922]"
-            >
-              <X className="w-5 h-5" />
-            </button>
-
-            <div className="space-y-1">
-              <h3 className="text-base font-serif font-black text-[#f4f0e8] uppercase">
-                Scan to Enter Tartarus
-              </h3>
-              <p className="text-xs text-[#8e95a5]">
-                Hold this up or display it to the room to let players join on their phones.
-              </p>
-            </div>
-
-            {/* QR Image */}
-            <div className="bg-white p-4 rounded-2xl inline-block shadow-gold-glow">
-              {serverInfo?.qrDataUrl ? (
-                <img
-                  src={serverInfo.qrDataUrl}
-                  alt="Join QR"
-                  className="w-64 h-64 object-contain mx-auto"
-                />
-              ) : (
-                <div className="w-64 h-64 flex items-center justify-center text-black font-mono text-xs">
-                  Generating QR Code...
-                </div>
-              )}
-            </div>
-
-            {/* URL Display & Copy */}
-            <div className="p-3 rounded-xl bg-[#161922] border border-[#2a2e3d] flex items-center justify-between text-xs font-mono">
-              <span className="text-[#c4a45a] truncate mr-2">
-                {serverInfo?.joinUrl || window.location.origin + '/join'}
-              </span>
-              <button
-                onClick={handleCopyJoinLink}
-                className="px-3 py-1.5 rounded-lg bg-[#c4a45a] text-[#08090c] font-bold text-xs flex items-center space-x-1 shrink-0"
-              >
-                {copiedLink ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-                <span>{copiedLink ? 'Copied!' : 'Copy'}</span>
+              <button className={BTN_RED} disabled={busy} onClick={() => confirm(`Remove ${p.name} from the game?`) && void run(`Remove ${p.name}`, 'ADMIN_REMOVE_PLAYER', { playerId: p.id })}>
+                <Trash2 className="w-4 h-4" />
               </button>
             </div>
           </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+// ------------------------------------------------------------------ round 2 pairing
+const PairingTab: React.FC<{ view: AdminViewData; run: Run; busy: boolean; nameOf: (id: string | null) => string }> = ({ view, run, busy, nameOf }) => {
+  const [a, setA] = useState('');
+  const [b, setB] = useState('');
+  const canPair = view.phase.name === 'R2_PAIRING';
+  return (
+    <div className={BOX}>
+      <div className={H}>Round 2 pairing</div>
+      {!canPair && <div className="text-sm text-[#a9b4c7]">Pairing is available while the game is in R2_PAIRING.</div>}
+      <div className="flex flex-wrap gap-2">
+        <button className={BTN} disabled={busy || !canPair} onClick={() => void run('Auto-pair', 'ADMIN_R2_AUTO_PAIR')}>
+          Auto-pair remaining crews
+        </button>
+        <button className={BTN_PRIMARY} disabled={busy || !canPair} onClick={() => confirm('Start the clashes now? Unpaired crews sit out Round 2.') && void run('Force-start Round 2', 'ADMIN_R2_FORCE_START')}>
+          Force-start clashes
+        </button>
+      </div>
+      <div className="flex flex-wrap gap-2 items-center">
+        <TeamSelect view={view} value={a} onChange={setA} label="Crew A" only={view.unpairedTeamIds} />
+        <TeamSelect view={view} value={b} onChange={setB} label="Crew B" only={view.unpairedTeamIds} />
+        <button className={BTN} disabled={busy || !canPair || !a || !b || a === b} onClick={() => void run('Pair', 'ADMIN_R2_PAIR', { teamA: a, teamB: b }, () => { setA(''); setB(''); })}>
+          Pair these two
+        </button>
+      </div>
+      <div className="text-sm">
+        <div className="text-xs font-mono text-[#8e95a5] mb-1">Unpaired ({view.unpairedTeamIds.length})</div>
+        <div className="flex flex-wrap gap-1.5">
+          {view.unpairedTeamIds.map(id => (
+            <span key={id} className="px-2 py-1 rounded border border-amber-500/40 text-amber-200 text-xs">
+              {nameOf(id)}
+            </span>
+          ))}
         </div>
-      )}
-
-      {/* ===================================================================== */}
-      {/* MODAL 2: PRIVATE ADMIN-ONLY STANDINGS PREVIEW                         */}
-      {/* ===================================================================== */}
-      {showAdminLeaderboard && (
-        <div className="fixed inset-0 z-[100000] bg-black/85 backdrop-blur-md flex items-center justify-center p-4">
-          <div className="bg-[#10121a] border border-[#c4a45a]/50 rounded-2xl max-w-xl w-full max-h-[85vh] flex flex-col shadow-2xl overflow-hidden">
-            <div className="p-4 border-b border-[#2a2e3d] flex items-center justify-between bg-[#161922]">
-              <div className="flex items-center space-x-2">
-                <Trophy className="w-5 h-5 text-[#c4a45a]" />
-                <div>
-                  <h3 className="text-sm font-serif font-black text-[#f4f0e8] uppercase">
-                    Live Standings (Admin Private Preview)
-                  </h3>
-                  <span className="text-[10px] font-mono text-[#8e95a5]">
-                    Private view only • Zero effect on player screens
-                  </span>
-                </div>
-              </div>
-              <button
-                onClick={() => setShowAdminLeaderboard(false)}
-                className="p-1.5 rounded-lg hover:bg-[#202533] text-[#8e95a5] hover:text-[#f4f0e8]"
-              >
-                <X className="w-4 h-4" />
+      </div>
+      <div className="space-y-1.5">
+        {view.matches.map(m => (
+          <div key={m.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-[#161922] border border-[#2a2e3d] px-3 py-2 text-sm">
+            <span>
+              {nameOf(m.teamA)} <span className="text-[#8e95a5]">vs</span> {nameOf(m.teamB)}
+              {m.cancelled ? ' (cancelled)' : ''}
+            </span>
+            <span className="text-xs font-mono text-[#a9b4c7]">{m.clashes.filter(c => c.resolved).length} clashes resolved</span>
+            {canPair && (
+              <button className={BTN} disabled={busy} onClick={() => void run('Unpair', 'ADMIN_R2_UNPAIR', { teamId: m.teamA })}>
+                Unpair
               </button>
-            </div>
-
-            <div className="p-4 overflow-y-auto space-y-2 flex-1">
-              {teams.length > 0 ? (
-                teams.map((t, idx) => (
-                  <div
-                    key={t.id}
-                    className="p-3 rounded-xl bg-[#161922] border border-[#2a2e3d] flex items-center justify-between"
-                  >
-                    <div className="flex items-center space-x-3">
-                      <div className={`w-7 h-7 rounded-lg flex items-center justify-center font-mono font-bold text-xs ${
-                        idx === 0
-                          ? 'bg-[#c4a45a] text-[#08090c] shadow-gold-glow'
-                          : idx === 1
-                          ? 'bg-slate-300 text-[#08090c]'
-                          : idx === 2
-                          ? 'bg-amber-800 text-amber-200'
-                          : 'bg-[#10121a] text-[#8e95a5] border border-[#2a2e3d]'
-                      }`}>
-                        #{idx + 1}
-                      </div>
-                      <div>
-                        <div className="text-xs font-serif font-bold text-[#f4f0e8] flex items-center space-x-1.5">
-                          <span>{t.name}</span>
-                          {t.battle_code && (
-                            <span className="text-[10px] font-mono text-[#c4a45a]">[{t.battle_code}]</span>
-                          )}
-                        </div>
-                        <span className="text-[10px] text-[#8e95a5]">
-                          {t.members.length} shades • {t.members.map(m => m.name).join(', ')}
-                        </span>
-                      </div>
-                    </div>
-
-                    <div className="text-right">
-                      <span className="text-sm font-mono font-bold text-[#c4a45a] block">
-                        {t.score} PTS
-                      </span>
-                    </div>
-                  </div>
-                ))
-              ) : (
-                <div className="p-8 text-center text-xs font-mono text-[#8e95a5]">
-                  No teams registered yet.
-                </div>
-              )}
-            </div>
-
-            <div className="p-3 border-t border-[#2a2e3d] bg-[#161922] flex justify-end">
-              <button
-                onClick={() => setShowAdminLeaderboard(false)}
-                className="px-4 py-1.5 rounded-lg bg-[#c4a45a] text-[#08090c] text-xs font-mono font-bold hover:bg-[#d8b86e] transition-colors"
-              >
-                Close Preview
-              </button>
-            </div>
+            )}
           </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+// ------------------------------------------------------------------ settings, backup, reset
+const SettingsTab: React.FC<{ view: AdminViewData; run: Run; busy: boolean; setLog: (s: string) => void }> = ({ view, run, busy, setLog }) => {
+  const [d, setD] = useState<Durations>(view.config);
+  const [dirty, setDirty] = useState(false);
+  const [resetText, setResetText] = useState('');
+  const fileRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (!dirty) setD(view.config);
+  }, [view.config, dirty]);
+
+  const num = (v: string) => Math.max(0, Math.round(Number(v) || 0));
+  const set = (fn: (x: Durations) => void) => {
+    const c = structuredClone(d);
+    fn(c);
+    setD(c);
+    setDirty(true);
+  };
+  const field = (label: string, value: number, onChange: (n: number) => void) => (
+    <label className="text-xs font-mono text-[#a9b4c7] space-y-1">
+      <div>{label}</div>
+      <input type="number" min={5} max={3600} value={value} onChange={e => onChange(num(e.target.value))} className={`${INPUT} w-full`} />
+    </label>
+  );
+
+  const restore = async (file: File) => {
+    if (!confirm('Restore this backup? The game comes back PAUSED and every phone resyncs.')) return;
+    const text = await file.text();
+    const r = await adminPost('/api/admin/restore', text);
+    setLog(`${new Date().toLocaleTimeString()} Restore: ${r.ok ? 'OK (game is paused, press Resume)' : `FAILED (${r.error ?? r.status})`}`);
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className={BOX}>
+        <div className={H}>Phase durations (seconds)</div>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          {field('Round 1', d.r1Seconds, n => set(c => (c.r1Seconds = n)))}
+          {field('R2 Huddle', d.r2.HUDDLE, n => set(c => (c.r2.HUDDLE = n)))}
+          {field('R2 Dialogue', d.r2.PARLEY, n => set(c => (c.r2.PARLEY = n)))}
+          {field('R2 Vote', d.r2.VOTE, n => set(c => (c.r2.VOTE = n)))}
+          {field('R2 Reveal', d.r2.DEBRIEF, n => set(c => (c.r2.DEBRIEF = n)))}
+          {field('R3 Bluff', d.r3.BLUFF, n => set(c => (c.r3.BLUFF = n)))}
+          {field('R3 Vote', d.r3.VOTE, n => set(c => (c.r3.VOTE = n)))}
+          {field('R3 Reveal', d.r3.REVEAL, n => set(c => (c.r3.REVEAL = n)))}
+          {field('Sudden death', d.sdSeconds, n => set(c => (c.sdSeconds = n)))}
         </div>
-      )}
+        <button
+          data-testid="save-durations"
+          className={BTN_PRIMARY}
+          disabled={busy || !dirty}
+          onClick={() => void run('Set durations', 'ADMIN_SET_DURATIONS', d, () => setDirty(false))}
+        >
+          Apply durations
+        </button>
+      </div>
 
-      {/* ===================================================================== */}
-      {/* MODAL 3: HARD RESET GAME SAFETY CONFIRMATION                           */}
-      {/* ===================================================================== */}
-      {showResetModal && (
-        <div className="fixed inset-0 z-[100000] bg-black/85 backdrop-blur-md flex items-center justify-center p-4">
-          <div className="bg-[#10121a] border border-red-500/60 rounded-3xl max-w-sm w-full p-6 shadow-2xl space-y-4 text-center">
-            <div className="w-12 h-12 rounded-xl bg-red-950/60 border border-red-500/50 flex items-center justify-center mx-auto text-red-400">
-              <AlertTriangle className="w-6 h-6" />
-            </div>
-
-            <div className="space-y-1">
-              <h3 className="text-base font-serif font-black text-red-300 uppercase">
-                Reset Entire Session?
-              </h3>
-              <p className="text-xs text-[#8e95a5] leading-relaxed">
-                This will clear all formed crews, match pairings, player votes, and reset all team scores back to 0. All connected phones return to the lobby.
-              </p>
-            </div>
-
-            <div className="grid grid-cols-2 gap-2 pt-2">
-              <button
-                onClick={() => setShowResetModal(false)}
-                className="py-2.5 rounded-xl bg-[#161922] border border-[#2a2e3d] text-xs font-mono text-[#8e95a5] hover:text-[#f4f0e8]"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleResetGame}
-                disabled={isResetting}
-                className="py-2.5 rounded-xl bg-red-600 hover:bg-red-500 text-white font-mono font-bold text-xs shadow-md transition-all flex items-center justify-center space-x-1"
-              >
-                {isResetting ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
-                <span>{isResetting ? 'Resetting...' : 'Yes, Reset All'}</span>
-              </button>
-            </div>
-          </div>
+      <div className={BOX}>
+        <div className={H}>Backup and restore</div>
+        <div className="flex flex-wrap gap-2">
+          <button
+            data-testid="download-backup"
+            className={BTN}
+            onClick={async () => {
+              const r = await downloadBackup();
+              setLog(`${new Date().toLocaleTimeString()} Backup download: ${r.ok ? 'OK' : 'FAILED'}`);
+            }}
+          >
+            <Download className="w-4 h-4" />
+            Download backup
+          </button>
+          <button className={BTN} onClick={() => fileRef.current?.click()}>
+            <Upload className="w-4 h-4" />
+            Restore from file…
+          </button>
+          <input
+            ref={fileRef}
+            data-testid="restore-file"
+            type="file"
+            accept="application/json,.json"
+            className="hidden"
+            onChange={e => {
+              const f = e.target.files?.[0];
+              e.target.value = '';
+              if (f) void restore(f);
+            }}
+          />
         </div>
-      )}
+        <p className="text-xs text-[#8e95a5]">A restored game is paused. Check the state, then press Resume.</p>
+      </div>
+
+      <div className={`${BOX} !border-red-500/50`}>
+        <div className="text-[11px] font-mono uppercase tracking-wider text-red-300 font-bold">Reset game</div>
+        <p className="text-sm text-[#cbd5e1]">Deletes every crew, score and round state and returns to the lobby. Players have to join again.</p>
+        <div className="flex flex-wrap gap-2">
+          <input value={resetText} onChange={e => setResetText(e.target.value)} placeholder="Type RESET to confirm" aria-label="Type RESET to confirm" data-testid="reset-confirm" className={`${INPUT} min-w-[220px]`} />
+          <button
+            data-testid="reset-game"
+            className={BTN_RED}
+            disabled={busy || resetText !== 'RESET'}
+            onClick={() => void run('Reset game', 'ADMIN_RESET_GAME', {}, () => setResetText(''))}
+          >
+            <RotateCcw className="w-4 h-4" />
+            Reset game
+          </button>
+        </div>
+      </div>
+      <div className="text-[11px] font-mono text-[#5b6377]">API base: {apiUrl('') || window.location.origin}</div>
     </div>
   );
 };

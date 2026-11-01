@@ -1,115 +1,115 @@
-import React, { useState, useEffect } from 'react';
-import { GameProvider, useGameSession } from './context/GameContext';
+import React, { useState } from 'react';
+import { Loader2, WifiOff, PauseCircle, Megaphone } from 'lucide-react';
+import { GameProvider, useGame } from './game/useGame';
+import { readName } from './game/session';
 import { Navbar } from './components/Navbar';
 import { JoinModal } from './components/JoinModal';
 import { LobbyTeamFormation } from './components/LobbyTeamFormation';
 import { RoundContainer } from './components/RoundContainer';
 import { LeaderboardDrawer } from './components/LeaderboardDrawer';
-import { preloadAllRounds } from './lib/roundPreloader';
 
-const AdminControlPanel = React.lazy(() =>
-  import('./components/AdminControlPanel').then(m => ({ default: m.AdminControlPanel }))
-);
-const SoloTesterWorkbench = React.lazy(() =>
-  import('./components/SoloTesterWorkbench').then(m => ({ default: m.SoloTesterWorkbench }))
-);
+const AdminControlPanel = React.lazy(() => import('./components/AdminControlPanel').then(m => ({ default: m.AdminControlPanel })));
+const ScreenView = React.lazy(() => import('./components/ScreenView').then(m => ({ default: m.ScreenView })));
 
-const MainGameContent: React.FC = () => {
-  const { player, payload } = useGameSession();
-  const [isAdminView, setIsAdminView] = useState(() => {
-    return window.location.pathname.includes('/admin') || window.location.hash.includes('admin');
-  });
-  const [isSoloTesterView, setIsSoloTesterView] = useState(() => {
-    return window.location.pathname.includes('/solotester') || window.location.hash.includes('solotester') ||
-           window.location.pathname.includes('/test') || window.location.hash.includes('test');
-  });
+/** A known device waits here for the server. It never sees the Join screen. */
+const Waiting: React.FC<{ known: boolean }> = ({ known }) => {
+  const name = readName();
+  return (
+    <div data-testid={known ? 'reconnecting-screen' : 'connecting-screen'} className="min-h-[70vh] flex flex-col items-center justify-center text-center space-y-4 px-6">
+      <Loader2 className="w-10 h-10 text-[#c4a45a] animate-spin" />
+      <h2 className="text-2xl font-serif font-black text-[#f4f0e8]">{known ? 'Reconnecting…' : 'Connecting…'}</h2>
+      <p className="text-sm text-[#a9b4c7] max-w-xs">
+        {known
+          ? `${name ? `Welcome back, ${name}. ` : ''}Finding the game again. Your place in the Underworld is safe.`
+          : 'Reaching the game server. This can take a moment on pub Wi-Fi.'}
+      </p>
+    </div>
+  );
+};
 
-  // Preload all round chunks into memory during browser idle time
-  useEffect(() => {
-    preloadAllRounds();
-  }, []);
+const Banners: React.FC = () => {
+  const { view, status, synced, knownDevice } = useGame();
+  const down = status === 'reconnecting' || status === 'offline' || (!synced && !!view);
+  return (
+    <div className="sticky top-[64px] z-30">
+      {down && (
+        <div data-testid="reconnecting-banner" role="status" className="flex items-center justify-center space-x-2 bg-amber-900/95 text-amber-100 text-sm font-semibold py-2 px-3 border-b border-amber-500/50">
+          <WifiOff className="w-4 h-4" />
+          <span>{status === 'offline' ? 'Offline. Reconnecting…' : knownDevice || synced ? 'Reconnecting…' : 'Connecting…'}</span>
+        </div>
+      )}
+      {!down && status === 'polling' && (
+        <div data-testid="polling-banner" className="text-center bg-[#161922] text-[#a9b4c7] text-xs font-mono py-1.5 border-b border-[#2a2e3d]">
+          Weak connection: updating every few seconds
+        </div>
+      )}
+      {view?.phase.paused && (
+        <div data-testid="paused-banner" className="flex items-center justify-center space-x-2 bg-sky-950/95 text-sky-100 text-sm font-semibold py-2 px-3 border-b border-sky-500/40">
+          <PauseCircle className="w-4 h-4" />
+          <span>Paused by the host. The clock is stopped.</span>
+        </div>
+      )}
+      {view?.notice && (
+        <div data-testid="notice-banner" className="flex items-center justify-center space-x-2 bg-[#c4a45a] text-[#08090c] text-sm font-bold py-2 px-3">
+          <Megaphone className="w-4 h-4 shrink-0" />
+          <span>{view.notice}</span>
+        </div>
+      )}
+    </div>
+  );
+};
 
-  // Listen to popstate or hash changes
-  useEffect(() => {
-    const handleLocationChange = () => {
-      setIsAdminView(window.location.pathname.includes('/admin') || window.location.hash.includes('admin'));
-      setIsSoloTesterView(
-        window.location.pathname.includes('/solotester') || window.location.hash.includes('solotester') ||
-        window.location.pathname.includes('/test') || window.location.hash.includes('test')
-      );
-    };
-    window.addEventListener('popstate', handleLocationChange);
-    window.addEventListener('hashchange', handleLocationChange);
-    return () => {
-      window.removeEventListener('popstate', handleLocationChange);
-      window.removeEventListener('hashchange', handleLocationChange);
-    };
-  }, []);
+const PlayerContent: React.FC = () => {
+  const { view, meta, synced, knownDevice } = useGame();
+  if (!view || !meta) return <Waiting known={knownDevice} />;
+  // Only a live answer from the server can say "unknown player". A cached view without `me` is not proof.
+  if (!view.me) return synced ? <JoinModal /> : <Waiting known={knownDevice} />;
+  if (view.phase.name === 'LOBBY') return <LobbyTeamFormation />;
+  return <RoundContainer />;
+};
 
-
-  const closeAdmin = () => {
-    setIsAdminView(false);
-    setIsSoloTesterView(false);
-    window.history.pushState(null, '', '/');
-  };
-
-  // Render Solo Tester full-screen workbench
-  if (isSoloTesterView) {
-    return (
-      <React.Suspense fallback={<div className="p-8 text-center text-xs font-mono text-[#8e95a5]">Loading Solo Workbench...</div>}>
-        <SoloTesterWorkbench />
-      </React.Suspense>
-    );
-  }
-
+const PlayerApp: React.FC = () => {
+  const [boardOpen, setBoardOpen] = useState(false);
   return (
     <div className="min-h-screen bg-[#08090c] text-[#f4f0e8] underworld-bg-mesh flex flex-col justify-between selection:bg-[#c4a45a] selection:text-[#08090c]">
-      {/* Centered Container: Responsive 480px for players, spacious 4xl for admin dashboard */}
-      <div className={`w-full ${isAdminView ? 'max-w-4xl' : 'max-w-[480px]'} mx-auto min-h-screen flex flex-col bg-[#08090c] border-x border-[#2a2e3d]/40 shadow-2xl relative transition-all duration-300`}>
-        <Navbar />
-
-        <main className={`flex-1 ${isAdminView ? 'px-4 sm:px-6' : 'px-4'} pb-12`}>
-          {isAdminView ? (
-            <React.Suspense fallback={<div className="p-8 text-center text-xs font-mono text-[#8e95a5]">Loading Admin Panel...</div>}>
-              <AdminControlPanel payload={payload} onClose={closeAdmin} />
-            </React.Suspense>
-          ) : !player ? (
-            <JoinModal />
-          ) : payload?.state === 'LOBBY_TEAM_FORMATION' ? (
-            <LobbyTeamFormation />
-          ) : payload?.state === 'ROUND_ACTIVE' ? (
-            <RoundContainer />
-          ) : (
-            <LeaderboardDrawer />
-          )}
+      <div className="w-full max-w-[480px] mx-auto min-h-screen flex flex-col bg-[#08090c] border-x border-[#2a2e3d]/40 shadow-2xl relative">
+        <Navbar onToggleBoard={() => setBoardOpen(o => !o)} />
+        <Banners />
+        <main className="flex-1 px-4 pb-12">
+          <PlayerContent />
         </main>
-
-        {/* Global Slide-up Leaderboard Drawer (for active round view) */}
-        {!isAdminView && <LeaderboardDrawer />}
-
-        {/* Mobile-Friendly Subtle Footer */}
+        <LeaderboardDrawer open={boardOpen} onClose={() => setBoardOpen(false)} />
         <footer className="py-4 px-4 text-center border-t border-[#2a2e3d]/50 bg-[#08090c]/80 text-[10px] font-mono text-[#8e95a5]">
-          <div className="flex items-center justify-between">
-            <span>UNDERWORLD ENGINE • PUB REALTIME</span>
-            {isAdminView && (
-              <button
-                onClick={closeAdmin}
-                className="text-[#c4a45a] hover:underline font-bold"
-              >
-                Exit Admin
-              </button>
-            )}
-          </div>
+          UNDERWORLD ENGINE • PUB REALTIME
         </footer>
       </div>
     </div>
   );
 };
 
+const Loading: React.FC<{ what: string }> = ({ what }) => (
+  <div className="p-8 text-center text-xs font-mono text-[#8e95a5]">Loading {what}...</div>
+);
+
 export function App() {
+  const path = window.location.pathname;
+  if (path === '/admin' || path.startsWith('/admin/')) {
+    return (
+      <React.Suspense fallback={<Loading what="admin panel" />}>
+        <AdminControlPanel />
+      </React.Suspense>
+    );
+  }
+  if (path === '/screen' || path.startsWith('/screen/')) {
+    return (
+      <React.Suspense fallback={<Loading what="projector view" />}>
+        <ScreenView />
+      </React.Suspense>
+    );
+  }
   return (
     <GameProvider>
-      <MainGameContent />
+      <PlayerApp />
     </GameProvider>
   );
 }

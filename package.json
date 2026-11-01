@@ -11,10 +11,13 @@
     "lint": "oxlint",
     "preview": "vite preview",
     "start": "tsx server/index.ts",
-    "test": "tsx tests/run_all.ts",
+    "test": "node --test \"tests/engine/*.test.ts\" \"tests/sim/*.test.ts\"",
     "test:r2": "tsx tests/test_round2.ts",
     "test:r3": "tsx tests/test_round3.ts",
-    "test:teams": "tsx tests/test_team_codes.ts"
+    "test:teams": "tsx tests/test_team_codes.ts",
+    "test:legacy": "tsx tests/run_all.ts",
+    "sim": "node tests/sim/simulate.ts",
+    "typecheck:server": "tsc -p tsconfig.server.json"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.118.0",

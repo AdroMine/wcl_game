@@ -9,10 +9,10 @@ export default defineConfig({
     port: 5174,
     strictPort: true,
     proxy: {
-      '/api': {
-        target: 'http://localhost:3001',
-        changeOrigin: true,
-      }
+      // Event streams must not be buffered or compressed by the dev proxy.
+      '/api': { target: 'http://localhost:3001', changeOrigin: true },
+      '/health': { target: 'http://localhost:3001', changeOrigin: true },
+      '/screen-view': { target: 'http://localhost:3001', changeOrigin: true },
     }
   }
 })

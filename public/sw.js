@@ -1,5 +1,5 @@
 // Underworld Engine Service Worker - Cache-First for Ultra-Low-Bandwidth Pub Play
-const CACHE_NAME = 'underworld-cache-v1';
+const CACHE_NAME = 'underworld-cache-v2';
 
 const STATIC_ASSETS = [
   '/',
@@ -38,24 +38,13 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
 
-  // Never cache realtime SSE or streaming endpoints
-  if (url.pathname.startsWith('/api/events')) {
-    return;
-  }
-
-  // Network-First for API calls with offline fallback
-  if (url.pathname.startsWith('/api/')) {
-    event.respondWith(
-      fetch(event.request).catch(() => {
-        return new Response(
-          JSON.stringify({ offline: true, error: 'Underworld connection dropped. Reconnecting...' }),
-          {
-            headers: { 'Content-Type': 'application/json' },
-            status: 503,
-          }
-        );
-      })
-    );
+  // The game API (views, streams, commands), health, config and the projector feed always go to the network untouched.
+  if (
+    url.pathname.startsWith('/api/') ||
+    url.pathname === '/health' ||
+    url.pathname === '/config.json' ||
+    url.pathname === '/screen-view'
+  ) {
     return;
   }
 

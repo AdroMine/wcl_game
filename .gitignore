@@ -35,3 +35,7 @@ graphify-out/
 .env
 .env*
 !.env.example
+
+# rebuild runtime data
+data/
+*.snapshot.json

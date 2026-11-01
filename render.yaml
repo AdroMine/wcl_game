@@ -1,4 +1,4 @@
-# Render blueprint: one free web service for the game server.
+# Render blueprint: one free web service that serves the game API and the built web app (dist/).
 # The free plan spins down after 15 minutes without traffic and has an ephemeral disk; the plan in
 # docs/REBUILD_PLAN.md recommends a paid always-on instance for the real event (change `plan` below).
 services:
@@ -6,12 +6,14 @@ services:
     name: underworld-game-server
     runtime: node
     plan: free
-    buildCommand: npm ci --include=dev && npm run build:server
+    buildCommand: npm ci --include=dev && npm run build && npm run build:server
     startCommand: npm run start:server
     healthCheckPath: /health
     envVars:
       - key: NODE_ENV
         value: production
+      - key: STATIC_DIR
+        value: dist
       - key: ADMIN_TOKEN
         sync: false
       - key: PUBLIC_URL

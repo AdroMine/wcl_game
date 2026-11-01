@@ -111,10 +111,11 @@ test('admin brute force is rate limited per IP', async () => {
   }
 });
 
-test('admin is disabled (503) when no ADMIN_TOKEN is configured', async () => {
+test('without ADMIN_TOKEN, development uses only the documented dev token', async () => {
   const s = await startServer({ env: { ADMIN_TOKEN: '' } });
   try {
-    assert.equal((await fetch(`${s.url}/api/admin/view`, { headers: { Authorization: 'Bearer anything' } })).status, 503);
+    assert.equal((await fetch(`${s.url}/api/admin/view`, { headers: { Authorization: 'Bearer anything' } })).status, 401);
+    assert.equal((await fetch(`${s.url}/api/admin/view`, { headers: { Authorization: 'Bearer dev-admin-token-change-me' } })).status, 200);
   } finally {
     await s.cleanup();
   }

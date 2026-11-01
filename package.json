@@ -5,12 +5,12 @@
   "type": "module",
   "scripts": {
     "dev": "concurrently -k -n \"server,client\" -c \"cyan,magenta\" \"npm run dev:server\" \"vite\"",
-    "dev:server": "ADMIN_TOKEN=${ADMIN_TOKEN:-dev-admin-token-change-me} node --watch server/index.ts",
+    "dev:server": "node --watch server/index.ts",
     "dev:client": "vite",
     "build": "tsc -b && vite build",
     "lint": "oxlint",
     "preview": "vite preview",
-    "start": "tsx server/index.ts",
+    "start": "node dist-server/server/index.js",
     "test": "node --test \"tests/engine/*.test.ts\" \"tests/sim/*.test.ts\" \"tests/server/*.test.ts\"",
     "test:r2": "tsx tests/test_round2.ts",
     "test:r3": "tsx tests/test_round3.ts",
@@ -19,7 +19,7 @@
     "sim": "node tests/sim/simulate.ts",
     "typecheck:server": "tsc -p tsconfig.server.json",
     "check:web": "node tools/check-no-supabase.mjs",
-    "server:local": "ADMIN_TOKEN=${ADMIN_TOKEN:-dev-admin-token-change-me} node server/index.ts",
+    "server:local": "node server/index.ts",
     "build:server": "tsc -p tsconfig.build.json",
     "start:server": "node dist-server/server/index.js",
     "swarm": "node tools/swarm/swarm.ts"

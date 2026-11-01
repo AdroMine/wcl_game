@@ -22,10 +22,13 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
   const warnings: string[] = [];
   const nodeEnv = env.NODE_ENV || 'development';
   const production = nodeEnv === 'production';
-  const adminToken = env.ADMIN_TOKEN && env.ADMIN_TOKEN.length > 0 ? env.ADMIN_TOKEN : null;
+  const DEV_ADMIN_TOKEN = 'dev-admin-token-change-me';
+  const rawAdminToken = env.ADMIN_TOKEN && env.ADMIN_TOKEN.length > 0 ? env.ADMIN_TOKEN : null;
+  // Development only: fall back to a fixed, documented token so `npm run dev` works on every OS.
+  const adminToken = rawAdminToken ?? (nodeEnv === 'production' ? null : DEV_ADMIN_TOKEN);
+  if (!rawAdminToken && nodeEnv !== 'production') warnings.push('ADMIN_TOKEN not set: using the development default (see docs/RUNBOOK.md)');
   if (production && !adminToken) throw new Error('ADMIN_TOKEN is required when NODE_ENV=production');
   if (production && adminToken && adminToken.length < 16) throw new Error('ADMIN_TOKEN must be at least 16 characters in production');
-  if (!production && !adminToken) warnings.push('ADMIN_TOKEN is not set: admin endpoints are disabled');
 
   const port = env.PORT === undefined || env.PORT === '' ? 3001 : Number.parseInt(env.PORT, 10);
   if (!Number.isInteger(port) || port < 0 || port > 65535) throw new Error('PORT must be a number between 0 and 65535');

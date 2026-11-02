@@ -182,10 +182,19 @@ test('rate limit: per-player command bucket returns 429 RATE_LIMITED', async () 
 test('rate limit: per-IP bucket allows a whole pub (>= 300 req/s) and still limits abuse', async () => {
   const s = await startServer();
   try {
-    const t0 = Date.now();
-    const rs = await Promise.all(Array.from({ length: 400 }, () => fetch(`${s.url}/api/meta`)));
+    // The client and the server share one event loop here. Opening 400 sockets in a single synchronous
+    // burst fills the kernel accept queue before the server gets a turn; on Windows the queue is small
+    // (~230) and the excess is refused with ECONNREFUSED (a server in its own process, as in production,
+    // does not see this). So start the requests in waves of 50, yielding between waves; all 400 are
+    // still in flight together and hit the limiter within a fraction of a second.
+    const inFlight: Promise<Response>[] = [];
+    for (let wave = 0; wave < 8; wave++) {
+      for (let i = 0; i < 50; i++) inFlight.push(fetch(`${s.url}/api/meta`));
+      await new Promise(r => setTimeout(r, 5));
+    }
+    const rs = await Promise.all(inFlight);
+    assert.equal(rs.length, 400);
     assert.ok(rs.every(r => r.status === 200), 'default limits let 400 simultaneous requests through');
-    void t0;
   } finally {
     await s.cleanup();
   }

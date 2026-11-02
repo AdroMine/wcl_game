@@ -8,7 +8,7 @@ if ('serviceWorker' in navigator && (import.meta.env.PROD || window.location.hos
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('/sw.js').then(
       (registration) => {
-        console.log('Underworld PWA ServiceWorker active with scope:', registration.scope);
+        console.log('Underworld PWA ServiceWorker active with scope:', registration?.scope);
       },
       (err) => {
         console.warn('Underworld ServiceWorker registration failed:', err);

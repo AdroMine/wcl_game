@@ -509,6 +509,8 @@ export interface ScreenView {
   podium?: string[];
   counts: { players: number; teams: number };
   joinUrl?: string;
+  /** LOBBY only: the admin's current maximum crew size N. */
+  lobby?: { crewSize: number };
   notice?: string;
 }
 

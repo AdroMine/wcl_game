@@ -408,6 +408,7 @@ export class ViewBuilder {
         board: g.board,
         counts: { players: state.playerOrder.length, teams: state.teamOrder.length },
       };
+      if (state.phase === 'LOBBY') rest.lobby = { crewSize: crewSizeOf(state) };
       if (state.r3) rest.fleet = fleet;
       if (g.podiumNames.length > 0) rest.podium = g.podiumNames;
       if (this.publicUrl) rest.joinUrl = this.publicUrl;

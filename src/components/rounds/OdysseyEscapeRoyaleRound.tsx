@@ -36,42 +36,70 @@ const LEASH_LABEL: Record<string, { label: string; tone: string }> = {
 };
 
 // ------------------------------------------------------------------ the river
-const FleetTrack: React.FC<{ rows: [string, number, number, string][]; mine: string | undefined; target: number; rival: string | null | undefined }> = ({ rows, mine, target, rival }) => (
-  <div className="space-y-2" data-testid="r3-fleet">
-    <div className="flex items-center justify-between text-sm font-mono">
-      <span className="text-[#a9b4c7]">RIVER STYX FLEET TRACK</span>
-      <span className="text-[#e5cb87] font-bold flex items-center space-x-1">
-        <DoorOpen className="w-4 h-4" />
-        <span>PORTAL AT {target} m</span>
-      </span>
-    </div>
-    <div className="relative w-full h-12 bg-[#08090c] rounded-xl border border-[#2a2e3d] overflow-hidden">
-      <div className="absolute right-0 top-0 bottom-0 w-3 bg-gradient-to-l from-emerald-500 to-transparent" />
-      <div className="absolute right-3 top-0 bottom-0 flex items-center text-xs font-mono font-bold text-emerald-400/80">🚪 {target} m</div>
-      {rows.map(([name, dist, rank], i) => {
-        const pct = rank > 0 ? 100 : Math.min(100, Math.max(0, (dist / target) * 100));
-        const isMe = name === mine;
-        const isRival = !!rival && name === rival;
-        return (
-          <div
-            key={`${name}-${i}`}
-            title={`${name}: ${dist} m`}
-            style={{ left: `calc(${Math.min(pct, 94)}% )` }}
-            className={`absolute top-1.5 bottom-1.5 flex items-center transition-all duration-700 ${isMe ? 'z-20' : isRival ? 'z-10' : 'z-0'}`}
-          >
+const TRACK_LANES = 4;
+const LANE_PX = 30;
+const BOAT_PCT = 11; // boats closer than this overlap on a phone-width track
+
+/** Boats shown on the track: your crew plus the top boats; everyone else only appears in the list. */
+function trackBoats(rows: [string, number, number, string][], mine: string | undefined, target: number): { name: string; dist: number; pct: number; lane: number; isMe: boolean }[] {
+  const ranked = [...rows].sort((x, y) => (x[2] > 0 && y[2] > 0 ? x[2] - y[2] : x[2] > 0 ? -1 : y[2] > 0 ? 1 : y[1] - x[1]));
+  const keep = rows.length <= 8 ? ranked : ranked.filter((r, i) => i < 5 || r[0] === mine);
+  const boats = keep
+    .map(([name, dist, rank]) => ({ name, dist, pct: Math.min(94, rank > 0 ? 100 : Math.max(0, (dist / Math.max(1, target)) * 100)), lane: 0, isMe: name === mine }))
+    .sort((x, y) => x.pct - y.pct);
+  // Greedy lane assignment: first lane whose last boat is far enough to the left; otherwise the emptiest gap.
+  const lastPct: number[] = Array(TRACK_LANES).fill(-1000);
+  for (const bt of boats) {
+    let lane = lastPct.findIndex(l => bt.pct - l >= BOAT_PCT);
+    if (lane < 0) lane = lastPct.indexOf(Math.min(...lastPct));
+    bt.lane = lane;
+    lastPct[lane] = bt.pct;
+  }
+  return boats;
+}
+const FleetTrack: React.FC<{ rows: [string, number, number, string][]; mine: string | undefined; target: number; rival: string | null | undefined }> = ({ rows, mine, target, rival }) => {
+  const boats = trackBoats(rows, mine, target);
+  const lanes = Math.min(TRACK_LANES, Math.max(1, boats.length));
+  const height = lanes * LANE_PX + 12;
+  return (
+    <div className="space-y-2" data-testid="r3-fleet">
+      <div className="flex items-center justify-between text-sm font-mono">
+        <span className="text-[#a9b4c7]">RIVER STYX FLEET TRACK</span>
+        <span className="text-[#e5cb87] font-bold flex items-center space-x-1">
+          <DoorOpen className="w-4 h-4" />
+          <span>PORTAL AT {target} m</span>
+        </span>
+      </div>
+      <div className="relative w-full bg-[#08090c] rounded-xl border border-[#2a2e3d] overflow-hidden" style={{ height }}>
+        <div className="absolute right-0 top-0 bottom-0 w-3 bg-gradient-to-l from-emerald-500 to-transparent" />
+        <div className="absolute right-3 top-0 flex items-center text-xs font-mono font-bold text-emerald-400/80">🚪 {target} m</div>
+        {boats.map((bt, i) => {
+          const isRival = !!rival && bt.name === rival;
+          return (
             <div
-              className={`w-8 h-8 rounded flex items-center justify-center text-base shadow-md border ${
-                isMe ? 'bg-[#c4a45a] text-[#08090c] border-white ring-2 ring-[#c4a45a]/50 scale-110' : isRival ? 'bg-rose-950 border-rose-500 text-rose-300' : 'bg-[#1e2330] border-[#2a2e3d] text-[#f4f0e8] opacity-80'
-              }`}
+              key={`${bt.name}-${i}`}
+              data-testid={bt.isMe ? 'r3-boat-me' : 'r3-boat'}
+              data-lane={bt.lane}
+              title={`${bt.name}: ${bt.dist} m`}
+              style={{ left: `${bt.pct}%`, top: 6 + (bt.lane % lanes) * LANE_PX, height: LANE_PX - 2 }}
+              className={`absolute flex items-center transition-all duration-700 ${bt.isMe ? 'z-20' : isRival ? 'z-10' : 'z-0'}`}
             >
-              {isRival ? <Skull className="w-4 h-4 text-rose-400" /> : '⛵'}
+              <div
+                className={`w-7 h-7 rounded flex items-center justify-center text-sm shadow-md border ${
+                  bt.isMe ? 'bg-[#c4a45a] text-[#08090c] border-white ring-2 ring-[#c4a45a]/60' : isRival ? 'bg-rose-950 border-rose-500 text-rose-300' : 'bg-[#1e2330] border-[#2a2e3d] text-[#f4f0e8] opacity-80'
+                }`}
+              >
+                {isRival ? <Skull className="w-4 h-4 text-rose-400" /> : '⛵'}
+              </div>
+              {bt.isMe && <span className="ml-1 text-[10px] font-mono font-bold text-[#e5cb87] bg-[#08090c]/80 px-1 rounded">YOU</span>}
             </div>
-          </div>
-        );
-      })}
+          );
+        })}
+      </div>
+      {rows.length > boats.length && <p className="text-[11px] font-mono text-[#8e95a5]">Showing your crew and the top 5 boats. All crews are in the list below.</p>}
     </div>
-  </div>
-);
+  );
+};
 
 /** A short ranked list so the crew sees who is ahead, plus its own row. */
 const Leaders: React.FC<{ rows: [string, number, number, string][]; mine: string | undefined; target: number }> = ({ rows, mine, target }) => {

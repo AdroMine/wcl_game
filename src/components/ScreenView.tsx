@@ -82,7 +82,7 @@ export const ScreenView: React.FC = () => {
 
   const briefing = p.step === 'BRIEFING';
   // Crew size is shown when the server includes it in the lobby view (optional field).
-  const crewSize = (data as ScreenData & { lobby?: { crewSize?: number } }).lobby?.crewSize;
+  const crewSize = data.lobby?.crewSize;
   let subtitle = briefing ? 'Briefing' : stepName;
   if (p.name === 'R2_CLASH') subtitle = `Clash ${p.clash} of 3 • ${stepName}`;
   if (p.name === 'R3_ACTIVE') subtitle = `Wave ${p.wave} • ${stepName}`;

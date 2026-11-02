@@ -230,11 +230,11 @@ Lobby preview of a team by its emoji code (URL-encode the emoji):
 ```ts
 interface ScreenView { sid; v; serverNow; phase; title: string; instruction: string; board: [name, score][];
                        fleet?: [name, distance, escapedRank|0, vessel][]; podium?: string[];
-                       counts: { players; teams }; joinUrl?: string; notice?: string }
+                       counts: { players; teams }; joinUrl?: string; lobby?: { crewSize }; notice?: string }
 ```
 
 Public, no private data. Poll it (ETag / 304) or stream it from `GET /api/screen/stream` (same SSE rules, no
-credentials). `fleet` lists every crew in Round 3. `joinUrl` is `PUBLIC_URL` for the QR code.
+credentials). `fleet` lists every crew in Round 3. `joinUrl` is `PUBLIC_URL` for the QR code. `lobby.crewSize` (LOBBY phase only) is the admin's current crew size N.
 
 ## Admin
 

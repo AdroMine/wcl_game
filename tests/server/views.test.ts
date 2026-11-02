@@ -254,6 +254,15 @@ test('content hash ignores v and serverNow but follows content', () => {
   assert.notEqual(new ViewBuilder({ sid: 'other' }).forPlayer(state, pid, h, NOW).hash, a.hash, 'sid is part of the content');
 });
 
+test('screen view carries lobby.crewSize in the LOBBY phase only', () => {
+  const h = harness(5);
+  h.ok(h.admin('ADMIN_SET_CREW_SIZE', { size: 3 }));
+  const vb = new ViewBuilder({ sid: 'x' });
+  assert.deepEqual((JSON.parse(vb.screen(h.state, NOW).json) as { lobby?: unknown }).lobby, { crewSize: 3 });
+  const late = samples.find(s => s.state.phase !== 'LOBBY')!;
+  assert.equal('lobby' in JSON.parse(vb.screen(late.state, NOW).json), false);
+});
+
 test('screen view is public: no private fields, small', () => {
   const vb = new ViewBuilder({ sid: 'x', publicUrl: 'https://play.example' });
   for (const s of samples.filter((_, i) => i % 4 === 0)) {

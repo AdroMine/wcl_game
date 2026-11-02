@@ -64,17 +64,18 @@ export const LobbyTeamFormation: React.FC = () => {
   // ---------------------------------------------------------------- in a team
   if (team) {
     const count = team.members.length;
-    // One card per role: filled with the first member holding it, otherwise Missing Role.
-    const used = new Set<number>();
-    const cards = roles.slice(0, Math.min(crewSize, 5)).map(r => {
-      const idx = team.members.findIndex((m, i) => m.role === r.id && !used.has(i));
-      if (idx >= 0) used.add(idx);
-      return { role: r, member: idx >= 0 ? team.members[idx] : null };
-    });
-    const extras = team.members.filter((_m, i) => !used.has(i));
+    // Every member shows with their own role; members beyond crewSize are extras.
+    // Open seats fill the remaining seats up to crewSize; with 5+ seats we name roles nobody holds.
+    const seated = team.members.slice(0, crewSize);
+    const extras = team.members.slice(crewSize);
+    const openSeats = Math.max(0, crewSize - count);
+    const heldRoles = new Set(team.members.map(m => m.role));
+    const missingRoles = crewSize >= 5 ? roles.filter(r => !heldRoles.has(r.id)).slice(0, openSeats) : [];
+    const openCards = Array.from({ length: openSeats }, (_v, i) => missingRoles[i] ?? null);
     const isMe = (m: { name: string; role: string }) => m.name === me.name && m.role === me.role;
     const isSolo = count <= 1;
     const enough = count >= size.min;
+    const sizeHint = count >= crewSize ? 'Crew full' : enough ? `Ready — room for ${crewSize - count} more` : `Need at least ${size.min}`;
 
     return (
       <div className="space-y-5 py-4">
@@ -147,15 +148,17 @@ export const LobbyTeamFormation: React.FC = () => {
                 Crew Roster ({count} of {crewSize} Shades)
               </p>
               <span data-testid="size-hint" className={`text-[11px] font-mono ${enough ? 'text-emerald-400' : 'text-amber-400'}`}>
-                {enough ? `Ready: ${size.min} to ${crewSize} allowed` : `Need at least ${size.min}, aim for ${crewSize}`}
+                {sizeHint}
               </span>
             </div>
 
             <div className="space-y-2">
-              {cards.map(({ role: r, member }) =>
-                member ? (
+              {seated.map((member, mi) => {
+                const r = byId(member.role);
+                const color = r?.color ?? '#a9b4c7';
+                return (
                   <div
-                    key={r.id}
+                    key={`m${mi}`}
                     data-testid="role-card-filled"
                     className={`flex items-center justify-between p-3 min-h-[56px] rounded-xl border transition-all ${
                       isMe(member) ? 'bg-[#161922] border-[#c4a45a]/50 shadow-sm' : 'bg-[#161922]/60 border-[#3a4157]'
@@ -164,14 +167,14 @@ export const LobbyTeamFormation: React.FC = () => {
                     <div className="flex items-center space-x-3 min-w-0">
                       <div
                         className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0"
-                        style={{ backgroundColor: `${r.color}25`, color: r.color, border: `1px solid ${r.color}50` }}
+                        style={{ backgroundColor: `${color}25`, color, border: `1px solid ${color}50` }}
                       >
-                        <RoleIcon icon={r.icon} />
+                        {r && <RoleIcon icon={r.icon} />}
                       </div>
                       <div className="min-w-0">
                         <div className="text-sm font-bold text-[#f4f0e8] truncate">{isMe(member) ? `${member.name} (You)` : member.name}</div>
-                        <span className="text-[11px] font-medium" style={{ color: r.color }}>
-                          {r.name}
+                        <span className="text-[11px] font-medium" style={{ color }}>
+                          {r?.name ?? member.role}
                         </span>
                       </div>
                     </div>
@@ -179,27 +182,28 @@ export const LobbyTeamFormation: React.FC = () => {
                       {isMe(member) ? 'You' : 'Ready'}
                     </span>
                   </div>
-                ) : (
+                );
+              })}
+              {openCards.map((r, oi) => (
                   <div
-                    key={r.id}
+                    key={`o${oi}`}
                     data-testid="role-card-missing"
                     className="flex items-center justify-between p-3 min-h-[56px] rounded-xl border border-dashed border-amber-500/50 bg-amber-950/10"
                   >
                     <div className="flex items-center space-x-3 min-w-0">
                       <div className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0 border border-dashed border-[#3a4157] text-[#5b6377]">
-                        <RoleIcon icon={r.icon} />
+                        {r ? <RoleIcon icon={r.icon} /> : <Users className="w-4 h-4" />}
                       </div>
                       <div className="min-w-0">
-                        <div className="text-sm font-bold text-[#8e95a5]">{r.name}</div>
-                        <span className="text-[11px] text-[#5b6377]">Nobody yet</span>
+                        <div className="text-sm font-bold text-[#8e95a5]">{r ? r.name : 'Open seat'}</div>
+                        <span className="text-[11px] text-[#5b6377]">{r ? 'Nobody yet' : 'Waiting for a crewmate'}</span>
                       </div>
                     </div>
                     <span className="text-[10px] font-mono font-bold text-amber-300 bg-amber-950/60 border border-amber-500/50 px-2 py-1 rounded-full uppercase tracking-wide">
-                      Missing Role
+                      {r ? 'Missing Role' : 'Open seat'}
                     </span>
                   </div>
-                ),
-              )}
+              ))}
               {extras.map((m, i) => {
                 const r = byId(m.role);
                 return (

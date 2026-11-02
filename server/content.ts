@@ -30,7 +30,7 @@ const BRIEFINGS: Briefing[] = [
       { title: '1. Re-arrange Pieces', desc: 'Lay phones side-by-side. Match and align the golden fracture runes to reconstruct the ancient stone tablet.' },
       { title: '2. Decipher & Submit', desc: 'Read the connected 2-word phrase. Any teammate can type and submit on their phone screen.' },
     ],
-    objective: 'Unseal the tomb gate before 5:00 runs out. Fast solves award up to +300 PTS (50 PTS guaranteed floor). Each hint you take costs 30 PTS.',
+    objective: 'Unseal the tomb gate before 5:00 runs out. Fast solves award up to +300 PTS (50 PTS guaranteed floor).',
   },
   {
     stageNumber: 2,
@@ -84,7 +84,7 @@ const INSTRUCTIONS: Record<string, string> = {
   'R1_ACTIVE/BRIEFING': 'Round 1 briefing: the story plays, then the 5:00 clock starts.',
   'R2_CLASH/BRIEFING': 'Round 2 briefing: the story plays, then the first clash starts.',
   'R3_ACTIVE/BRIEFING': 'Round 3 briefing: the story plays, then wave 1 starts.',
-  R1_ACTIVE: 'Round 1: lay your crew phones side by side to read the tablet, then any teammate submits the codeword. Hints unlock at 2:00, 3:00 and 4:00 and cost 30 points each.',
+  R1_ACTIVE: 'Round 1: lay your crew phones side by side to read the tablet, then any teammate submits the codeword.',
   R1_RESULTS: 'Round 1 is over. Eyes up for the standings.',
   R2_PAIRING: 'Round 2: find your rival crew. One of you types their 2-digit battle code to link the crews.',
   'R2_CLASH/HUDDLE': 'Huddle with your own crew. Whisper: Truce or Ambush?',

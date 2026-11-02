@@ -11,7 +11,6 @@ export const ROLES: readonly { id: RoleId; name: string; color: string }[] = [
 ];
 export const ROLE_IDS: readonly RoleId[] = ROLES.map(r => r.id);
 
-export const TEAM_MIN = 3;
 /** Admin-settable crew size N (RULE_DECISIONS Q11): 3..6, default 5. */
 export const CREW_SIZE_MIN = 3;
 export const CREW_SIZE_MAX = 6;

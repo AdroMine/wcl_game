@@ -379,7 +379,7 @@ const TeamsTab: React.FC<{ view: AdminViewData; run: Run; busy: boolean }> = ({ 
             </button>
           ))}
         </div>
-        <p className="text-xs text-[#8e95a5]">Max crew size. Auto-group builds crews of this size; 1–2 stragglers join existing crews. Lobby only.</p>
+        <p className="text-xs text-[#8e95a5]">Auto-group builds crews of this size; leftovers form a smaller crew; a single leftover is yours to place. Lobby only.</p>
       </div>
       {view.phase.name === 'LOBBY' && (
         <button className={BTN} disabled={busy} onClick={() => void run('Auto-group', 'ADMIN_AUTO_GROUP')}>

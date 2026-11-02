@@ -359,7 +359,7 @@ test('lobby view carries the current crew size', () => {
 });
 
 /**
- * Worst case: 40 crews of 7 (crew size 6 + the auto-group overflow), played through every step with votes cast,
+ * Worst case: 40 crews of 6 (the absolute cap of 6), played through every step with votes cast,
  * wave reports and leashes. Measures the largest view of any player.
  */
 function worstCase(nameFor: (kind: 'player' | 'team', i: number) => string): { max: Record<string, number>; degraded: number; overall: number; views: number } {
@@ -376,11 +376,11 @@ function worstCase(nameFor: (kind: 'player' | 'team', i: number) => string): { m
     const tid = h.state.players[`creator${c}`].teamId!;
     teamIds.push(tid);
     h.ok(h.admin('ADMIN_MOVE_PLAYER', { playerId: lead, teamId: tid }));
-    for (let k = 0; k < 5; k++) {
+    for (let k = 0; k < 4; k++) {
       h.ok(h.admin('ADMIN_ADD_PLAYER', { name: nameFor('player', n++), teamId: tid }));
     }
   }
-  assert.ok(teamIds.every(t => h.state.teams[t].playerIds.length === 7));
+  assert.ok(teamIds.every(t => h.state.teams[t].playerIds.length === 6));
   const max: Record<string, number> = {};
   let degraded = 0;
   let overall = 0;
@@ -455,16 +455,16 @@ function worstCase(nameFor: (kind: 'player' | 'team', i: number) => string): { m
   return { max, degraded, overall, views };
 }
 
-test('worst case: 40 crews of 7, ordinary names: every view <= 4096 bytes and nothing is degraded', () => {
+test('worst case: 40 crews of 6, ordinary names: every view <= 4096 bytes and nothing is degraded', () => {
   const r = worstCase((kind, i) => (kind === 'player' ? `Player ${i % 1000}` : `Crew number ${i}`));
-  console.log(`# worst case (40 crews of 7, ordinary names): max view ${r.overall} bytes over ${r.views} views; per step ${JSON.stringify(r.max)}`);
+  console.log(`# worst case (40 crews of 6, ordinary names): max view ${r.overall} bytes over ${r.views} views; per step ${JSON.stringify(r.max)}`);
   assert.equal(r.degraded, 0, 'no view needed degrading');
   assert.ok(r.overall <= LIMITS.viewBytes);
 });
 
-test('worst case: 40 crews of 7 with maximum-length multibyte names stay <= 4096 bytes (degrading if needed)', () => {
+test('worst case: 40 crews of 6 with maximum-length multibyte names stay <= 4096 bytes (degrading if needed)', () => {
   const r = worstCase((kind, i) => String.fromCharCode(0x6f22 + (i % 50)).repeat(kind === 'player' ? 24 : 32));
-  console.log(`# worst case (40 crews of 7, multibyte names): max view ${r.overall} bytes, degraded views ${r.degraded}`);
+  console.log(`# worst case (40 crews of 6, multibyte names): max view ${r.overall} bytes, degraded views ${r.degraded}`);
   assert.ok(r.overall <= LIMITS.viewBytes);
 });
 

@@ -2,8 +2,8 @@
 // rename) and admin auto-grouping. Behaviour ported from src/lib/supabaseService.ts
 // (supabaseJoinPlayer, supabaseRerollPlayerRole, supabaseCreateTeam, supabaseJoinTeamByEmoji,
 // supabaseLeaveTeam, supabaseAdminAutoGroup) and src/components/LobbyTeamFormation.tsx.
-import { MAX_TEAM_NAME, ROLE_IDS, TEAM_MIN } from './config.ts';
-import { asObj, cleanName, crewSizeOf, detachPlayer, maxAdminSize, maxJoinSize, recomputeScore, reqString, uniqueRoleSlots } from './common.ts';
+import { MAX_TEAM_NAME, ROLE_IDS } from './config.ts';
+import { asObj, cleanName, crewSizeOf, detachPlayer, maxJoinSize, recomputeScore, reqString, uniqueRoleSlots } from './common.ts';
 import { resyncR1Slots } from './r1slots.ts';
 import { nextId, nextNumber } from './ids.ts';
 import { rngPick, rngShuffle } from './rng.ts';
@@ -190,27 +190,24 @@ const renameTeam: Handler = (d, c, _now, ev) => {
 };
 
 /**
- * Crew sizes for `n` unassigned players with crew size N (RULE_DECISIONS Q11): crews of N; a remainder
- * of 3 or more forms its own crew; a remainder of 1 or 2 is absorbed by existing crews one player each
- * (crews of N + 1). Returns the sizes of the NEW crews; the caller absorbs whatever is left over.
+ * Crew sizes for `n` unassigned players with crew size N (RULE_DECISIONS Q11): as many crews of N as
+ * possible; a remainder of 2 or more forms one smaller crew (so a crew of 2 is possible); a remainder
+ * of exactly 1 is not placed (the admin places that player). Returns the sizes of the NEW crews.
  */
 export function planCrewSizes(n: number, N: number): number[] {
-  if (n < TEAM_MIN) return [];
-  if (n < N) return [n]; // 3..N-1 players: one crew
+  if (n < 2) return [];
   const q = Math.floor(n / N);
   const r = n % N;
-  if (r === 0) return Array(q).fill(N);
-  if (r >= TEAM_MIN) return [...Array(q).fill(N), r];
-  // r is 1 or 2: each crew can absorb one extra player. Too few crews (N + 2 players): split into N-1 and 3 when possible.
-  if (q < r && N - 1 >= TEAM_MIN) return [N - 1, 3];
-  return Array(q).fill(N);
+  const sizes: number[] = Array(q).fill(N);
+  if (r >= 2) sizes.push(r);
+  return sizes;
 }
 
 /**
- * Admin auto-group: unassigned players go into crews of N (crew size setting) where possible; a
- * remainder of 3+ is its own crew, a remainder of 1-2 joins existing crews (up to N + 1). Roles are
- * interleaved so that consecutive crews get distinct roles whenever the role mix allows it.
- * Returns the number of players placed.
+ * Admin auto-group: unassigned players go into NEW crews of N (crew size setting); a remainder of 2+
+ * forms one smaller crew; a single leftover stays unassigned for the admin to place. Existing crews are
+ * never topped up or touched. Roles are interleaved so that consecutive crews get distinct roles
+ * whenever the role mix allows it. Returns the number of players placed.
  */
 export function autoGroup(d: GameState, ev: GameEvent[]): number {
   const free = d.playerOrder.filter(id => !d.players[id].teamId);
@@ -237,20 +234,6 @@ export function autoGroup(d: GameState, ev: GameEvent[]): number {
     for (let i = 0; i < size; i++) addToTeam(d, team, d.players[interleaved[cursor++]]);
     placed += size;
     ev.push({ type: 'TEAM_CREATED', teamId: team.id });
-  }
-  const leftovers = interleaved.slice(cursor);
-  const cap = maxAdminSize(d);
-  for (const pid of leftovers) {
-    const p = d.players[pid];
-    let best: Team | null = null;
-    for (const tid of d.teamOrder) {
-      const t = d.teams[tid];
-      if (t.playerIds.length >= cap) continue;
-      if (!best || t.playerIds.length < best.playerIds.length) best = t;
-    }
-    if (!best) continue;
-    addToTeam(d, best, p);
-    placed++;
   }
   ev.push({ type: 'AUTO_GROUPED', placed });
   return placed;

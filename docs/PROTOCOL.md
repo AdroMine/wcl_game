@@ -247,7 +247,7 @@ admin token). Repeated failures from one IP are rate limited (`429`); once limit
   `ADMIN_SKIP_STEP` (`{phaseSeq?}`; also skips a BRIEFING and starts the round's clock), `ADMIN_ADJUST_DEADLINE` (`{seconds}`), `ADMIN_ADJUST_SCORE` (`{teamId, delta}`),
   `ADMIN_ADJUST_DISTANCE`, `ADMIN_TOGGLE_HONOUR`, `ADMIN_MOVE_PLAYER` (`{playerId, teamId|null}`), `ADMIN_REMOVE_PLAYER`,
   `ADMIN_ADD_PLAYER`, `ADMIN_DELETE_TEAM`, `ADMIN_RENAME_TEAM`, `ADMIN_AUTO_GROUP`, `ADMIN_SET_DURATIONS`,
-  `ADMIN_SET_CREW_SIZE` (`{size: 3..6}`, lobby only, otherwise `WRONG_PHASE`; default 5; validated in `shared/protocol.ts`; sets the maximum crew size N for creating and joining crews, auto-group builds crews of N and adds 1-2 leftovers to existing crews, admin add/move allow N + 1),
+  `ADMIN_SET_CREW_SIZE` (`{size: 3..6}`, lobby only, otherwise `WRONG_PHASE`; default 5; validated in `shared/protocol.ts`; sets the maximum crew size N for creating and joining crews, auto-group builds new crews of N, a remainder of 2+ forms one smaller crew, a single leftover stays unassigned; admin add/move allow up to 6 whatever N is),
   `ADMIN_RESET_GAME`, `ADMIN_TRIGGER_SUDDEN_DEATH` (`{teamA, teamB}`), `ADMIN_MARK_R1_SOLVED` (`{teamId}`),
   `ADMIN_R2_PAIR` (`{teamA, teamB}`), `ADMIN_R2_UNPAIR` (`{teamId}`), `ADMIN_R2_AUTO_PAIR`. Payload details are in
   `server/engine/admin.ts`.

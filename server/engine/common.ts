@@ -14,9 +14,9 @@ export function maxJoinSize(d: Pick<GameState, 'config'>): number {
   return crewSizeOf(d);
 }
 
-/** Max members when the admin adds or moves a player, or auto-group absorbs leftovers: N + 1. */
-export function maxAdminSize(d: Pick<GameState, 'config'>): number {
-  return crewSizeOf(d) + 1;
+/** Absolute cap on crew size whatever N is: the admin may add or move a player up to this (RULE_DECISIONS Q11). */
+export function maxAdminSize(_d?: Pick<GameState, 'config'>): number {
+  return CREW_SIZE_MAX;
 }
 
 /** The first this-many members of a crew must have different roles. */

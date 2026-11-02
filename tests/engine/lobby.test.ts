@@ -160,30 +160,32 @@ test('previewTeamByEmoji is a pure selector with conflict detection', () => {
   assert.deepEqual(previewTeamByEmoji(h.state, '🔥🔥🔥🔥', 'visitor'), { ok: false, error: 'UNKNOWN_CODE' });
 });
 
-test('auto-group: teams of 5, never below 3 when avoidable, leftovers join up to 6', () => {
-  const expected: Record<number, number[]> = {
-    10: [5, 5],
-    11: [6, 5],
-    12: [6, 6],
-    8: [5, 3],
-    7: [4, 3],
-    9: [5, 4],
-    4: [4],
-    3: [3],
-    13: [5, 5, 3],
-    14: [5, 5, 4],
-    16: [6, 5, 5],
-    200: Array(40).fill(5),
+test('auto-group (N=5): crews of 5, a remainder of 2+ is its own crew, a single leftover stays unassigned', () => {
+  const expected: Record<number, { sizes: number[]; unassigned: number }> = {
+    1: { sizes: [], unassigned: 1 },
+    2: { sizes: [2], unassigned: 0 },
+    3: { sizes: [3], unassigned: 0 },
+    4: { sizes: [4], unassigned: 0 },
+    7: { sizes: [5, 2], unassigned: 0 },
+    8: { sizes: [5, 3], unassigned: 0 },
+    9: { sizes: [5, 4], unassigned: 0 },
+    10: { sizes: [5, 5], unassigned: 0 },
+    11: { sizes: [5, 5], unassigned: 1 },
+    12: { sizes: [5, 5, 2], unassigned: 0 },
+    13: { sizes: [5, 5, 3], unassigned: 0 },
+    16: { sizes: [5, 5, 5], unassigned: 1 },
+    200: { sizes: Array(40).fill(5), unassigned: 0 },
   };
-  for (const [n, sizes] of Object.entries(expected)) {
+  for (const [n, want] of Object.entries(expected)) {
     const h = harness(3);
     for (let i = 0; i < Number(n); i++) h.join(`p${i}`);
-    h.ok(h.admin('ADMIN_AUTO_GROUP'));
+    const err = h.admin('ADMIN_AUTO_GROUP');
+    if (want.sizes.length > 0) h.ok(err);
     const got = Object.values(h.state.teams)
       .map(t => t.playerIds.length)
-      .sort((a, b) => b - a);
-    assert.deepEqual(got, sizes.slice().sort((a, b) => b - a), `n=${n}`);
-    assert.ok(Object.values(h.state.players).every(p => p.teamId), `n=${n} everyone placed`);
+      .sort((x, y) => y - x);
+    assert.deepEqual(got, want.sizes.slice().sort((x, y) => y - x), `n=${n}`);
+    assert.equal(Object.values(h.state.players).filter(p => !p.teamId).length, want.unassigned, `n=${n} unassigned`);
   }
 });
 
@@ -197,14 +199,14 @@ test('auto-group gives distinct roles within teams of five when the role mix all
   }
 });
 
-test('auto-group with 1-2 stragglers puts them into existing teams with room', () => {
+test('auto-group never tops up existing crews: new players form their own crew', () => {
   const h = harness();
-  formTeams(h, [5, 4]);
+  const [t0, t1] = formTeams(h, [5, 4]);
   h.join('s1');
   h.join('s2');
   h.ok(h.admin('ADMIN_AUTO_GROUP'));
-  assert.ok(h.state.players.s1.teamId && h.state.players.s2.teamId);
-  const sizes = Object.values(h.state.teams).map(t => t.playerIds.length);
-  assert.ok(sizes.every(s => s <= 6));
-  assert.equal(sizes.reduce((a, b) => a + b, 0), 11);
+  assert.equal(h.state.teams[t0].playerIds.length, 5);
+  assert.equal(h.state.teams[t1].playerIds.length, 4);
+  assert.equal(h.state.players.s1.teamId, h.state.players.s2.teamId);
+  assert.equal(h.state.teams[h.state.players.s1.teamId!].playerIds.length, 2);
 });

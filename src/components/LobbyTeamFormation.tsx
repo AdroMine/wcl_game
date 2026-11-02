@@ -74,8 +74,8 @@ export const LobbyTeamFormation: React.FC = () => {
     const openCards = Array.from({ length: openSeats }, (_v, i) => missingRoles[i] ?? null);
     const isMe = (m: { name: string; role: string }) => m.name === me.name && m.role === me.role;
     const isSolo = count <= 1;
-    const enough = count >= size.min;
-    const sizeHint = count >= crewSize ? 'Crew full' : enough ? `Ready — room for ${crewSize - count} more` : `Need at least ${size.min}`;
+    const enough = count >= 2;
+    const sizeHint = count >= crewSize ? 'Crew full' : `Room for ${crewSize - count} more (aim for ${crewSize})`;
 
     return (
       <div className="space-y-5 py-4">
@@ -313,7 +313,7 @@ export const LobbyTeamFormation: React.FC = () => {
                 <span>Physical Social Objective:</span>
               </div>
               <p className="text-sm text-[#8e95a5] leading-relaxed">
-                Mingle with other players in the room. Find {crewSize - 1} other shades holding different roles to complete your escape crew ({size.min} to {crewSize} players per crew):
+                Mingle with other players in the room. Find {crewSize - 1} other shades holding different roles to complete your escape crew (aim for {crewSize} players per crew):
               </p>
               <div className="flex flex-wrap gap-1.5 pt-1">
                 {roles.map(r => (

@@ -6,6 +6,8 @@ services:
     name: underworld-game-server
     runtime: node
     plan: free
+    # Closest Render region to London; cannot be changed after the service is created.
+    region: frankfurt
     buildCommand: npm ci --include=dev && npm run build && npm run build:server
     startCommand: npm run start:server
     healthCheckPath: /health

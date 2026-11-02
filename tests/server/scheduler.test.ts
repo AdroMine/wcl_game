@@ -6,6 +6,7 @@ import type { Command, GameState } from '../../server/engine/index.ts';
 import { Runtime } from '../../server/runtime.ts';
 import { Scheduler } from '../../server/scheduler.ts';
 import { sleep } from './harness.ts';
+import { briefingSeconds } from '../../server/content.ts';
 
 function fixture() {
   let now = 1_000_000;
@@ -19,7 +20,13 @@ function fixture() {
   send('ADMIN_AUTO_GROUP', { kind: 'admin' });
   send('ADMIN_SET_DURATIONS', { kind: 'admin' }, { r1Seconds: 30, r2: { HUDDLE: 10, PARLEY: 10, VOTE: 10, DEBRIEF: 10 } });
   send('ADMIN_START_GAME', { kind: 'admin' });
-  return { rt, sched: new Scheduler(rt), advance: (ms: number) => (now += ms), send, get now() { return now; } };
+  const sched = new Scheduler(rt);
+  // the scheduler ends the Round 1 briefing at its deadline and the 30 s clock starts then
+  assert.equal(rt.state.step, 'BRIEFING');
+  now += briefingSeconds(1) * 1000;
+  assert.equal(sched.tick(), 1);
+  assert.equal(rt.state.step, null);
+  return { rt, sched, advance: (ms: number) => (now += ms), send, get now() { return now; } };
 }
 
 test('nothing happens before the deadline; the step advances once after it', () => {
@@ -41,6 +48,9 @@ test('an event-loop stall of ten minutes advances exactly one step per overdue d
   f.send('ADMIN_START_R2', { kind: 'admin' });
   f.send('ADMIN_R2_AUTO_PAIR', { kind: 'admin' });
   assert.equal(f.rt.state.phase, 'R2_CLASH');
+  assert.equal(f.rt.state.step, 'BRIEFING');
+  f.advance(briefingSeconds(2) * 1000);
+  assert.equal(f.sched.tick(), 1);
   assert.equal(f.rt.state.step, 'HUDDLE');
   const seq0 = f.rt.state.phaseSeq;
   f.advance(10 * 60_000); // stall
@@ -74,8 +84,9 @@ test('a full Round 2 plays out with irregular ticks and each step is entered exa
   }
   assert.equal(f.rt.state.phase, 'R2_RESULTS');
   const entered = f.rt.state.phaseLog.filter(e => e.phase === 'R2_CLASH').map(e => `${e.clash}/${e.step}`);
-  assert.equal(entered.length, 12);
-  assert.equal(new Set(entered).size, 12);
+  assert.equal(entered.length, 13); // BRIEFING + 12
+  assert.equal(new Set(entered).size, 13);
+  assert.equal(entered[0], '1/BRIEFING');
 });
 
 test('paused games do not advance; resuming keeps the remaining time', () => {

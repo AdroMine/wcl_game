@@ -72,10 +72,19 @@ async function lobbyReady(sw: Swarm, r: Report, spread = 8000): Promise<boolean>
 /** Admin drives the game into the first Round 2 clash: start, skip Round 1, pair everybody, force the clock if a crew is left over. */
 async function toR2Clash(sw: Swarm): Promise<void> {
   await sw.admin('ADMIN_START_GAME');
-  await sw.admin('ADMIN_SKIP_STEP');
+  await sw.admin('ADMIN_SKIP_STEP'); // the Round 1 briefing: the 5:00 clock starts
+  await sw.admin('ADMIN_SKIP_STEP'); // Round 1 itself
   await sw.admin('ADMIN_START_R2');
   await sw.admin('ADMIN_R2_AUTO_PAIR');
   if ((await sw.adminView()).phase.name === 'R2_PAIRING') await sw.admin('ADMIN_R2_FORCE_START');
+  await skipBriefing(sw);
+}
+
+/** Skip the BRIEFING step if the game is in one (the round's real clock then starts at once). */
+async function skipBriefing(sw: Swarm): Promise<void> {
+  const a = await sw.adminView();
+  if (a.phase.step === 'BRIEFING') await sw.admin('ADMIN_SKIP_STEP', { phaseSeq: a.phase.phaseSeq });
+  await sleep(150);
 }
 
 function teamGroups(sw: Swarm): Map<string, typeof sw.bots> {
@@ -148,6 +157,7 @@ async function roundStart(sw: Swarm): Promise<ScenarioResult> {
   await sw.admin('ADMIN_SET_DURATIONS', { r1Seconds: 60 });
   const start = await sw.admin('ADMIN_START_GAME');
   r.check('game started', start.ok, start.error ?? '');
+  await skipBriefing(sw);
   await sw.refreshWorld();
   const sampler = sw.sampler();
   sampler.start(250);
@@ -188,6 +198,7 @@ async function phaseChange(sw: Swarm): Promise<ScenarioResult> {
   await sw.admin('ADMIN_SET_DURATIONS', { r1Seconds: 12, r2: { HUDDLE: 8, PARLEY: 6, VOTE: 8, DEBRIEF: 5 } });
   await sw.admin('ADMIN_START_GAME');
   await sw.waitAll(v => v.phase.name === 'R1_ACTIVE', 5000);
+  await skipBriefing(sw);
   const endsAt = (await sw.adminView()).phase.endsAt!;
   const deadlineLocal = endsAt - sw.serverOffset;
   // 1. a real deadline passes with all bots connected (scheduler -> flush -> network)
@@ -493,6 +504,7 @@ async function playFullGame(sw: Swarm, r: Report, label: string): Promise<GameRu
 
   await sleep(2000);
   await sw.admin('ADMIN_START_GAME');
+  await skipBriefing(sw);
   await sw.refreshWorld();
   if (!(await must('Round 1 ran and closed at its deadline', sw.waitPhase('R1_RESULTS', null, phaseTimeout(dur.r1Seconds * 1000))))) return finish(false, 'R1');
   const a1 = await sw.adminView();
@@ -508,11 +520,13 @@ async function playFullGame(sw: Swarm, r: Report, label: string): Promise<GameRu
     r.notes.push('an odd number of crews: the host started the clashes with one crew unpaired');
     await sw.admin('ADMIN_R2_FORCE_START');
   }
+  await skipBriefing(sw);
   const r2Len = 3 * (dur.r2.HUDDLE + dur.r2.PARLEY + dur.r2.VOTE + dur.r2.DEBRIEF) * 1000;
   if (!(await must('Round 2 ran through three clashes', sw.waitPhase('R2_RESULTS', null, phaseTimeout(r2Len))))) return finish(false, 'R2');
   await sleep(pause);
 
   await sw.admin('ADMIN_START_R3');
+  await skipBriefing(sw);
   const r3Start = Date.now();
   const waveLen = (dur.r3.BLUFF + dur.r3.VOTE + dur.r3.REVEAL) * 1000;
   for (;;) {

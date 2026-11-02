@@ -127,7 +127,9 @@ test('server restart restores the same state version, PAUSED; players keep their
     const v2 = await again.view();
     assert.equal(v2.me?.name, again.id, 'same token still works');
     assert.equal(v2.phase.paused, true);
-    assert.equal(v2.me?.slice?.join('\n'), view.me?.slice?.join('\n'), 'same private slice');
+    assert.deepEqual(v2.r1?.tablet, view.r1?.tablet, 'same tablet');
+    assert.equal(v2.me?.slot, view.me?.slot, 'same private slot');
+    assert.ok(view.r1?.tablet && view.me?.slot !== undefined, 'the sample view has a tablet and a slot');
     // nothing advances while paused, then an admin resume continues the round
     assert.ok(b.app.runtime.state.pausedAt != null);
     assert.ok((await admin(b.url, 'ADMIN_RESUME')).ok);
@@ -405,4 +407,18 @@ test('runtime persistence listener: snapshot content equals the live state', asy
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
+});
+
+test('an old snapshot without config.crewSize restores with the default 5, paused, and its views build', async () => {
+  const { createInitialState } = await import('../../server/engine/index.ts');
+  const { pauseRestored, gameStateProblem } = await import('../../server/persistence/index.ts');
+  const { ViewBuilder } = await import('../../server/transport/views.ts');
+  const old = JSON.parse(JSON.stringify(createInitialState({ seed: 3 })));
+  delete old.config.crewSize;
+  assert.equal(gameStateProblem(old), null, 'an old snapshot is still a valid state');
+  const restored = pauseRestored(old, 1_700_000_000_000, 'boot1');
+  assert.equal(restored.config.crewSize, 5);
+  assert.ok(restored.pausedAt != null);
+  const view = JSON.parse(new ViewBuilder({ sid: 's' }).forPlayer(restored, null, null, 1).json) as { lobby?: { crewSize: number } };
+  assert.equal(view.lobby?.crewSize, 5);
 });

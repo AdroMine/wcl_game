@@ -63,11 +63,10 @@ while any snapshot store is failing (the game keeps running).
 ### `GET /api/meta`
 
 Static content that must not be repeated in every view: protocol version, `limits`, `roles` (id, name, colour, icon name,
-description), `emojiPool`, `teamSize`, default `durations`, the three round briefings (`rounds[]`: title, subtitle,
-story `sentences`, `rules`, `objective`), `vessels`, `stances`, `sdActions`, `moralStatuses`, `hints`, `errors` (a
+description), `emojiPool`, `teamSize` (`{min:3, target:5, max:6}`: the limits; the live crew size is `lobby.crewSize` in the lobby view), default `durations` (with `crewSize`), the three round briefings (`rounds[]`: title, subtitle,
+story `sentences`, `rules`, `objective`, `briefingSeconds`), `r2Stakes` (points per clash: `{clash, bothTruce, ambushWin, truceLoss, bothAmbush}[]`), `r3` (`targetDistance`, `podiumSize`, `honourBonus`), `vessels`, `stances`, `sdActions`, `moralStatuses`, `hints`, `errors` (a
 fallback message per error code) and `instructions` (the projector text per phase, keyed `PHASE` or `PHASE/STEP`).
-Load it once at start. A phone shows the round briefing when the view's `phase.name` enters `R1_ACTIVE`, `R2_PAIRING` or
-`R3_ACTIVE`.
+Load it once at start. A phone plays the round briefing story while the view's `phase.step` is `BRIEFING` (see Views).
 
 ## Commands: `POST /api/command`
 
@@ -137,8 +136,7 @@ per-IP bucket (about 600 requests per second, burst 1500) because a whole pub ma
 
 ## Views
 
-One JSON object per player, at most **4096 bytes** (enforced and tested for a 200-player, 40-team game in every phase;
-the largest real view is about 2.2 KB). It never contains token hashes, tokens, codewords, other players' private data,
+One JSON object per player, at most **4096 bytes** (enforced and tested for a 200-player, 40-team game in every phase, and for 40 crews of 7 members; the largest real view is about 2.0 KB with ordinary names). It never contains token hashes, tokens, codewords, other players' private data,
 other teams' votes before the reveal, or any teammate's individual vote.
 
 ```ts
@@ -146,16 +144,16 @@ interface View {
   sid: string;      // server instance id; if it changes the server restarted: accept any v
   v: number;        // state version, monotonic within one sid
   serverNow: number;// server clock (ms since epoch) when this view was sent
-  phase: { name; step; clash; wave; endsAt: number|null; paused: boolean; pausedAt?; pausedRemainingMs? };
-  me?: { id; name; role; joinedTeam: boolean; slice?: string[]; slot?; slotCount?; myVote? };
+  phase: { name; step; clash; wave; endsAt: number|null; startedAt?: number /* BRIEFING only */; paused: boolean; pausedAt?; pausedRemainingMs? };
+  me?: { id; name; role; joinedTeam: boolean; slot?; slotCount?; myVote? };
   team?: { id; name; emojiCode; battleCode; members: {name; role}[]; missingRoles: RoleId[]; score; rank };
-  r1?: { solved; points; closed; hints: { index; unlocksAt; taken; text? }[] };
-  r2?: { paired; rival?: {name; battleCode}; clashes: { clash; myStance; rivalStance; myPts; rivalPts }[];
-         votedCount?; teamSize; moral? };
+  r1?: { tablet?: { line1; line2 }; solved; points; closed; hints: { index; unlocksAt; taken; text? }[] };
+  r2?: { paired; rival?: {name; battleCode}; clashes: { clash; myStance; rivalStance; myPts; rivalPts; myVotes: string }[];
+         votedCount?; votedBy?: boolean[]; teamSize; moral? };
   r3?: { distance; escaped; escapedRank?; activeCrews; escapedCount; sailboatCapacity; votedCount?; teamSize;
-         leash?: { available; targetName; armed }; fleet: [name, distance, escapedRank|0, vessel 'R'|'S'|'G'|''][];
-         myPos?; lastWave?: {…}; sd?: {…}; podium?: string[] };
-  lobby?: { players; teams };   // LOBBY only
+         honourable?: true; leash?: { available; targetName; armed }; fleet: [name, distance, escapedRank|0, vessel 'R'|'S'|'G'|''][];
+         myPos?; lastWave?: { …; vessels: [code, crews, outcome, metres][]; leashes?: {…}[] }; sd?: {…}; podium?: string[] };
+  lobby?: { players; teams; crewSize };   // LOBBY only; crewSize = max crew size N (3..6, default 5)
   board: [name, score][];       // top 10 teams
   boardTotal: number;           // number of teams
   notice?: string;              // admin banner
@@ -167,18 +165,26 @@ Key rules for the client:
 - **`me` absent** = the server does not know this `playerId`/`token` pair (new device, game reset, or server lost the
   player): show the join screen. This is a normal 200 response, never an error.
 - **Phase names**: `LOBBY R1_ACTIVE R1_RESULTS R2_PAIRING R2_CLASH R2_RESULTS R3_ACTIVE R3_RESULTS FINISHED`.
-  Steps: Round 2 `HUDDLE PARLEY VOTE DEBRIEF` (clash 1..3); Round 3 `BLUFF VOTE REVEAL` (wave 1..n) and `SUDDEN_DEATH`.
+  Steps: `BRIEFING` (see below) at the start of `R1_ACTIVE`, of `R2_CLASH` (clash 1, before its huddle) and of `R3_ACTIVE` (wave 1, before its bluff); Round 1 then runs with `step: null`; Round 2 `HUDDLE PARLEY VOTE DEBRIEF` (clash 1..3); Round 3 `BLUFF VOTE REVEAL` (wave 1..n) and `SUDDEN_DEATH`.
+- **BRIEFING** is a server-timed story step. `phase.startedAt` and `phase.endsAt` are absolute server times (use the same
+  `offset = serverNow - Date.now()` as for countdowns): animate the briefing from `(now + offset - startedAt)`, so a refreshed or
+  late phone resumes at the right point. Its length is `meta.rounds[i].briefingSeconds` = `ceil(sentences * 2.8 + 3 + (rules + 1) * 2 + 3)`.
+  While it runs the server refuses `R1_SUBMIT`, `R1_HINT`, `R2_VOTE`, `R3_VOTE` and `R3_ARM_LEASH` with `WRONG_PHASE`, and the round's
+  real clock has not started: the Round 1 5:00 deadline, hint unlocks and speed tiers, the Round 2 clash timers and the Round 3 wave timers
+  all start when the briefing ends (the next view has the next step and a fresh `endsAt`). During the Round 1 briefing
+  `r1.hints[].unlocksAt` is already the projected time (briefing end + 120/180/240 s). The briefing is skipped by the admin's *skip step*
+  and is paused and resumed like any step. `phase.startedAt` is absent outside the briefing.
 - **Clocks**: the client never changes phase by itself. Keep `offset = serverNow - Date.now()` from the latest view (or the
   `X-Server-Now` header on `/api/view` answers, including `304`) and show `endsAt - (Date.now() + offset)`. While
   `phase.paused` the clock is frozen: show `pausedRemainingMs`, and use `pausedAt` instead of "now" for R1 hint timers.
-- **R1**: `me.slice` is this player's own part of the tablet (array of text lines, monospace, keep the line breaks). When `me.sliceFmt === "hash"` (only for very small crews, whose slice is large) every `#` in the lines stands for the block glyph `\u2588`; replace it before drawing.
+- **R1**: `r1.tablet` (own crew only, only while `R1_ACTIVE`, including the briefing) is the crew's codeword split into the two tablet lines; draw the vector tablet from it and show piece `me.slot` of `me.slotCount` (0-based, left to right). `slotCount` always equals the crew's current member count and each member holds a distinct slot; if crew membership changes during Round 1 (admin add, move, remove) the slots are recomputed and the view changes. A disconnect never changes membership. The old ASCII `me.slice` / `me.sliceFmt` fields no longer exist.
   `r1.hints[].unlocksAt` is an absolute server time; a hint is takeable when `now + offset >= unlocksAt`. `text` appears
   once the team took it. `team.members[0]` is the team's first member (slot 0).
 - **R2**: `team.battleCode` is "Your code"; the player types the rival's code into `R2_PAIR`. `r2.clashes` lists only
-  resolved clashes (stances appear at DEBRIEF). During VOTE, `votedCount` of `teamSize` teammates have voted; `me.myVote` is
-  the player's own vote. `r2.moral` is one of `HONOURABLE BETRAYED AGGRESSOR BLOOD_FEUD NONE` from R2_RESULTS on.
+  resolved clashes (stances appear at DEBRIEF). `clashes[].myVotes` reveals, once the clash is scored, how each teammate voted: one character per entry of `team.members` in the same order (`T` truce, `A` ambush, `-` did not vote). During VOTE, `votedCount` of `teamSize` teammates have voted and `votedBy` says who (a boolean per entry of `team.members`, never what they voted); `me.myVote` is
+  the player's own vote. `r2.rival.battleCode` is the rival crew's code. The points at stake per clash are static: `meta.r2Stakes`. `r2.moral` is one of `HONOURABLE BETRAYED AGGRESSOR BLOOD_FEUD NONE` from R2_RESULTS on.
 - **R3**: `fleet` is the first 8 crews on the river (escaped crews first); the vessel letter is filled only from the REVEAL
-  step. `r3.lastWave` is this crew's own outcome of the last resolved wave. `r3.leash` exists only for the Betrayed crew
+  step. `r3.lastWave` is this crew's own outcome of the last resolved wave plus the all-crews summary: `vessels` has three rows in the order Rowboat, Sailboat, Ghost Ship, each `[code 'R'|'S'|'G', crews that boarded, outcome 'SAFE'|'CAPSIZED'|'COLLIDED'|'UNBOARDED', metres per boarding crew]` (e.g. `['S', 2, 'CAPSIZED', 0]`), and `leashes` lists every leash event of that wave involving this crew (`kind` `ANCHOR_SIPHON`, `WRECK_DRAG` or `LEASH_SNAPPED`, `delta` for this crew, `otherName`, `role` `holder` or `target`). `r3.honourable` is `true` when the crew holds the Honourable head start (`meta.r3.honourBonus` metres, "Winds of Olympus"); absent otherwise. `r3.leash` exists only for the Betrayed crew
   that still holds the leash. `r3.sd` describes a Sudden Death standoff (`mine` = this crew is in it). `r3.podium` lists
   Gold, Silver, Bronze crew names.
 - Static texts (role names and colours, round titles and briefings, vessel descriptions, instruction lines) are NOT in
@@ -212,7 +218,7 @@ only while the stream is down. About 2 requests per second per player are allowe
 Lobby preview of a team by its emoji code (URL-encode the emoji):
 
 ```json
-{ "ok": true, "team": { "name": "Crew 3", "emojiCode": "🔥💀⚡", "memberCount": 2, "maxMembers": 6, "isFull": false,
+{ "ok": true, "team": { "name": "Crew 3", "emojiCode": "🔥💀⚡", "memberCount": 2, "maxMembers": 5, "isFull": false,
   "leaderName": "Ada", "members": [{ "name": "Ada", "role": "oracle" }], "missingRoles": ["navigator", "scholar"],
   "hasRoleConflict": true, "conflictingRole": "oracle" } }
 ```
@@ -238,13 +244,14 @@ admin token). Repeated failures from one IP are rate limited (`429`); once limit
 - `POST /api/admin/command` with `{ "type": "ADMIN_START_GAME", "payload": {}, "commandId"?: "…" }`; answers like a player
   command. The commandId is optional (random if omitted; pass one to make a retry safe). Types: `ADMIN_START_GAME`,
   `ADMIN_START_R2`, `ADMIN_R2_FORCE_START`, `ADMIN_START_R3`, `ADMIN_END_R3`, `ADMIN_FINISH`, `ADMIN_PAUSE`, `ADMIN_RESUME`,
-  `ADMIN_SKIP_STEP` (`{phaseSeq?}`), `ADMIN_ADJUST_DEADLINE` (`{seconds}`), `ADMIN_ADJUST_SCORE` (`{teamId, delta}`),
+  `ADMIN_SKIP_STEP` (`{phaseSeq?}`; also skips a BRIEFING and starts the round's clock), `ADMIN_ADJUST_DEADLINE` (`{seconds}`), `ADMIN_ADJUST_SCORE` (`{teamId, delta}`),
   `ADMIN_ADJUST_DISTANCE`, `ADMIN_TOGGLE_HONOUR`, `ADMIN_MOVE_PLAYER` (`{playerId, teamId|null}`), `ADMIN_REMOVE_PLAYER`,
   `ADMIN_ADD_PLAYER`, `ADMIN_DELETE_TEAM`, `ADMIN_RENAME_TEAM`, `ADMIN_AUTO_GROUP`, `ADMIN_SET_DURATIONS`,
+  `ADMIN_SET_CREW_SIZE` (`{size: 3..6}`, lobby only, otherwise `WRONG_PHASE`; default 5; validated in `shared/protocol.ts`; sets the maximum crew size N for creating and joining crews, auto-group builds crews of N and adds 1-2 leftovers to existing crews, admin add/move allow N + 1),
   `ADMIN_RESET_GAME`, `ADMIN_TRIGGER_SUDDEN_DEATH` (`{teamA, teamB}`), `ADMIN_MARK_R1_SOLVED` (`{teamId}`),
   `ADMIN_R2_PAIR` (`{teamA, teamB}`), `ADMIN_R2_UNPAIR` (`{teamId}`), `ADMIN_R2_AUTO_PAIR`. Payload details are in
   `server/engine/admin.ts`.
-- `GET /api/admin/view`: `{ serverNow, metrics, sid, v, phase, config, notice, counts, players[], teams[], matches[],
+- `GET /api/admin/view`: `{ serverNow, metrics, sid, v, phase (with `startedAt`), config (includes `crewSize`), crewSize, notice, counts, players[], teams[], matches[],
   unpairedTeamIds, moral, r3 }`. Includes team ids, codewords and per-team state (admin only; no token hashes). The `ETag`
   covers everything except `serverNow` and `metrics`, so polling it with `If-None-Match` is cheap; use `/health` for the live
   status strip.

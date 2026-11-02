@@ -100,7 +100,7 @@ export function brain(world: World): (bot: Bot, v: View) => void {
     const isFirst = team.members[0]?.name === me.name;
 
     // ---- round 1 -----------------------------------------------------------
-    if (world.flags.r1 && name === 'R1_ACTIVE' && v.r1 && !v.r1.solved) {
+    if (world.flags.r1 && name === 'R1_ACTIVE' && v.phase.step !== 'BRIEFING' && v.r1 && !v.r1.solved) {
       const rem = remainingMs(bot, v);
       if (isFirst && !acted(bot, `solve:${team.id}`) && hash(team.id) % 100 < world.solveRate * 100 && rem > 6000) {
         const at = 1500 + bot.rng() * (rem - 5000);

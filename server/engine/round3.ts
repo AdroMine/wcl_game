@@ -6,6 +6,7 @@
 import { R3, SD_ACTIONS, VESSELS_SAFEST_FIRST } from './config.ts';
 import { asObj, rankEscapees } from './common.ts';
 import { setStep } from './clock.ts';
+import { briefingSeconds } from '../content.ts';
 import { computeAllMoral } from './round2.ts';
 import type {
   GameEvent,
@@ -275,7 +276,8 @@ export function startRound3(d: GameState, now: number, ev: GameEvent[]): void {
     setStep(d, now, 'R3_RESULTS', null, { durationMs: null }, ev);
     return;
   }
-  setStep(d, now, 'R3_ACTIVE', 'BLUFF', { durationMs: d.config.r3.BLUFF * 1000, wave: 1 }, ev);
+  // The story plays first (BRIEFING); wave 1's BLUFF timer starts when it ends (phases.ts).
+  setStep(d, now, 'R3_ACTIVE', 'BRIEFING', { durationMs: briefingSeconds(3) * 1000, wave: 1 }, ev);
 }
 
 // RULE-QUESTION: the old code (supabaseService.ts ~2361) awarded an escape bonus to the team score

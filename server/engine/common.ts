@@ -1,6 +1,28 @@
 // Shared helpers for command handlers: payload validation and team/player bookkeeping.
-import { MAX_NAME } from './config.ts';
+import { CREW_SIZE_DEFAULT, CREW_SIZE_MAX, CREW_SIZE_MIN, MAX_NAME, UNIQUE_ROLE_SLOTS } from './config.ts';
+import { resyncR1Slots } from './r1slots.ts';
 import type { GameState, Player, Team } from './types.ts';
+
+/** The game's crew size N (3..6). Snapshots from before the setting existed read as the default 5. */
+export function crewSizeOf(d: Pick<GameState, 'config'>): number {
+  const n = (d.config as { crewSize?: unknown }).crewSize;
+  return typeof n === 'number' && Number.isInteger(n) && n >= CREW_SIZE_MIN && n <= CREW_SIZE_MAX ? n : CREW_SIZE_DEFAULT;
+}
+
+/** Max members when a player creates or joins a crew: N. */
+export function maxJoinSize(d: Pick<GameState, 'config'>): number {
+  return crewSizeOf(d);
+}
+
+/** Max members when the admin adds or moves a player, or auto-group absorbs leftovers: N + 1. */
+export function maxAdminSize(d: Pick<GameState, 'config'>): number {
+  return crewSizeOf(d) + 1;
+}
+
+/** The first this-many members of a crew must have different roles. */
+export function uniqueRoleSlots(d: Pick<GameState, 'config'>): number {
+  return Math.min(crewSizeOf(d), UNIQUE_ROLE_SLOTS);
+}
 
 export function asObj(payload: unknown): Record<string, unknown> | null {
   return payload !== null && typeof payload === 'object' && !Array.isArray(payload)
@@ -106,4 +128,5 @@ export function detachPlayer(d: GameState, p: Player): void {
   if (!team) return;
   team.playerIds = team.playerIds.filter(id => id !== p.id);
   if (team.playerIds.length === 0) removeTeam(d, tid);
+  else resyncR1Slots(d, team);
 }

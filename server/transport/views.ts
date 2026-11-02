@@ -9,10 +9,12 @@ import { createHash } from 'node:crypto';
 import { instructionFor, titleFor } from '../content.ts';
 import { checkPlayer } from '../auth.ts';
 import {
+  crewSizeOf,
   leaderboard,
   phaseInfo,
   playerPrivate,
   podium,
+  round1Tablet,
   round1TeamStatus,
   round2MatchView,
   round3FleetRows,
@@ -48,7 +50,7 @@ interface GlobalPart {
   board: [string, number][];
   boardTotal: number;
   ranks: Map<string, number>;
-  lobby?: { players: number; teams: number };
+  lobby?: { players: number; teams: number; crewSize: number };
   fleetAll: FleetRow[];
   fleetTop: [string, number, number, string][];
   fleetPos: Map<string, number>;
@@ -134,6 +136,7 @@ export class ViewBuilder {
       endsAt: state.endsAt,
       paused: info.paused,
     };
+    if (state.step === 'BRIEFING') phase.startedAt = state.phaseStartedAt;
     if (state.pausedAt != null) {
       phase.pausedAt = state.pausedAt;
       phase.pausedRemainingMs = state.endsAt == null ? 0 : Math.max(0, state.endsAt - state.pausedAt);
@@ -155,7 +158,7 @@ export class ViewBuilder {
       board,
       boardTotal: state.teamOrder.length,
       ranks,
-      lobby: state.phase === 'LOBBY' ? { players: state.playerOrder.length, teams: state.teamOrder.length } : undefined,
+      lobby: state.phase === 'LOBBY' ? { players: state.playerOrder.length, teams: state.teamOrder.length, crewSize: crewSizeOf(state) } : undefined,
       fleetAll,
       fleetTop: fleetAll.slice(0, FLEET_ROWS).map(row),
       fleetPos,
@@ -191,8 +194,11 @@ export class ViewBuilder {
     if (state.phase === 'R1_ACTIVE' || state.phase === 'R1_RESULTS') {
       const s = round1TeamStatus(state, teamId, 0);
       if (s && s.started) {
-        const started = state.r1.startedAt ?? 0;
+        // During the briefing the clock has not started: hints unlock relative to the moment it will (the briefing's end).
+        const started = state.r1.startedAt ?? state.endsAt ?? 0;
+        const tablet = round1Tablet(state, teamId);
         part.r1 = {
+          ...(tablet ? { tablet } : {}),
           solved: s.solved,
           points: s.points,
           closed: s.closed,
@@ -213,7 +219,10 @@ export class ViewBuilder {
         if (m.paired && m.rivalTeamId && m.rivalName != null) {
           r2.rival = { name: m.rivalName, battleCode: state.teams[m.rivalTeamId]?.battleCode ?? '' };
         }
-        if (m.voting) r2.votedCount = m.voting.votedCount;
+        if (m.voting) {
+          r2.votedCount = m.voting.votedCount;
+          r2.votedBy = m.voting.votedBy;
+        }
         if (m.moral) r2.moral = m.moral.status;
         part.r2 = r2;
       }
@@ -232,6 +241,7 @@ export class ViewBuilder {
         fleet: g.fleetTop,
       };
       if (tv.escapeRank != null) r3.escapedRank = tv.escapeRank;
+      if (tv.honourable) r3.honourable = true;
       if (tv.voting) r3.votedCount = tv.voting.votedCount;
       const pos = g.fleetPos.get(teamId);
       if (pos) r3.myPos = pos;
@@ -248,7 +258,6 @@ export class ViewBuilder {
       const rep = last && (revealed || last.wave < state.wave) ? round3WaveReport(state, last.wave) : null;
       const mine = rep && last?.outcomes[teamId];
       if (rep && last && mine) {
-        const ev = rep.leashEvents.find(e => e.holder === teamId || e.target === teamId);
         r3.lastWave = {
           wave: rep.wave,
           vessel: mine.vessel,
@@ -257,12 +266,16 @@ export class ViewBuilder {
           sailboatCapsized: rep.sailboatCapsized,
           ghostCollided: rep.ghostCollided,
           capacity: rep.sailboatCapacity,
+          vessels: rep.vessels,
         };
-        if (ev) {
-          const holder = ev.holder === teamId;
-          const other = holder ? ev.target : ev.holder;
-          r3.lastWave.leash = { kind: ev.kind, delta: holder ? ev.holderDelta : ev.targetDelta, otherName: state.teams[other]?.name ?? '', role: holder ? 'holder' : 'target' };
-        }
+        const leashes = rep.leashEvents
+          .filter(e => e.holder === teamId || e.target === teamId)
+          .map(e => {
+            const holder = e.holder === teamId;
+            const other = holder ? e.target : e.holder;
+            return { kind: e.kind, delta: holder ? e.holderDelta : e.targetDelta, otherName: state.teams[other]?.name ?? '', role: (holder ? 'holder' : 'target') as 'holder' | 'target' };
+          });
+        if (leashes.length > 0) r3.lastWave.leashes = leashes;
       }
       const sd = suddenDeathView(state, teamId);
       if (sd) {
@@ -303,7 +316,6 @@ export class ViewBuilder {
       if (priv) {
         me = { id: priv.playerId, name: priv.name, role: priv.role, joinedTeam: priv.teamId != null };
         if (priv.r1) {
-          me.slice = priv.r1.slice;
           me.slot = priv.r1.slot;
           me.slotCount = priv.r1.slotCount;
         }
@@ -336,11 +348,6 @@ export class ViewBuilder {
       this.degradedViews++;
       const steps: (() => void)[] = [
         () => {
-          // Lossless: a crew of one gets the whole 15-row tablet, and every block glyph costs 3 UTF-8 bytes.
-          // `sliceFmt: 'hash'` tells the client to map "#" back to the block glyph.
-          if (rest.me?.slice && !rest.me.sliceFmt) rest.me = { ...rest.me, slice: rest.me.slice.map(l => l.replaceAll('\u2588', '#')), sliceFmt: 'hash' };
-        },
-        () => {
           if (rest.r3) rest.r3 = { ...rest.r3, fleet: rest.r3.fleet.slice(0, 4) };
         },
         () => {
@@ -357,6 +364,17 @@ export class ViewBuilder {
         () => {
           if (rest.r3) rest.r3 = { ...rest.r3, fleet: [], sd: rest.r3.sd ? { ...rest.r3.sd, text: null } : undefined };
           rest.board = rest.board.slice(0, 1);
+        },
+        () => {
+          // Optional extras restored from the old UI: who has voted, revealed teammate votes, the all-crews vessel report.
+          if (rest.r2) {
+            const { votedBy: _votedBy, ...r2 } = rest.r2;
+            rest.r2 = { ...r2, clashes: r2.clashes.map(c => ({ ...c, myVotes: '' })) };
+          }
+          if (rest.r3?.lastWave) {
+            const { vessels: _vessels, ...lw } = rest.r3.lastWave;
+            rest.r3 = { ...rest.r3, lastWave: { ...lw, vessels: [] } };
+          }
         },
         () => {
           delete rest.notice;

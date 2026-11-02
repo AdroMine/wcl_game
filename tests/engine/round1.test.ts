@@ -3,8 +3,9 @@ import assert from 'node:assert/strict';
 import { formTeams, harness } from './helpers.ts';
 import type { Harness } from './helpers.ts';
 import { calculateRound1Score, generateHintText, ROUND1_HINTS } from '../../server/engine/round1.ts';
-import { getAllAsciiSlices } from '../../server/engine/ascii.ts';
-import { playerPrivate, round1TeamStatus } from '../../server/engine/index.ts';
+import { briefingSeconds } from '../../server/content.ts';
+import { playerPrivate, round1Tablet, round1TeamStatus } from '../../server/engine/index.ts';
+import type { GameState } from '../../server/engine/index.ts';
 
 // ---- golden values ported from tests/test_hints_and_scoring.ts (sections 1-4) -------------
 
@@ -44,26 +45,71 @@ test('golden: speed tier boundaries use whole seconds (RULE_DECISIONS)', () => {
   assert.equal(calculateRound1Score(59.9, 0).finalPoints, 300);
 });
 
-test('golden: slicing resamples every word into uniform slices', () => {
-  for (const word of ['ORACLE', 'CERBERUS', 'CHARON', 'HYDRA', 'MINOTAUR']) {
-    const slices = getAllAsciiSlices(word, 5, 'HORIZONTAL');
-    assert.equal(slices.length, 5);
-    const len = slices[0][0].length;
-    for (const s of slices) {
-      assert.equal(s.length, 3);
-      assert.ok(s.every(l => l.length === len));
-    }
-  }
-});
-
 // ---- engine behaviour ----------------------------------------------------------------------
 
 function started(sizes = [5, 4]): { h: Harness; teams: string[] } {
   const h = harness(11);
   const teams = formTeams(h, sizes);
   h.ok(h.admin('ADMIN_START_GAME'));
+  h.nextDeadline(); // the briefing ends: the 5:00 clock starts now
   return { h, teams };
 }
+
+test('start: the briefing runs first; the 5:00 clock starts when it ends', () => {
+  const h = harness(11);
+  const teams = formTeams(h, [5, 4, 3]);
+  h.ok(h.admin('ADMIN_START_GAME'));
+  assert.equal(h.state.phase, 'R1_ACTIVE');
+  assert.equal(h.state.step, 'BRIEFING');
+  assert.equal(h.state.endsAt, h.now + briefingSeconds(1) * 1000);
+  assert.equal(h.state.r1.startedAt, null);
+  const t0 = teams[0];
+  const word = h.state.teams[t0].r1!.codeword;
+  const p = h.state.teams[t0].playerIds[0];
+  // nothing is accepted while the story plays
+  assert.equal(h.as(p, 'R1_SUBMIT', { answer: word }), 'WRONG_PHASE');
+  assert.equal(h.as(p, 'R1_HINT', { hint: 1 }), 'WRONG_PHASE');
+  assert.equal(h.admin('ADMIN_MARK_R1_SOLVED', { teamId: t0 }), 'WRONG_PHASE');
+  assert.equal(h.state.teams[t0].r1Points, 0);
+  // the clock starts at the end of the briefing
+  const briefingEnd = h.state.endsAt!;
+  h.tick(briefingSeconds(1) - 1);
+  assert.equal(h.runDue(), 0);
+  h.tick(1);
+  assert.equal(h.runDue(), 1);
+  assert.equal(h.state.step, null);
+  assert.equal(h.state.r1.startedAt, briefingEnd);
+  assert.equal(h.state.endsAt, briefingEnd + 300_000);
+  h.tick(45);
+  h.ok(h.as(p, 'R1_SUBMIT', { answer: word }));
+  assert.equal(h.state.teams[t0].r1Points, 300, 'speed tiers count from the end of the briefing');
+});
+
+test('briefing: admin skip step skips the briefing and starts the clock', () => {
+  const h = harness(11);
+  formTeams(h, [4]);
+  h.ok(h.admin('ADMIN_START_GAME'));
+  h.tick(3);
+  h.ok(h.admin('ADMIN_SKIP_STEP'));
+  assert.equal(h.state.step, null);
+  assert.equal(h.state.phase, 'R1_ACTIVE');
+  assert.equal(h.state.r1.startedAt, h.now);
+  assert.equal(h.state.endsAt, h.now + 300_000);
+});
+
+test('briefing: pause during the briefing freezes it', () => {
+  const h = harness(11);
+  formTeams(h, [4]);
+  h.ok(h.admin('ADMIN_START_GAME'));
+  const ends = h.state.endsAt!;
+  h.tick(10);
+  h.ok(h.admin('ADMIN_PAUSE'));
+  h.tick(500);
+  assert.equal(h.runDue(), 0);
+  h.ok(h.admin('ADMIN_RESUME'));
+  assert.equal(h.state.endsAt, ends + 500_000);
+  assert.equal(h.state.r1.startedAt, null);
+});
 
 test('start: every team gets a 2-word codeword, slots frozen = index in player list', () => {
   const { h, teams } = started([5, 4, 3]);
@@ -77,19 +123,88 @@ test('start: every team gets a 2-word codeword, slots frozen = index in player l
   }
 });
 
-test('private slice: each player gets only their own slice; slice count = team size', () => {
+/** Every current member holds a distinct slot 0..n-1 and slotCount = n, as the phones would see it. */
+function assertPieces(state: GameState, teamId: string): void {
+  const t = state.teams[teamId];
+  const n = t.playerIds.length;
+  const seen = t.playerIds.map(pid => {
+    const r1 = playerPrivate(state, pid)!.r1!;
+    assert.equal(r1.slotCount, n, 'slotCount = member count');
+    return r1.slot;
+  });
+  assert.deepEqual(seen.slice().sort((a, b) => a - b), Array.from({ length: n }, (_, i) => i), 'no missing or duplicate piece');
+  assert.equal(t.r1!.size, n);
+}
+
+for (const size of [3, 4, 5, 6]) {
+  test(`pieces: a crew of ${size} gets exactly ${size} pieces and the tablet lines`, () => {
+    const { h, teams } = started([size]);
+    assertPieces(h.state, teams[0]);
+    const t = h.state.teams[teams[0]];
+    t.playerIds.forEach((pid, i) => assert.equal(playerPrivate(h.state, pid)!.r1!.slot, i));
+    const [w1, w2] = t.r1!.codeword.split(' ');
+    assert.deepEqual(round1Tablet(h.state, teams[0]), { line1: w1, line2: w2 });
+  });
+}
+
+test('pieces: a mid-round move, add and remove recompute both crews', () => {
+  const { h, teams } = started([5, 3, 4]);
+  const [a, b, c] = teams;
+  const mover = h.state.teams[a].playerIds[1];
+  h.ok(h.admin('ADMIN_MOVE_PLAYER', { playerId: mover, teamId: b }));
+  assert.equal(h.state.teams[a].playerIds.length, 4);
+  assert.equal(h.state.teams[b].playerIds.length, 4);
+  assertPieces(h.state, a);
+  assertPieces(h.state, b);
+  assert.equal(h.state.teams[b].r1!.slots[mover], 3, 'the mover is last in the new crew join order');
+  const first = h.state.teams[c].playerIds[0];
+  h.ok(h.admin('ADMIN_REMOVE_PLAYER', { playerId: first }));
+  assert.equal(h.state.teams[c].playerIds.length, 3);
+  assertPieces(h.state, c);
+  h.ok(h.admin('ADMIN_ADD_PLAYER', { name: 'Late', teamId: c }));
+  assertPieces(h.state, c);
+  assert.equal(h.state.teams[c].r1!.size, 4);
+  h.join('stray');
+  h.ok(h.admin('ADMIN_MOVE_PLAYER', { playerId: 'stray', teamId: a }));
+  assertPieces(h.state, a);
+  assert.equal(h.state.teams[a].r1!.size, 5);
+  h.ok(h.admin('ADMIN_MOVE_PLAYER', { playerId: 'stray', teamId: null }));
+  assertPieces(h.state, a);
+  assert.equal(h.state.teams[a].r1!.size, 4);
+});
+
+test('pieces: taken hint texts follow the new layout', () => {
+  const { h, teams } = started([5]);
+  const t = h.state.teams[teams[0]];
+  h.tick(125);
+  h.ok(h.as(t.playerIds[0], 'R1_HINT', { hint: 1 }));
+  const firstName = h.state.players[t.playerIds[0]].name;
+  assert.ok(h.state.teams[teams[0]].r1!.hintTexts['1'].includes(firstName));
+  h.ok(h.admin('ADMIN_REMOVE_PLAYER', { playerId: t.playerIds[0] }));
+  const now = h.state.teams[teams[0]];
+  assert.ok(now.r1!.hintTexts['1'].includes(h.state.players[now.playerIds[0]].name), 'hint now names the new slot 0 member');
+  assertPieces(h.state, teams[0]);
+});
+
+test('lobby: moving players before Round 1 leaves Round 1 data empty', () => {
+  const h = harness(3);
+  const [a] = formTeams(h, [4]);
+  h.join('x');
+  h.ok(h.admin('ADMIN_MOVE_PLAYER', { playerId: 'x', teamId: a }));
+  assert.equal(h.state.teams[a].r1, null);
+});
+
+test('private view: each player gets only their own slot; slot count = team size', () => {
   const { h, teams } = started([6, 3]);
   for (const tid of teams) {
     const t = h.state.teams[tid];
-    const all = getAllAsciiSlices(t.r1!.codeword, t.playerIds.length, 'HORIZONTAL');
     t.playerIds.forEach((pid, i) => {
       const pp = playerPrivate(h.state, pid)!;
       assert.equal(pp.r1!.slot, i);
       assert.equal(pp.r1!.slotCount, t.playerIds.length);
-      assert.deepEqual(pp.r1!.slice, all[i]);
+      assert.deepEqual(Object.keys(pp.r1!).sort(), ['slot', 'slotCount']);
     });
   }
-  assert.equal(playerPrivate(h.state, h.state.teams[teams[1]].playerIds[0])!.r1!.slice.length, 5); // 15 rows / 3
 });
 
 test('submit: wrong answer -> WRONG_ANSWER, normalisation ignores case, spaces and padding', () => {

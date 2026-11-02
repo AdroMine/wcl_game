@@ -92,6 +92,7 @@ export function formTeams(h: Harness, sizes: number[]): string[] {
       for (let tries = 0; tries < 30; tries++) {
         const err = h.as(pid, 'JOIN_TEAM', { code: h.state.teams[tid].emojiCode });
         if (!err) break;
+        if (err === 'TEAM_FULL') break; // beyond the crew size: placed by the admin override below
         if (err !== 'ROLE_TAKEN') throw new Error(`join failed: ${err}`);
         h.ok(h.as(pid, 'REROLL_ROLE'), 'reroll');
       }
@@ -102,9 +103,15 @@ export function formTeams(h: Harness, sizes: number[]): string[] {
   return teamIds;
 }
 
-/** Start the game, skip Round 1 (nobody solves) and open Round 2 pairing. */
+/** If the round is in its BRIEFING step, skip it (the round's real clock starts now). */
+export function skipBriefing(h: Harness): void {
+  if (h.state.step === 'BRIEFING') h.ok(h.admin('ADMIN_SKIP_STEP'), 'skip briefing');
+}
+
+/** Start the game, skip the briefing and Round 1 (nobody solves) and open Round 2 pairing. */
 export function toR2Pairing(h: Harness): void {
   h.ok(h.admin('ADMIN_START_GAME'));
+  skipBriefing(h);
   h.ok(h.admin('ADMIN_SKIP_STEP'));
   h.ok(h.admin('ADMIN_START_R2'));
 }
@@ -138,6 +145,7 @@ export function playRound2(h: Harness, plan: (clash: number, teamId: string) => 
 /** Fast-forward a game that is in R2_RESULTS into R3 wave 1 BLUFF. */
 export function toR3(h: Harness): void {
   h.ok(h.admin('ADMIN_START_R3'));
+  skipBriefing(h);
 }
 
 export function voteR3(h: Harness, teamId: string, vessel: 'ROWBOAT' | 'SAILBOAT' | 'GHOST_SHIP'): void {
@@ -157,6 +165,7 @@ export function setupR3(
   if (h.state.phase === 'R2_PAIRING') h.ok(h.admin('ADMIN_R2_FORCE_START'));
   playRound2(h, (c, tid) => plan(c, tid, t.indexOf(tid)));
   h.ok(h.admin('ADMIN_START_R3'));
+  skipBriefing(h);
   return { h, t };
 }
 

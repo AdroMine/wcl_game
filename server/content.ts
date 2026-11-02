@@ -1,6 +1,6 @@
 // Static game content served once from GET /api/meta (and the projector instructions).
 // Briefing text follows docs/RULE_DECISIONS.md where it differs from the old client copy.
-import { DEFAULT_DURATIONS, ROLES, ROUND1_HINT_COST, TEAM_EMOJI_POOL, TEAM_MAX, TEAM_MIN, TEAM_TARGET, R3 } from './engine/config.ts';
+import { CREW_SIZE_DEFAULT, CREW_SIZE_MAX, CREW_SIZE_MIN, DEFAULT_DURATIONS, R2_CLASHES, R2_SCORING, ROLES, ROUND1_HINT_COST, TEAM_EMOJI_POOL, R3 } from './engine/config.ts';
 import { ERROR_MESSAGES, LIMITS, PROTOCOL_VERSION } from '../shared/protocol.ts';
 import type { Briefing, Meta, PhaseName } from '../shared/protocol.ts';
 
@@ -69,8 +69,21 @@ const BRIEFINGS: Briefing[] = [
   },
 ];
 
+/**
+ * Seconds the server-timed briefing step lasts for round 1, 2 or 3, computed from the round's story
+ * and rules so clients can animate the briefing in sync:
+ * ceil(sentences * 2.8 + 3 + (rules + 1) * 2 + 3).
+ */
+export function briefingSeconds(round: 1 | 2 | 3): number {
+  const b = BRIEFINGS[round - 1];
+  return Math.ceil(b.sentences.length * 2.8 + 3 + (b.rules.length + 1) * 2 + 3);
+}
+
 const INSTRUCTIONS: Record<string, string> = {
-  LOBBY: 'Join the game on your phone. Form a crew of five with five different roles, using your team code.',
+  LOBBY: 'Join the game on your phone. Form a crew with different roles, using your team code.',
+  'R1_ACTIVE/BRIEFING': 'Round 1 briefing: the story plays, then the 5:00 clock starts.',
+  'R2_CLASH/BRIEFING': 'Round 2 briefing: the story plays, then the first clash starts.',
+  'R3_ACTIVE/BRIEFING': 'Round 3 briefing: the story plays, then wave 1 starts.',
   R1_ACTIVE: 'Round 1: lay your crew phones side by side to read the tablet, then any teammate submits the codeword. Hints unlock at 2:00, 3:00 and 4:00 and cost 30 points each.',
   R1_RESULTS: 'Round 1 is over. Eyes up for the standings.',
   R2_PAIRING: 'Round 2: find your rival crew. One of you types their 2-digit battle code to link the crews.',
@@ -104,9 +117,14 @@ export function buildMeta(): Meta {
     limits: LIMITS,
     roles: ROLES.map(r => ({ id: r.id, name: r.name, color: r.color, ...ROLE_EXTRA[r.id] })),
     emojiPool: [...TEAM_EMOJI_POOL],
-    teamSize: { min: TEAM_MIN, target: TEAM_TARGET, max: TEAM_MAX },
+    // Crew size N is chosen by the admin (3..6, default 5); the current value is in the lobby view (lobby.crewSize).
+    teamSize: { min: CREW_SIZE_MIN, target: CREW_SIZE_DEFAULT, max: CREW_SIZE_MAX },
     durations: structuredClone(DEFAULT_DURATIONS),
-    rounds: BRIEFINGS,
+    rounds: BRIEFINGS.map((b, i) => ({ ...b, briefingSeconds: briefingSeconds((i + 1) as 1 | 2 | 3) })),
+    r2Stakes: Array.from({ length: R2_CLASHES }, (_, i) => {
+      const t = R2_SCORING[String(i + 1)];
+      return { clash: i + 1, bothTruce: t.both_truce, ambushWin: t.ambush_win, truceLoss: t.truce_loss, bothAmbush: t.both_ambush };
+    }),
     vessels: [
       { id: 'ROWBOAT', name: 'Rowboat', icon: '🚣', success: R3.vessel.ROWBOAT.success, fail: R3.vessel.ROWBOAT.fail, note: 'Always safe.' },
       { id: 'SAILBOAT', name: 'Sailboat', icon: '⛵', success: R3.vessel.SAILBOAT.success, fail: R3.vessel.SAILBOAT.fail, note: 'Capsizes if more than 30% of the active crews board.' },
@@ -133,7 +151,7 @@ export function buildMeta(): Meta {
       { index: 2, unlocksAfterSeconds: 180, cost: ROUND1_HINT_COST },
       { index: 3, unlocksAfterSeconds: 240, cost: ROUND1_HINT_COST },
     ],
-    r3: { targetDistance: R3.targetDistance, podiumSize: R3.podiumSize },
+    r3: { targetDistance: R3.targetDistance, podiumSize: R3.podiumSize, honourBonus: R3.honourBonus },
     errors: { ...ERROR_MESSAGES },
     instructions: { ...INSTRUCTIONS },
   };

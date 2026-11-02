@@ -2,14 +2,9 @@
 // rename) and admin auto-grouping. Behaviour ported from src/lib/supabaseService.ts
 // (supabaseJoinPlayer, supabaseRerollPlayerRole, supabaseCreateTeam, supabaseJoinTeamByEmoji,
 // supabaseLeaveTeam, supabaseAdminAutoGroup) and src/components/LobbyTeamFormation.tsx.
-import {
-  MAX_TEAM_NAME,
-  ROLE_IDS,
-  TEAM_MAX,
-  TEAM_MIN,
-  TEAM_TARGET,
-} from './config.ts';
-import { asObj, cleanName, detachPlayer, recomputeScore, reqString } from './common.ts';
+import { MAX_TEAM_NAME, ROLE_IDS, TEAM_MIN } from './config.ts';
+import { asObj, cleanName, crewSizeOf, detachPlayer, maxAdminSize, maxJoinSize, recomputeScore, reqString, uniqueRoleSlots } from './common.ts';
+import { resyncR1Slots } from './r1slots.ts';
 import { nextId, nextNumber } from './ids.ts';
 import { rngPick, rngShuffle } from './rng.ts';
 import { generateBattleCode, generateTeamEmojiCode, normalizeEmojiCode } from './teamCodes.ts';
@@ -71,10 +66,11 @@ export function createTeamRecord(d: GameState, name: string): Team | null {
 export function addToTeam(d: GameState, team: Team, p: Player): void {
   team.playerIds.push(p.id);
   p.teamId = team.id;
+  resyncR1Slots(d, team);
 }
 
 export function roleConflict(d: GameState, team: Team, p: Player): boolean {
-  return team.playerIds.length < TEAM_TARGET && team.playerIds.some(id => d.players[id].role === p.role);
+  return team.playerIds.length < uniqueRoleSlots(d) && team.playerIds.some(id => d.players[id].role === p.role);
 }
 
 const join: Handler = (d, c, _now, ev) => {
@@ -161,7 +157,7 @@ const joinTeam: Handler = (d, c, _now, ev) => {
   if (!code) return fail('INVALID_PAYLOAD');
   const team = findTeamByEmoji(d, code);
   if (!team) return fail('UNKNOWN_CODE');
-  if (team.playerIds.length >= TEAM_MAX) return fail('TEAM_FULL');
+  if (team.playerIds.length >= maxJoinSize(d)) return fail('TEAM_FULL');
   if (roleConflict(d, team, p)) return fail('ROLE_TAKEN');
   addToTeam(d, team, p);
   ev.push({ type: 'TEAM_JOINED', teamId: team.id, playerId: p.id });
@@ -194,9 +190,26 @@ const renameTeam: Handler = (d, c, _now, ev) => {
 };
 
 /**
- * Admin auto-group: unassigned players go into teams of 5 where possible; no team smaller than
- * 3 is created if avoidable; leftovers join existing teams up to 6. Roles are interleaved so that
- * each team of 5 gets distinct roles whenever the role mix allows it.
+ * Crew sizes for `n` unassigned players with crew size N (RULE_DECISIONS Q11): crews of N; a remainder
+ * of 3 or more forms its own crew; a remainder of 1 or 2 is absorbed by existing crews one player each
+ * (crews of N + 1). Returns the sizes of the NEW crews; the caller absorbs whatever is left over.
+ */
+export function planCrewSizes(n: number, N: number): number[] {
+  if (n < TEAM_MIN) return [];
+  if (n < N) return [n]; // 3..N-1 players: one crew
+  const q = Math.floor(n / N);
+  const r = n % N;
+  if (r === 0) return Array(q).fill(N);
+  if (r >= TEAM_MIN) return [...Array(q).fill(N), r];
+  // r is 1 or 2: each crew can absorb one extra player. Too few crews (N + 2 players): split into N-1 and 3 when possible.
+  if (q < r && N - 1 >= TEAM_MIN) return [N - 1, 3];
+  return Array(q).fill(N);
+}
+
+/**
+ * Admin auto-group: unassigned players go into crews of N (crew size setting) where possible; a
+ * remainder of 3+ is its own crew, a remainder of 1-2 joins existing crews (up to N + 1). Roles are
+ * interleaved so that consecutive crews get distinct roles whenever the role mix allows it.
  * Returns the number of players placed.
  */
 export function autoGroup(d: GameState, ev: GameEvent[]): number {
@@ -214,23 +227,7 @@ export function autoGroup(d: GameState, ev: GameEvent[]): number {
     for (const r of order) if (i < byRole[r].length) interleaved.push(byRole[r][i]);
   }
 
-  const n = interleaved.length;
-  const q = Math.floor(n / TEAM_TARGET);
-  const r = n % TEAM_TARGET;
-  let sizes: number[] = [];
-  if (n < TEAM_MIN) {
-    sizes = [];
-  } else if (r === 0) {
-    sizes = Array(q).fill(TEAM_TARGET);
-  } else if (r >= TEAM_MIN) {
-    sizes = [...Array(q).fill(TEAM_TARGET), r];
-  } else if (q === 0) {
-    sizes = [n]; // 3 or 4 players: one team
-  } else if (q === 1 && r === 2) {
-    sizes = [4, 3]; // 7 players: 4 + 3 rather than a team of 6 and a lone player
-  } else {
-    sizes = Array(q).fill(TEAM_TARGET); // the r leftovers are absorbed below, up to TEAM_MAX
-  }
+  const sizes = planCrewSizes(interleaved.length, crewSizeOf(d));
 
   let placed = 0;
   let cursor = 0;
@@ -242,12 +239,13 @@ export function autoGroup(d: GameState, ev: GameEvent[]): number {
     ev.push({ type: 'TEAM_CREATED', teamId: team.id });
   }
   const leftovers = interleaved.slice(cursor);
+  const cap = maxAdminSize(d);
   for (const pid of leftovers) {
     const p = d.players[pid];
     let best: Team | null = null;
     for (const tid of d.teamOrder) {
       const t = d.teams[tid];
-      if (t.playerIds.length >= TEAM_MAX) continue;
+      if (t.playerIds.length >= cap) continue;
       if (!best || t.playerIds.length < best.playerIds.length) best = t;
     }
     if (!best) continue;

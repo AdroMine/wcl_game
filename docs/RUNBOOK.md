@@ -73,12 +73,12 @@ npm run swarm -- --target https://<your-app>.onrender.com --admin-token <ADMIN_T
 - Download a backup from `/admin` before the game starts and after each round.
 
 **Running the game:**
-1. Lobby: players scan the QR code, enter a name, and create or join a crew by tapping the crew's 3 emojis. Crews are 3 to 6 people, aiming for 5. **Auto-group** puts stragglers into crews.
-2. **Start Round 1.** The round lasts 5:00. At 5:00 it closes and unsolved crews score 0.
+1. Lobby: players scan the QR code, enter a name, and create or join a crew by tapping the crew's 3 emojis. Set the **crew size** (3 to 6, default 5) in `/admin` before players form crews; it is the maximum crew size, and phones show it. **Auto-group** builds crews of that size and adds 1 or 2 stragglers to existing crews (a few crews may have one extra). Crew size can only be changed in the lobby.
+2. **Start Round 1.** A short briefing (about 26 s, the story plays on every phone) comes first; the 5:00 clock starts when it ends, and **Skip step** skips the briefing. At 5:00 the round closes and unsolved crews score 0. If you add, move or remove a player while Round 1 runs, that crew's tablet pieces are recomputed so each member still holds one piece.
 3. **Next**: Round 1 results.
 4. **Next**: Round 2 pairing. Each crew types its rival's 2-digit code. The clash clock starts for everyone at once when all crews are paired. Otherwise, use **Force-start clashes**; unpaired crews sit out.
-5. Round 2 runs on its own: 3 clashes × Huddle 50 s / Dialogue 40 s / Vote 25 s / Reveal 40 s. Announce each step from the projector; every crew is on the same step.
-6. **Next**: Round 2 results, then **Next** to start Round 3. Waves repeat until 3 crews escape. Use **End Round 3** if needed and **Sudden death** for a standoff.
+5. Round 2 starts with a briefing (about 26 s, no votes), then runs on its own: 3 clashes × Huddle 50 s / Dialogue 40 s / Vote 25 s / Reveal 40 s. Announce each step from the projector; every crew is on the same step.
+6. **Next**: Round 2 results, then **Next** to start Round 3 (a briefing of about 28 s plays before wave 1). Waves repeat until 3 crews escape. Use **End Round 3** if needed and **Sudden death** for a standoff.
 
 **When something goes wrong:**
 

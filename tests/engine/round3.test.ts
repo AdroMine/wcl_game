@@ -14,7 +14,8 @@ import {
 } from '../../server/engine/round3.ts';
 import type { WaveTeamInput } from '../../server/engine/round3.ts';
 import type { Vessel } from '../../server/engine/index.ts';
-import { phaseInfo, playerPrivate, podium, round3FleetRows, round3SailboatCapacity, round3TeamView } from '../../server/engine/index.ts';
+import { briefingSeconds } from '../../server/content.ts';
+import { phaseInfo, playerPrivate, podium, round3FleetRows, round3SailboatCapacity, round3TeamView, round3WaveReport } from '../../server/engine/index.ts';
 
 // ---- golden values ported from tests/test_round3.ts ----------------------------------------
 
@@ -491,4 +492,80 @@ test('sudden death: may also be run from the results screen; pause shifts it', (
   assert.equal(h.state.step, null);
   assert.equal(h.state.phase, 'R3_RESULTS');
   assert.equal(phaseInfo(h.state, h.now).remainingMs, null);
+});
+
+// ---- briefing step and extra view data ------------------------------------------------------
+
+test('briefing: Round 3 opens with a server-timed BRIEFING; wave 1 BLUFF starts when it ends', () => {
+  const h = harness(35);
+  const t = formTeams(h, [5, 5]);
+  toR2Pairing(h);
+  pairByCode(h, t[0], t[1]);
+  playRound2(h, () => 'TRUCE');
+  h.ok(h.admin('ADMIN_START_R3'));
+  assert.equal(h.state.phase, 'R3_ACTIVE');
+  assert.equal(h.state.step, 'BRIEFING');
+  assert.equal(h.state.wave, 1);
+  assert.equal(h.state.endsAt, h.now + briefingSeconds(3) * 1000);
+  // no votes and no leash while the story plays
+  const p = h.state.teams[t[0]].playerIds[0];
+  assert.equal(h.as(p, 'R3_VOTE', { vessel: 'ROWBOAT' }), 'WRONG_PHASE');
+  assert.equal(h.as(p, 'R3_ARM_LEASH', {}), 'WRONG_PHASE');
+  const end = h.state.endsAt!;
+  h.nextDeadline();
+  assert.equal(h.state.step, 'BLUFF');
+  assert.equal(h.state.wave, 1);
+  assert.equal(h.state.endsAt, end + 55_000, 'the wave timers start when the briefing ends');
+});
+
+test('briefing: admin skip step skips the Round 3 briefing', () => {
+  const h = harness(36);
+  const t = formTeams(h, [5, 5]);
+  toR2Pairing(h);
+  pairByCode(h, t[0], t[1]);
+  playRound2(h, () => 'TRUCE');
+  h.ok(h.admin('ADMIN_START_R3'));
+  h.tick(1);
+  h.ok(h.admin('ADMIN_SKIP_STEP'));
+  assert.equal(h.state.step, 'BLUFF');
+  assert.equal(h.state.endsAt, h.now + 55_000);
+});
+
+test('briefing: the briefing durations follow the story and rules', () => {
+  // ceil(sentences * 2.8 + 3 + (rules + 1) * 2 + 3): R1 5/2, R2 4/3, R3 5/3
+  assert.deepEqual([1, 2, 3].map(r => briefingSeconds(r as 1 | 2 | 3)), [26, 26, 28]);
+});
+
+test('view data: honourable flag, all-crews vessel report and every leash event of my crew', () => {
+  const { h, t } = setupR3(31, [5, 5, 5, 5], (c, _tid, i) => (i === 1 && c <= 2 ? 'AMBUSH' : 'TRUCE'));
+  assert.equal(round3TeamView(h.state, t[2])!.honourable, true);
+  assert.equal(round3TeamView(h.state, t[0])!.honourable, false);
+  toVote(h);
+  voteR3(h, t[0], 'ROWBOAT');
+  voteR3(h, t[1], 'SAILBOAT');
+  voteR3(h, t[2], 'SAILBOAT');
+  voteR3(h, t[3], 'GHOST_SHIP');
+  toReveal(h);
+  const rep = round3WaveReport(h.state, 1)!;
+  // 4 crews: sailboat capacity 1, two boarded -> capsized; one solo ghost ship
+  assert.deepEqual(rep.vessels, [
+    ['R', 1, 'SAFE', 150],
+    ['S', 2, 'CAPSIZED', 0],
+    ['G', 1, 'SAFE', 450],
+  ]);
+});
+
+test('view data: empty vessels read UNBOARDED and a ghost collision reads COLLIDED', () => {
+  const { h, t } = setupR3(37, [5, 5, 5, 5], () => 'TRUCE');
+  toVote(h);
+  voteR3(h, t[0], 'GHOST_SHIP');
+  voteR3(h, t[1], 'GHOST_SHIP');
+  voteR3(h, t[2], 'GHOST_SHIP');
+  voteR3(h, t[3], 'GHOST_SHIP');
+  toReveal(h);
+  assert.deepEqual(round3WaveReport(h.state, 1)!.vessels, [
+    ['R', 0, 'UNBOARDED', 0],
+    ['S', 0, 'UNBOARDED', 0],
+    ['G', 4, 'COLLIDED', -50],
+  ]);
 });

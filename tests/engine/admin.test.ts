@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { formTeams, harness, pairByCode, playRound2, setupR3, toR2Pairing, toVote } from './helpers.ts';
+import { formTeams, harness, pairByCode, playRound2, setupR3, skipBriefing, toR2Pairing, toVote } from './helpers.ts';
 import { COMMAND_TYPES, phaseInfo, round2MatchView } from '../../server/engine/index.ts';
 
 test('actor kinds are enforced: players cannot run admin commands and vice versa', () => {
@@ -26,6 +26,8 @@ test('phase transitions out of untimed phases are admin commands and are order-c
   assert.equal(h.runDue(), 0);
   h.ok(h.admin('ADMIN_START_GAME'));
   assert.equal(h.admin('ADMIN_START_GAME'), 'WRONG_PHASE');
+  h.nextDeadline(); // briefing ends, the clock starts
+  assert.equal(h.state.phase, 'R1_ACTIVE');
   h.nextDeadline();
   assert.equal(h.state.phase, 'R1_RESULTS');
   assert.equal(h.runDue(), 0);
@@ -37,6 +39,7 @@ test('phase transitions out of untimed phases are admin commands and are order-c
   assert.equal(h.runDue(), 0);
   h.ok(h.admin('ADMIN_START_R3'));
   assert.equal(h.state.phase, 'R3_ACTIVE');
+  assert.equal(h.state.step, 'BRIEFING');
 });
 
 test('pause / resume: double pause and resume-without-pause are errors; deadlines shift', () => {
@@ -61,6 +64,8 @@ test('skip: advances exactly once; duplicate and stale skips are no-ops', () => 
   formTeams(h, [3, 3]);
   toR2Pairing(h);
   h.ok(h.admin('ADMIN_R2_FORCE_START'));
+  skipBriefing(h);
+  assert.equal(h.state.step, 'HUDDLE');
   const seq = h.state.phaseSeq;
   h.ok(h.send('ADMIN_SKIP_STEP', { kind: 'admin' }, { phaseSeq: seq }, { id: 'skip-1' }));
   assert.equal(h.state.step, 'PARLEY');
@@ -146,6 +151,7 @@ test('delete team: members become unassigned; its match is cancelled and the riv
   toR2Pairing(h);
   pairByCode(h, t0, t1);
   pairByCode(h, t2, t3);
+  h.nextDeadline(); // briefing
   h.nextDeadline();
   h.nextDeadline();
   h.nextDeadline(); // clash 1 scored: all truce
@@ -172,10 +178,13 @@ test('set durations: applied to later steps; validated', () => {
   assert.equal(h.admin('ADMIN_SET_DURATIONS', { r2: { HUDDLE: 'x' } }), 'INVALID_DURATION');
   h.ok(h.admin('ADMIN_SET_DURATIONS', { r1Seconds: 120, r2: { HUDDLE: 10, PARLEY: 11, VOTE: 12, DEBRIEF: 13 }, r3: { BLUFF: 14, VOTE: 15, REVEAL: 16 }, sdSeconds: 17 }));
   h.ok(h.admin('ADMIN_START_GAME'));
+  assert.equal(h.state.step, 'BRIEFING');
+  skipBriefing(h);
   assert.equal(h.state.endsAt, h.now + 120_000);
   h.ok(h.admin('ADMIN_SKIP_STEP'));
   h.ok(h.admin('ADMIN_START_R2'));
   h.ok(h.admin('ADMIN_R2_AUTO_PAIR'));
+  skipBriefing(h);
   assert.equal(h.state.endsAt, h.now + 10_000);
   const secs: number[] = [];
   while (h.state.phase === 'R2_CLASH') {
@@ -184,6 +193,7 @@ test('set durations: applied to later steps; validated', () => {
   }
   assert.deepEqual(secs.slice(0, 4), [10, 11, 12, 13]);
   h.ok(h.admin('ADMIN_START_R3'));
+  skipBriefing(h);
   assert.equal(h.state.endsAt, h.now + 14_000);
 });
 

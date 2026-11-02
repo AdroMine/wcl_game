@@ -12,8 +12,12 @@ export const ROLES: readonly { id: RoleId; name: string; color: string }[] = [
 export const ROLE_IDS: readonly RoleId[] = ROLES.map(r => r.id);
 
 export const TEAM_MIN = 3;
-export const TEAM_TARGET = 5;
-export const TEAM_MAX = 6;
+/** Admin-settable crew size N (RULE_DECISIONS Q11): 3..6, default 5. */
+export const CREW_SIZE_MIN = 3;
+export const CREW_SIZE_MAX = 6;
+export const CREW_SIZE_DEFAULT = 5;
+/** Roles are unique among the first min(N, this) members of a crew. */
+export const UNIQUE_ROLE_SLOTS = 5;
 
 export const TEAM_EMOJI_POOL = ['🔥', '💀', '⚡', '🌊', '🛡️'] as const;
 export const TEAM_EMOJI_LABELS: Record<string, string> = {
@@ -43,6 +47,7 @@ export const DEFAULT_DURATIONS: Durations = {
   r2: { HUDDLE: 50, PARLEY: 40, VOTE: 25, DEBRIEF: 40 },
   r3: { BLUFF: 55, VOTE: 20, REVEAL: 25 },
   sdSeconds: 40,
+  crewSize: CREW_SIZE_DEFAULT,
 };
 
 /** A deadline can never be moved earlier than now + this (ms). */

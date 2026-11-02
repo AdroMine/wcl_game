@@ -118,7 +118,8 @@ test('state is plain JSON at every phase: round-trip deep equality, no undefined
   const t = formTeams(h, [5, 5, 4, 3]);
   snapshots.push(h.state);
   h.ok(h.admin('ADMIN_START_GAME'));
-  snapshots.push(h.state);
+  snapshots.push(h.state); // R1 briefing
+  h.nextDeadline();
   h.tick(125);
   h.ok(h.as(h.state.teams[t[0]].playerIds[0], 'R1_HINT', { hint: 1 }));
   h.ok(h.as(h.state.teams[t[0]].playerIds[0], 'R1_SUBMIT', { answer: h.state.teams[t[0]].r1!.codeword }));
@@ -127,7 +128,8 @@ test('state is plain JSON at every phase: round-trip deep equality, no undefined
   h.ok(h.admin('ADMIN_START_R2'));
   pairByCode(h, t[0], t[1]);
   pairByCode(h, t[2], t[3]);
-  snapshots.push(h.state);
+  snapshots.push(h.state); // R2 briefing
+  h.nextDeadline();
   h.nextDeadline();
   h.nextDeadline();
   teamVotesR2(h, t[0], 'AMBUSH');
@@ -135,6 +137,7 @@ test('state is plain JSON at every phase: round-trip deep equality, no undefined
   while (h.state.phase === 'R2_CLASH') h.nextDeadline();
   snapshots.push(h.state);
   h.ok(h.admin('ADMIN_START_R3'));
+  snapshots.push(h.state); // R3 briefing
   toVote(h);
   voteR3(h, t[0], 'GHOST_SHIP');
   snapshots.push(h.state);
@@ -187,8 +190,8 @@ test('due(): fires each step exactly once and never before its deadline', () => 
     // a different id for the same, now stale, step is rejected
     assert.equal(h.send(cmds[0].type, cmds[0].actor, cmds[0].payload, { id: 'other-' + guard }), 'STALE');
   }
-  assert.equal(fired.length, 12);
-  assert.equal(new Set(fired).size, 12);
+  assert.equal(fired.length, 13); // briefing + 3 x 4 steps
+  assert.equal(new Set(fired).size, 13);
   assert.equal(h.state.phase, 'R2_RESULTS');
 });
 
@@ -205,7 +208,7 @@ test('pause/resume shifts every active deadline; due() is empty while paused', (
   formTeams(h, [3]);
   h.ok(h.admin('ADMIN_START_GAME'));
   const ends = h.state.endsAt!;
-  h.tick(100);
+  h.tick(10);
   h.ok(h.admin('ADMIN_PAUSE'));
   h.now = ends + 1000;
   assert.deepEqual(due(h.state, h.now), []);
@@ -232,6 +235,7 @@ test('selectors never expose tokenHash, codewords, hints of others or admin data
     assert.ok(!blob.includes('adminAdjust') && !blob.includes('idCounter') && !blob.includes('"rng"'), `${label}: internals`);
   };
   check('R1');
+  h.nextDeadline(); // briefing over: the clock runs
   h.tick(250);
   for (const tid of t) for (const i of [1, 2, 3]) h.ok(h.as(h.state.teams[tid].playerIds[0], 'R1_HINT', { hint: i }));
   check('R1 hints');
@@ -241,6 +245,7 @@ test('selectors never expose tokenHash, codewords, hints of others or admin data
   pairByCode(h, t[0], t[1]);
   pairByCode(h, t[2], t[3]);
   check('R2 pairing');
+  h.nextDeadline();
   h.nextDeadline();
   h.nextDeadline();
   check('R2 vote');
@@ -256,6 +261,7 @@ test('selectors never leak foreign votes before reveal (R2 and R3)', () => {
   const t = formTeams(h, [5, 5]);
   toR2Pairing(h);
   pairByCode(h, t[0], t[1]);
+  h.nextDeadline();
   h.nextDeadline();
   h.nextDeadline();
   // only team 0 votes AMBUSH, team 1 never votes

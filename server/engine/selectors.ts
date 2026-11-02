@@ -1,12 +1,12 @@
 // Pure selectors the server uses to build views. They never return tokenHash, codewords, other
 // teams' votes before reveal, or admin data. Everything returned is plain JSON.
-import { ROLES, ROLE_IDS, ROUND1_HINT_COST, TEAM_MAX } from './config.ts';
-import { getPlayerAsciiSlice } from './ascii.ts';
+import { R3, ROLES, ROLE_IDS, ROUND1_HINT_COST } from './config.ts';
+import { crewSizeOf, uniqueRoleSlots } from './common.ts';
 import { r1ElapsedSeconds } from './clock.ts';
-import { ROUND1_HINTS } from './round1.ts';
+import { ROUND1_HINTS, parseTabletCodeword } from './round1.ts';
 import { r3ActiveTeamIds, sailboatCapacity } from './round3.ts';
 import { normalizeEmojiCode } from './teamCodes.ts';
-import type { ErrorCode, GameState, MoralStatus, Phase, RoleId, SdAction, Stance, Step, Vessel } from './types.ts';
+import type { ErrorCode, GameState, MoralStatus, Phase, RoleId, SdAction, Stance, Step, Vessel, WaveReport } from './types.ts';
 
 const roleName = (id: RoleId): string => ROLES.find(r => r.id === id)?.name ?? id;
 
@@ -100,7 +100,7 @@ export function previewTeamByEmoji(
     return { name: p.name, role: p.role, roleName: roleName(p.role) };
   });
   const me = playerId ? state.players[playerId] : undefined;
-  const conflict = !!me && members.length < 5 && members.some(m => m.role === me.role);
+  const conflict = !!me && members.length < uniqueRoleSlots(state) && members.some(m => m.role === me.role);
   return {
     ok: true,
     preview: {
@@ -108,8 +108,8 @@ export function previewTeamByEmoji(
       name: team.name,
       emojiCode: team.emojiCode,
       memberCount: members.length,
-      maxMembers: TEAM_MAX,
-      isFull: members.length >= TEAM_MAX,
+      maxMembers: crewSizeOf(state),
+      isFull: members.length >= crewSizeOf(state),
       leaderName: members[0]?.name ?? 'Captain',
       members,
       hasRoleConflict: conflict,
@@ -126,8 +126,8 @@ export interface PlayerPrivate {
   role: RoleId;
   roleName: string;
   teamId: string | null;
-  /** Only this player's own slice, only during Round 1. */
-  r1: { slot: number; slotCount: number; slice: string[] } | null;
+  /** Only this player's own piece (slot) of the crew's tablet, only during Round 1. */
+  r1: { slot: number; slotCount: number } | null;
   /** The player's own vote in the current clash / wave / standoff. */
   myVote: { r2: Stance | null; r3: Vessel | null; sd: SdAction | null };
 }
@@ -140,7 +140,7 @@ export function playerPrivate(state: GameState, playerId: string): PlayerPrivate
   if (team?.r1 && state.phase === 'R1_ACTIVE') {
     const slot = team.r1.slots[playerId];
     if (slot !== undefined) {
-      r1 = { slot, slotCount: team.r1.size, slice: getPlayerAsciiSlice(team.r1.codeword, slot, team.r1.size) };
+      r1 = { slot, slotCount: team.r1.size };
     }
   }
   let r2: Stance | null = null;
@@ -182,6 +182,13 @@ export interface Round1Status {
   hints: { index: number; unlockAtSeconds: number; unlocked: boolean; taken: boolean; text: string | null }[];
 }
 
+/** The crew's own codeword split into the two tablet lines (own team only, Round 1 only). */
+export function round1Tablet(state: GameState, teamId: string): { line1: string; line2: string } | null {
+  const r1 = state.teams[teamId]?.r1;
+  if (!r1 || state.phase !== 'R1_ACTIVE') return null;
+  return parseTabletCodeword(r1.codeword);
+}
+
 export function round1TeamStatus(state: GameState, teamId: string, now: number): Round1Status | null {
   const t = state.teams[teamId];
   if (!t) return null;
@@ -215,9 +222,12 @@ export interface Round2MatchView {
   rivalName: string | null;
   cancelled: boolean;
   /** Resolved clashes only (stances become visible when the clash is scored, i.e. at DEBRIEF). */
-  history: { clash: number; myStance: Stance; rivalStance: Stance; myPts: number; rivalPts: number }[];
-  /** During VOTE only: how many teammates have voted. Never anyone's actual vote. */
-  voting: { votedCount: number; teamSize: number } | null;
+  history: { clash: number; myStance: Stance; rivalStance: Stance; myPts: number; rivalPts: number; myVotes: string }[];
+  /**
+   * During VOTE only: how many teammates have voted, and who (aligned with the team's member order).
+   * Never anyone's actual vote.
+   */
+  voting: { votedCount: number; teamSize: number; votedBy: boolean[] } | null;
   moral: { status: MoralStatus; rivalTeamId: string | null; nemesisTeamId: string | null } | null;
 }
 
@@ -233,20 +243,25 @@ export function round2MatchView(state: GameState, teamId: string, _playerId?: st
   const rivalId = isA ? m.teamB : m.teamA;
   const history = m.clashes
     .filter(c => c.resolved && c.stanceA && c.stanceB)
-    .map(c => ({
-      clash: c.clash,
-      myStance: (isA ? c.stanceA : c.stanceB) as Stance,
-      rivalStance: (isA ? c.stanceB : c.stanceA) as Stance,
-      myPts: isA ? c.ptsA : c.ptsB,
-      rivalPts: isA ? c.ptsB : c.ptsA,
-    }));
+    .map(c => {
+      const bucket = isA ? c.votesA : c.votesB;
+      return {
+        clash: c.clash,
+        myStance: (isA ? c.stanceA : c.stanceB) as Stance,
+        rivalStance: (isA ? c.stanceB : c.stanceA) as Stance,
+        myPts: isA ? c.ptsA : c.ptsB,
+        rivalPts: isA ? c.ptsB : c.ptsA,
+        // Revealed once the clash is scored: one char per current member, in member order: T, A or - (did not vote).
+        myVotes: team.playerIds.map(pid => (bucket[pid] === 'TRUCE' ? 'T' : bucket[pid] === 'AMBUSH' ? 'A' : '-')).join(''),
+      };
+    });
   let voting: Round2MatchView['voting'] = null;
   if (state.phase === 'R2_CLASH' && state.step === 'VOTE' && !m.cancelled) {
     const clash = m.clashes[state.clash - 1];
     if (clash) {
       const bucket = isA ? clash.votesA : clash.votesB;
       const voted = team.playerIds.filter(pid => bucket[pid] !== undefined).length;
-      voting = { votedCount: voted, teamSize: team.playerIds.length };
+      voting = { votedCount: voted, teamSize: team.playerIds.length, votedBy: team.playerIds.map(pid => bucket[pid] !== undefined) };
     }
   }
   const moral = state.r2.moral[teamId];
@@ -315,6 +330,8 @@ export interface Round3TeamView {
   wave: number;
   sailboatCapacity: number | null;
   voting: { votedCount: number; teamSize: number } | null;
+  /** This crew holds the Honourable head start (Winds of Olympus, +75 m). */
+  honourable: boolean;
   /** Visible to the team itself only. */
   leash: { holder: boolean; used: boolean; armed: boolean; nemesisTeamId: string | null };
 }
@@ -336,6 +353,7 @@ export function round3TeamView(state: GameState, teamId: string): Round3TeamView
     wave: state.wave,
     sailboatCapacity: round3SailboatCapacity(state),
     voting,
+    honourable: t3.honourBonus,
     leash: { holder: t3.leashHolder, used: t3.leashUsed, armed: r3.leash[teamId] !== undefined, nemesisTeamId: t3.leashHolder ? t3.nemesis : null },
   };
 }
@@ -347,7 +365,19 @@ export interface WaveReportView {
   ghostCollided: boolean;
   ghostSoloTeamId: string | null;
   leashEvents: { holder: string; target: string; kind: string; holderDelta: number; targetDelta: number }[];
+  /** All-crews summary: [vessel code, crews that boarded, outcome, metres per boarding crew] for Rowboat, Sailboat, Ghost Ship. */
+  vessels: [string, number, 'SAFE' | 'CAPSIZED' | 'COLLIDED' | 'UNBOARDED', number][];
   rows: { teamId: string; vessel: Vessel; gained: number; newDistance: number; escapeRank: number | null }[];
+}
+
+function waveVessels(r: WaveReport): WaveReportView['vessels'] {
+  const n: Record<Vessel, number> = { ROWBOAT: 0, SAILBOAT: 0, GHOST_SHIP: 0 };
+  for (const o of Object.values(r.outcomes)) n[o.vessel]++;
+  return [
+    ['R', n.ROWBOAT, n.ROWBOAT === 0 ? 'UNBOARDED' : 'SAFE', n.ROWBOAT === 0 ? 0 : R3.vessel.ROWBOAT.success],
+    ['S', n.SAILBOAT, n.SAILBOAT === 0 ? 'UNBOARDED' : r.sailboatCapsized ? 'CAPSIZED' : 'SAFE', n.SAILBOAT === 0 ? 0 : r.sailboatCapsized ? R3.vessel.SAILBOAT.fail : R3.vessel.SAILBOAT.success],
+    ['G', n.GHOST_SHIP, n.GHOST_SHIP === 0 ? 'UNBOARDED' : r.ghostCollided ? 'COLLIDED' : 'SAFE', n.GHOST_SHIP === 0 ? 0 : r.ghostCollided ? R3.vessel.GHOST_SHIP.fail : R3.vessel.GHOST_SHIP.success],
+  ];
 }
 
 /** A wave report, available only once the wave is resolved (REVEAL onwards). */
@@ -361,6 +391,7 @@ export function round3WaveReport(state: GameState, wave: number): WaveReportView
     ghostCollided: r.ghostCollided,
     ghostSoloTeamId: r.ghostSoloTeamId,
     leashEvents: r.leashEvents.map(e => ({ ...e })),
+    vessels: waveVessels(r),
     rows: Object.keys(r.outcomes).map(tid => ({
       teamId: tid,
       vessel: r.outcomes[tid].vessel,

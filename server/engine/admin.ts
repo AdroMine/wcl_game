@@ -1,12 +1,13 @@
 // Admin commands. Authentication happens in the server; the engine only checks actor.kind.
 // Behaviour ported from the supabaseAdmin* functions in src/lib/supabaseService.ts.
-import { MIN_DEADLINE_MS, ROLE_IDS, TEAM_MAX } from './config.ts';
-import { asObj, cleanName, detachPlayer, recomputeScore, removeTeam, reqInt, reqString } from './common.ts';
+import { CREW_SIZE_MAX, CREW_SIZE_MIN, MIN_DEADLINE_MS, ROLE_IDS } from './config.ts';
+import { asObj, cleanName, detachPlayer, maxAdminSize, recomputeScore, removeTeam, reqInt, reqString } from './common.ts';
 import { effNow, setStep } from './clock.ts';
 import { nextNumber } from './ids.ts';
 import { addToTeam, autoGroup, pickBalancedRole, removePlayer } from './lobby.ts';
 import { advance, endRound3 } from './phases.ts';
 import { initRound1, adminMarkSolved } from './round1.ts';
+import { briefingSeconds } from '../content.ts';
 import { adminAutoPair, adminPairAndMaybeStart, initRound2Pairing, startClashes, unpairTeam } from './round2.ts';
 import { adminAdjustDistance, adminToggleHonour, startRound3, triggerSuddenDeath } from './round3.ts';
 import { createInitialState } from './state.ts';
@@ -17,8 +18,9 @@ import { MAX_TEAM_NAME } from './config.ts';
 const startGame: Handler = (d, _c, now, ev) => {
   if (d.phase !== 'LOBBY') return fail('WRONG_PHASE');
   // RULE-QUESTION: teams below 3 members, and players without a team, are not blocked from starting; unassigned players sit out Round 1.
-  initRound1(d, now);
-  setStep(d, now, 'R1_ACTIVE', null, { durationMs: d.config.r1Seconds * 1000 }, ev);
+  // The story plays first (BRIEFING); the 5:00 clock starts when it ends (see phases.ts).
+  initRound1(d);
+  setStep(d, now, 'R1_ACTIVE', 'BRIEFING', { durationMs: briefingSeconds(1) * 1000 }, ev);
   return undefined;
 };
 
@@ -125,7 +127,7 @@ const movePlayer: Handler = (d, c, _now, ev) => {
   if (target !== null) {
     const t = d.teams[target];
     if (!t) return fail('UNKNOWN_TEAM');
-    if (t.playerIds.length >= TEAM_MAX) return fail('TEAM_FULL');
+    if (t.playerIds.length >= maxAdminSize(d)) return fail('TEAM_FULL');
     detachPlayer(d, p);
     addToTeam(d, t, p);
   } else {
@@ -154,7 +156,7 @@ const addPlayer: Handler = (d, c, _now, ev) => {
   const teamId = o?.teamId;
   if (teamId !== undefined && teamId !== null) {
     if (typeof teamId !== 'string' || !d.teams[teamId]) return fail('UNKNOWN_TEAM');
-    if (d.teams[teamId].playerIds.length >= TEAM_MAX) return fail('TEAM_FULL');
+    if (d.teams[teamId].playerIds.length >= maxAdminSize(d)) return fail('TEAM_FULL');
   }
   d.players[id] = { id, name, role, tokenHash: '', teamId: null, joinedSeq: n };
   d.playerOrder.push(id);
@@ -215,6 +217,16 @@ const setDurations: Handler = (d, c) => {
   if (!good) return fail('INVALID_DURATION');
   if (!touched) return NOOP;
   d.config = next;
+  return undefined;
+};
+
+// RULE_DECISIONS Q11: crew size N (3..6, default 5) is set by the admin before the game starts.
+const setCrewSize: Handler = (d, c) => {
+  if (d.phase !== 'LOBBY') return fail('WRONG_PHASE');
+  const size = reqInt(asObj(c.payload), 'size');
+  if (size === null || size < CREW_SIZE_MIN || size > CREW_SIZE_MAX) return fail('INVALID_PAYLOAD');
+  if (d.config.crewSize === size) return NOOP;
+  d.config.crewSize = size;
   return undefined;
 };
 
@@ -282,6 +294,7 @@ export const adminHandlers: Record<string, Handler> = {
   ADMIN_RENAME_TEAM: renameTeam,
   ADMIN_AUTO_GROUP: autoGroupCmd,
   ADMIN_SET_DURATIONS: setDurations,
+  ADMIN_SET_CREW_SIZE: setCrewSize,
   ADMIN_RESET_GAME: resetGame,
   ADMIN_TRIGGER_SUDDEN_DEATH: suddenDeath,
   ADMIN_MARK_R1_SOLVED: markSolved,

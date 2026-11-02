@@ -2,9 +2,11 @@
 // Scoring and hint text ported from src/lib/round1Engine.ts. Submit/hint orchestration ported
 // from supabaseSubmitRoundAnswer / supabaseRequestRoundHint / supabaseAdminMarkRound1Solved,
 // with the server clock and RULE_DECISIONS Q12 (round closes at the deadline).
-import { CODEWORDS, ROLES, ROUND1_FLOOR, ROUND1_HINT_COST } from './config.ts';
+import { CODEWORDS, ROUND1_FLOOR, ROUND1_HINT_COST } from './config.ts';
 import { asObj, recomputeScore, reqInt } from './common.ts';
 import { effNow, r1ElapsedSeconds } from './clock.ts';
+import { assignSlots, generateHintText, hintTextFor } from './r1slots.ts';
+import type { PlayerSlotInfo } from './r1slots.ts';
 import { rngPick } from './rng.ts';
 import type { GameEvent, GameState, Handler, Team } from './types.ts';
 import { NOOP, fail } from './types.ts';
@@ -25,31 +27,8 @@ export const ROUND1_HINTS: Round1HintConfig[] = [
   { hintIndex: 3, availableAfterSeconds: 240, title: 'Center Fragment', positionTarget: 'CENTER', penaltyPoints: 30 },
 ];
 
-export interface PlayerSlotInfo {
-  slotIndex: number;
-  playerName: string;
-  roleName: string;
-  roleColor?: string;
-}
-
-export function generateHintText(hintIndex: number, teamSize: number, slotMembers: PlayerSlotInfo[]): string {
-  const safeSize = Math.max(1, teamSize);
-  let targetSlot = 0;
-  if (hintIndex === 1) targetSlot = 0;
-  else if (hintIndex === 2) targetSlot = safeSize - 1;
-  else targetSlot = Math.floor(safeSize / 2);
-
-  const member = slotMembers.find(m => m.slotIndex === targetSlot);
-  const nameLabel = member ? member.playerName : `Crew Shade #${targetSlot + 1}`;
-  const roleLabel = member ? member.roleName : `Slot #${targetSlot + 1}`;
-
-  if (hintIndex === 1) {
-    return `🛡️ LEFT EDGE: "${nameLabel}" (${roleLabel}) holds the FAR LEFT piece of the ancient tablet. Place their phone on the left side of the table!`;
-  } else if (hintIndex === 2) {
-    return `⚓ RIGHT EDGE: "${nameLabel}" (${roleLabel}) holds the FAR RIGHT piece of the ancient tablet. Place their phone on the right side of the table!`;
-  }
-  return `👁️ CENTER PIECE: "${nameLabel}" (${roleLabel}) holds the CENTER piece of the tablet. Place their phone in the middle between left and right!`;
-}
+export { generateHintText };
+export type { PlayerSlotInfo };
 
 export interface Round1ScoreBreakdown {
   elapsedSeconds: number;
@@ -94,19 +73,19 @@ export function normalizeAnswer(s: string): string {
 
 // ---- state transitions ------------------------------------------------------
 
-/** Called when the game leaves the lobby: assigns codewords and freezes slots. */
-export function initRound1(d: GameState, now: number): void {
-  d.r1 = { startedAt: effNow(d, now), closed: false };
+/**
+ * Called when the game leaves the lobby: assigns codewords and freezes the pieces (one slot per
+ * member). The Round 1 clock does NOT start here: it starts when the briefing ends (startRound1Clock).
+ */
+export function initRound1(d: GameState): void {
+  d.r1 = { startedAt: null, closed: false };
   for (const tid of d.teamOrder) {
     const t = d.teams[tid];
-    const slots: Record<string, number> = {};
-    t.playerIds.forEach((pid, i) => {
-      slots[pid] = i;
-    });
+    const { slots, size } = assignSlots(t);
     t.r1 = {
       codeword: rngPick(d, CODEWORDS),
       slots,
-      size: t.playerIds.length,
+      size,
       hintsTaken: [],
       hintTexts: {},
       solved: false,
@@ -120,20 +99,28 @@ export function initRound1(d: GameState, now: number): void {
   }
 }
 
-export function closeRound1(d: GameState): void {
-  d.r1.closed = true;
+/** The briefing ended: the 5:00 clock, hint unlocks and speed tiers all count from now. */
+export function startRound1Clock(d: GameState, now: number): number {
+  d.r1.startedAt = effNow(d, now);
+  return d.r1.startedAt;
 }
 
-function hintText(d: GameState, t: Team, hintIndex: number): string {
-  const r1 = t.r1!;
-  const slotMembers: PlayerSlotInfo[] = [];
-  for (const pid of Object.keys(r1.slots)) {
-    const p = d.players[pid];
-    if (!p) continue;
-    const role = ROLES.find(r => r.id === p.role);
-    slotMembers.push({ slotIndex: r1.slots[pid], playerName: p.name, roleName: role?.name ?? 'Shade', roleColor: role?.color });
-  }
-  return generateHintText(hintIndex, r1.size, slotMembers);
+/** Whether the Round 1 clock is running (false during the briefing). */
+export function r1Running(d: GameState): boolean {
+  return d.phase === 'R1_ACTIVE' && d.step !== 'BRIEFING';
+}
+
+/** A crew's codeword as the two lines of the tablet (old src/lib/tabletEngine.ts parseTabletCodeword). */
+export function parseTabletCodeword(codeword: string): { line1: string; line2: string } {
+  const clean = (codeword || 'CRIMSON SHADOW').trim().toUpperCase();
+  const parts = clean.split(/\s+/);
+  if (parts.length >= 2) return { line1: parts[0], line2: parts.slice(1).join(' ') };
+  const mid = Math.ceil(clean.length / 2);
+  return { line1: clean.slice(0, mid), line2: clean.slice(mid) };
+}
+
+export function closeRound1(d: GameState): void {
+  d.r1.closed = true;
 }
 
 function awardSolve(d: GameState, t: Team, now: number, by: string | null, byAdmin: boolean, ev: GameEvent[]): void {
@@ -164,6 +151,7 @@ const submit: Handler = (d, c, now, ev) => {
   if (t.r1?.solved) return NOOP;
   if (d.phase === 'LOBBY') return fail('WRONG_PHASE');
   if (d.phase !== 'R1_ACTIVE' || d.r1.closed) return fail('ROUND_CLOSED');
+  if (d.step === 'BRIEFING') return fail('WRONG_PHASE'); // the story is playing: the clock has not started
   if (d.pausedAt != null) return fail('PAUSED');
   if (d.endsAt != null && now >= d.endsAt) return fail('ROUND_CLOSED');
   if (!t.r1) return fail('NOT_PLAYING');
@@ -182,13 +170,14 @@ const hint: Handler = (d, c, now, ev) => {
   if (!cfg) return fail('INVALID_PAYLOAD');
   if (d.phase === 'LOBBY') return fail('WRONG_PHASE');
   if (d.phase !== 'R1_ACTIVE' || d.r1.closed) return fail('ROUND_CLOSED');
+  if (d.step === 'BRIEFING') return fail('WRONG_PHASE');
   if (d.pausedAt != null) return fail('PAUSED');
   if (!t.r1) return fail('NOT_PLAYING');
   if (t.r1.solved || t.r1.hintsTaken.includes(cfg.hintIndex)) return NOOP;
   if (r1ElapsedSeconds(d, now) < cfg.availableAfterSeconds) return fail('HINT_LOCKED');
   t.r1.hintsTaken.push(cfg.hintIndex);
   t.r1.hintsTaken.sort((a, b) => a - b);
-  t.r1.hintTexts[String(cfg.hintIndex)] = hintText(d, t, cfg.hintIndex);
+  t.r1.hintTexts[String(cfg.hintIndex)] = hintTextFor(d, t, cfg.hintIndex);
   ev.push({ type: 'R1_HINT_TAKEN', teamId: t.id, hint: cfg.hintIndex });
   return undefined;
 };
@@ -197,7 +186,7 @@ const hint: Handler = (d, c, now, ev) => {
 export function adminMarkSolved(d: GameState, teamId: string, now: number, ev: GameEvent[]): ReturnType<Handler> {
   const t = d.teams[teamId];
   if (!t) return fail('UNKNOWN_TEAM');
-  if (d.phase !== 'R1_ACTIVE') return fail('WRONG_PHASE');
+  if (d.phase !== 'R1_ACTIVE' || d.step === 'BRIEFING') return fail('WRONG_PHASE');
   if (!t.r1) return fail('NOT_PLAYING');
   if (t.r1.solved) return NOOP;
   awardSolve(d, t, now, null, true, ev);

@@ -216,6 +216,16 @@ test('/api/meta is static and cacheable; views do not repeat it', async () => {
   assert.equal(meta.roles.length, 5);
   assert.ok(meta.rounds.length === 3 && meta.rounds[0].sentences.length > 0);
   assert.ok(meta.emojiPool.length === 5);
+  // briefing length per round: ceil(sentences * 2.8 + 3 + (rules + 1) * 2 + 3)
+  for (const r of meta.rounds) assert.equal(r.briefingSeconds, Math.ceil(r.sentences.length * 2.8 + 3 + (r.rules.length + 1) * 2 + 3));
+  // Round 2 stakes per clash
+  assert.deepEqual(meta.r2Stakes, [
+    { clash: 1, bothTruce: 75, ambushWin: 150, truceLoss: 0, bothAmbush: 15 },
+    { clash: 2, bothTruce: 150, ambushWin: 300, truceLoss: 0, bothAmbush: 30 },
+    { clash: 3, bothTruce: 225, ambushWin: 450, truceLoss: 0, bothAmbush: 45 },
+  ]);
+  assert.equal(meta.r3.honourBonus, 75);
+  assert.deepEqual(meta.teamSize, { min: 3, target: 5, max: 6 });
   const p = new Player(srv.url, 7);
   await p.join();
   const json = JSON.stringify(await p.view());
@@ -384,6 +394,28 @@ test('static serving with STATIC_DIR: content types, SPA fallback, config.json, 
     // API routes are never shadowed by the SPA fallback
     assert.equal((await fetch(`${s.url}/api/nope`)).status, 404);
     assert.equal((await fetch(`${s.url}/health`)).status, 200);
+  } finally {
+    await s.cleanup();
+  }
+});
+
+test('ADMIN_SET_CREW_SIZE over HTTP: validated, lobby view and admin view show the new crew size', async () => {
+  const s = await startServer();
+  try {
+    const p = new Player(s.url, 31);
+    await p.join();
+    assert.equal(((await p.view()) as View).lobby?.crewSize, 5);
+    const badRes = await fetch(`${s.url}/api/admin/command`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${ADMIN_TOKEN}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: 'ADMIN_SET_CREW_SIZE', payload: { size: 9 } }),
+    });
+    assert.equal(badRes.status, 400);
+    const ok = await admin(s.url, 'ADMIN_SET_CREW_SIZE', { size: 3 });
+    assert.ok(ok.ok);
+    assert.equal(((await p.view()) as View).lobby?.crewSize, 3);
+    const av = (await (await adminGet(s.url, '/api/admin/view')).json()) as { crewSize?: number };
+    assert.equal(av.crewSize, 3);
   } finally {
     await s.cleanup();
   }

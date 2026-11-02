@@ -28,3 +28,13 @@ export function createInitialState(opts: { seed: number }): GameState {
     applied: [],
   };
 }
+
+/**
+ * Fill in fields that snapshots written by older builds lack, so an old snapshot loads with defaults.
+ * Returns the same object when nothing is missing. Pure.
+ */
+export function normalizeRestoredState(state: GameState): GameState {
+  const cfg = state.config as Partial<GameState['config']>;
+  if (typeof cfg.crewSize === 'number') return state;
+  return { ...state, config: { ...state.config, crewSize: DEFAULT_DURATIONS.crewSize } };
+}

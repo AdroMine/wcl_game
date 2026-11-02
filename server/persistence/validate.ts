@@ -4,7 +4,7 @@
 import { PHASES, ROLE_IDS } from '../../shared/protocol.ts';
 import type { GameState } from '../engine/index.ts';
 
-const STEPS = new Set([null, 'HUDDLE', 'PARLEY', 'VOTE', 'DEBRIEF', 'BLUFF', 'REVEAL', 'SUDDEN_DEATH']);
+const STEPS = new Set([null, 'BRIEFING', 'HUDDLE', 'PARLEY', 'VOTE', 'DEBRIEF', 'BLUFF', 'REVEAL', 'SUDDEN_DEATH']);
 
 function isObj(v: unknown): v is Record<string, unknown> {
   return v !== null && typeof v === 'object' && !Array.isArray(v);

@@ -9,6 +9,7 @@ import type { Command, ErrorCode, GameState } from '../../server/engine/index.ts
 import { createInitialState } from '../../server/engine/index.ts';
 import { calculateRound1Score } from '../../server/engine/round1.ts';
 import { calculateClashPoints } from '../../server/engine/round2.ts';
+import { briefingSeconds } from '../../server/content.ts';
 
 export interface SimOptions {
   seed: number;
@@ -190,6 +191,18 @@ export function runSimulation(opts: SimOptions): SimResult {
 
   function planR1(): Command[] {
     const out: Command[] = [];
+    // late joiners
+    for (const id of lateJoiners) if (joinTick.get(id) === tick) out.push(mk('JOIN', P(id), { playerId: id, name: `Late ${id}`, tokenHash: `h-${id}` }));
+    if (state.step === 'BRIEFING') {
+      // the story is playing: the clock has not started and nothing may be accepted
+      if (state.phaseSeq !== lastSeq) {
+        lastSeq = state.phaseSeq;
+        phaseTick0 = tick;
+        out.push(mk('R1_SUBMIT', P(ids[0]), { answer: 'TOO EARLY' }));
+        out.push(mk('R1_HINT', P(ids[1]), { hint: 1 }));
+      }
+      return out;
+    }
     if (state.phaseSeq !== lastSeq) {
       lastSeq = state.phaseSeq;
       phaseTick0 = tick;
@@ -236,8 +249,6 @@ export function runSimulation(opts: SimOptions): SimResult {
       }
     }
     void phaseTick0;
-    // late joiners
-    for (const id of lateJoiners) if (joinTick.get(id) === tick) out.push(mk('JOIN', P(id), { playerId: id, name: `Late ${id}`, tokenHash: `h-${id}` }));
     return out;
   }
 
@@ -295,7 +306,7 @@ export function runSimulation(opts: SimOptions): SimResult {
       if (state.clash === 1 && step === 'HUDDLE') {
         for (const tid of state.teamOrder) personality[tid] = [0.05, 0.3, 0.6, 0.95][int(4)];
       }
-      if (step === 'HUDDLE' || step === 'PARLEY') {
+      if (step === 'BRIEFING' || step === 'HUDDLE' || step === 'PARLEY') {
         // votes outside the window must be refused
         const stray = ids[int(N - 10)];
         todo.push({ at: 3, make: () => mk('R2_VOTE', P(stray), { vote: 'TRUCE' }) });
@@ -344,6 +355,7 @@ export function runSimulation(opts: SimOptions): SimResult {
       phaseTick0 = tick;
       todo.length = 0;
       const step = state.step;
+      if (step === 'BRIEFING') todo.push({ at: 2, make: () => mk('R3_VOTE', P(ids[int(N - 10)]), { vessel: 'ROWBOAT' }) });
       if (step === 'BLUFF' && state.wave === 1) {
         for (const tid of state.teamOrder) {
           const a = rnd();
@@ -571,7 +583,24 @@ function checkInvariants(s: GameState, adminAdjust: Record<string, number>, firs
     if (n > allowed) fail(`step entered ${n} times: ${k}`);
   }
   const r2Steps = s.phaseLog.filter(e => e.phase === 'R2_CLASH').length;
-  if (r2Steps !== 12 && s.r2.matches && Object.keys(s.r2.matches).length > 0) fail(`expected 12 R2 steps, saw ${r2Steps}`);
+  if (r2Steps !== 13 && s.r2.matches && Object.keys(s.r2.matches).length > 0) fail(`expected 13 R2 steps (briefing + 12), saw ${r2Steps}`);
+
+  // each round opens with a BRIEFING step of the content-derived length, and its real clock starts when it ends
+  const briefingEnds = (phase: string, secs: number): void => {
+    const i = s.phaseLog.findIndex(e => e.phase === phase && e.step === 'BRIEFING');
+    if (i < 0) return fail(`no BRIEFING step in ${phase}`);
+    const next = s.phaseLog[i + 1];
+    if (!next || next.phase !== phase || next.step === 'BRIEFING') fail(`${phase} does not leave its briefing for a running step`);
+    else if (next.at - s.phaseLog[i].at < secs * 1000) fail(`${phase} briefing ended after ${next.at - s.phaseLog[i].at} ms, expected at least ${secs * 1000}`);
+    if (s.phaseLog.filter(e => e.phase === phase && e.step === 'BRIEFING').length !== 1) fail(`${phase} entered its briefing more than once`);
+  };
+  briefingEnds('R1_ACTIVE', briefingSeconds(1));
+  if (Object.keys(s.r2.matches).length > 0) briefingEnds('R2_CLASH', briefingSeconds(2));
+  if (s.r3) briefingEnds('R3_ACTIVE', briefingSeconds(3));
+  {
+    const i = s.phaseLog.findIndex(e => e.phase === 'R1_ACTIVE' && e.step === null);
+    if (i >= 0 && s.r1.startedAt !== s.phaseLog[i].at) fail('the Round 1 clock must start exactly when the briefing ends');
+  }
 
   // scores = R1 + R2 + admin adjustments, checked independently
   let r2Total = 0;

@@ -23,6 +23,11 @@ export const LIMITS = {
   viewBytes: 4096,
 } as const;
 
+/** Crew size N (RULE_DECISIONS Q11): set by the admin in the lobby. */
+export const CREW_SIZE_MIN = 3;
+export const CREW_SIZE_MAX = 6;
+export const CREW_SIZE_DEFAULT = 5;
+
 export const ROLE_IDS = ['navigator', 'oracle', 'scholar', 'torchbearer', 'negotiator'] as const;
 export type RoleId = (typeof ROLE_IDS)[number];
 
@@ -38,7 +43,11 @@ export const PHASES = [
   'FINISHED',
 ] as const;
 export type PhaseName = (typeof PHASES)[number];
-export type StepName = 'HUDDLE' | 'PARLEY' | 'VOTE' | 'DEBRIEF' | 'BLUFF' | 'REVEAL' | 'SUDDEN_DEATH';
+/**
+ * BRIEFING is the server-timed story step at the start of R1_ACTIVE, of R2_CLASH (before clash 1's HUDDLE) and of
+ * R3_ACTIVE (before wave 1's BLUFF). No submissions or votes are accepted and the round's real clock has not started.
+ */
+export type StepName = 'BRIEFING' | 'HUDDLE' | 'PARLEY' | 'VOTE' | 'DEBRIEF' | 'BLUFF' | 'REVEAL' | 'SUDDEN_DEATH';
 
 export type Stance = 'TRUCE' | 'AMBUSH';
 export type Vessel = 'ROWBOAT' | 'SAILBOAT' | 'GHOST_SHIP';
@@ -331,7 +340,23 @@ export function validateAdminBody(body: unknown): Validated<AdminCommandBody> {
   if (body.commandId !== undefined && !isValidCommandId(body.commandId)) return bad('invalid commandId');
   if (typeof body.type !== 'string' || !/^ADMIN_[A-Z0-9_]{1,48}$/.test(body.type)) return bad('invalid type');
   if (body.payload !== undefined && body.payload !== null && !isObj(body.payload)) return bad('payload must be an object');
-  return { ok: true, value: { commandId: body.commandId as string | undefined, type: body.type, payload: body.payload ?? {} } };
+  const p = validateAdminPayload(body.type, body.payload);
+  if (!p.ok) return p;
+  return { ok: true, value: { commandId: body.commandId as string | undefined, type: body.type, payload: p.value } };
+}
+
+/** Payload validators for admin commands that take structured input (the engine re-checks everything). */
+export function validateAdminPayload(type: string, payload: unknown): Validated<unknown> {
+  const o = payload === undefined || payload === null ? {} : payload;
+  if (!isObj(o)) return bad('payload must be an object');
+  if (type === 'ADMIN_SET_CREW_SIZE') {
+    if (!noExtra(o, ['size'])) return bad('unexpected field');
+    if (typeof o.size !== 'number' || !Number.isInteger(o.size) || o.size < CREW_SIZE_MIN || o.size > CREW_SIZE_MAX) {
+      return bad(`size must be an integer from ${CREW_SIZE_MIN} to ${CREW_SIZE_MAX}`);
+    }
+    return { ok: true, value: { size: o.size } };
+  }
+  return { ok: true, value: o };
 }
 
 /** Helpers for clients that generate their own identity. */
@@ -353,6 +378,8 @@ export interface PhaseView {
   /** Absolute server time (ms since epoch) at which the step ends; null if untimed. */
   endsAt: number | null;
   paused: boolean;
+  /** Only during the BRIEFING step: absolute server time (ms) at which the briefing started (it ends at `endsAt`). */
+  startedAt?: number;
   /** Only while paused: the clock is frozen at this server time. */
   pausedAt?: number;
   /** Only while paused: milliseconds left in the step. */
@@ -364,10 +391,11 @@ export interface MeView {
   name: string;
   role: RoleId;
   joinedTeam: boolean;
-  /** Round 1 only: this player's own piece of the tablet. */
-  slice?: string[];
-  /** 'hash': the server swapped every block glyph (U+2588) for "#" to stay under 4 KB; swap it back before drawing. */
-  sliceFmt?: 'hash';
+  /**
+   * Round 1 only: this player's own piece of the crew's tablet: piece `slot` of `slotCount` (0-based, left to right).
+   * slotCount always equals the crew's current member count and every member holds a distinct slot; both are
+   * recomputed if crew membership changes during Round 1.
+   */
   slot?: number;
   slotCount?: number;
   /** The player's own vote in the current clash, wave or standoff. */
@@ -387,6 +415,8 @@ export interface TeamView {
 }
 
 export interface R1View {
+  /** The crew's codeword split into the two tablet lines (own crew only, R1_ACTIVE only; draw slice `me.slot` of `me.slotCount`). */
+  tablet?: { line1: string; line2: string };
   solved: boolean;
   points: number;
   closed: boolean;
@@ -396,10 +426,15 @@ export interface R1View {
 export interface R2View {
   paired: boolean;
   rival?: { name: string; battleCode: string };
-  /** Resolved clashes only. */
-  clashes: { clash: number; myStance: Stance; rivalStance: Stance; myPts: number; rivalPts: number }[];
+  /**
+   * Resolved clashes only. `myVotes` reveals how each teammate voted once the clash is scored: one character per member of
+   * `team.members` in the same order: 'T' truce, 'A' ambush, '-' did not vote.
+   */
+  clashes: { clash: number; myStance: Stance; rivalStance: Stance; myPts: number; rivalPts: number; myVotes: string }[];
   /** Teammates who have voted in the running vote step (never what they voted). */
   votedCount?: number;
+  /** VOTE step only: who has voted, aligned with `team.members` (never what they voted). */
+  votedBy?: boolean[];
   teamSize: number;
   moral?: MoralStatus;
 }
@@ -413,6 +448,8 @@ export interface R3View {
   sailboatCapacity: number;
   votedCount?: number;
   teamSize: number;
+  /** True when this crew holds the Honourable head start (Winds of Olympus, `meta.r3.honourBonus` metres). */
+  honourable?: boolean;
   leash?: { available: boolean; targetName: string | null; armed: boolean };
   /** Compact fleet rows: [name, distance, escapedRank (0 = still on the river), vessel code R/S/G or ''] */
   fleet: [string, number, number, string][];
@@ -427,7 +464,13 @@ export interface R3View {
     sailboatCapsized: boolean;
     ghostCollided: boolean;
     capacity: number;
-    leash?: { kind: string; delta: number; otherName: string; role: 'holder' | 'target' };
+    /**
+     * All-crews report of that wave: [vessel code 'R'|'S'|'G', crews that boarded, outcome, metres per boarding crew].
+     * Always three rows in order Rowboat, Sailboat, Ghost Ship.
+     */
+    vessels: [string, number, 'SAFE' | 'CAPSIZED' | 'COLLIDED' | 'UNBOARDED', number][];
+    /** Every leash event of that wave that involves this crew (as holder or target). */
+    leashes?: { kind: string; delta: number; otherName: string; role: 'holder' | 'target' }[];
   };
   sd?: { teamA: string; teamB: string; mine: boolean; votedCount?: number; resolved: boolean; winner?: string | null; text?: string | null };
   podium?: string[];
@@ -446,7 +489,8 @@ export interface View {
   r1?: R1View;
   r2?: R2View;
   r3?: R3View;
-  lobby?: { players: number; teams: number };
+  /** LOBBY only. `crewSize` is the admin's current maximum crew size N (3..6, default 5). */
+  lobby?: { players: number; teams: number; crewSize: number };
   /** Top 10 teams: [name, score]. */
   board: [string, number][];
   boardTotal: number;
@@ -478,6 +522,8 @@ export interface BriefingRule {
   desc: string;
 }
 export interface Briefing {
+  /** Server-timed length of the round's BRIEFING step: ceil(sentences * 2.8 + 3 + (rules + 1) * 2 + 3). Filled in by GET /api/meta. */
+  briefingSeconds?: number;
   stageNumber: number;
   title: string;
   subtitle: string;
@@ -497,14 +543,17 @@ export interface Meta {
     r2: { HUDDLE: number; PARLEY: number; VOTE: number; DEBRIEF: number };
     r3: { BLUFF: number; VOTE: number; REVEAL: number };
     sdSeconds: number;
+    crewSize: number;
   };
   rounds: Briefing[];
+  /** Round 2 points per clash. */
+  r2Stakes: { clash: number; bothTruce: number; ambushWin: number; truceLoss: number; bothAmbush: number }[];
   vessels: { id: Vessel; name: string; icon: string; success: number; fail: number; note: string }[];
   stances: { id: Stance; name: string }[];
   sdActions: { id: SdAction; name: string }[];
   moralStatuses: { id: MoralStatus; name: string; note: string }[];
   hints: { index: number; unlocksAfterSeconds: number; cost: number }[];
-  r3: { targetDistance: number; podiumSize: number };
+  r3: { targetDistance: number; podiumSize: number; honourBonus: number };
   errors: Record<string, string>;
   /** Phase/step instruction lines shown on the projector and usable as a banner on phones. */
   instructions: Record<string, string>;

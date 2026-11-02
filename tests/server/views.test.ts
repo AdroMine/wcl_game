@@ -2,9 +2,10 @@
 import test, { before } from 'node:test';
 import assert from 'node:assert/strict';
 import { CODEWORDS } from '../../server/engine/index.ts';
-import { getPlayerAsciiSlice } from '../../server/engine/ascii.ts';
 import type { GameState } from '../../server/engine/index.ts';
 import { generateHintText } from '../../server/engine/round1.ts';
+import { briefingSeconds } from '../../server/content.ts';
+import { harness } from '../engine/helpers.ts';
 import { hashToken } from '../../server/auth.ts';
 import { ViewBuilder } from '../../server/transport/views.ts';
 import { LIMITS } from '../../shared/protocol.ts';
@@ -48,27 +49,6 @@ function withRealTokens(state: GameState): { state: GameState; tokens: Record<st
   return { state: { ...state, players }, tokens };
 }
 
-const sliceCache = new WeakMap<GameState, Map<string, Set<string>>>();
-/** JSON-escaped, non-trivial slice lines -> the players who own them. */
-function sliceLines(state: GameState): Map<string, Set<string>> {
-  let m = sliceCache.get(state);
-  if (m) return m;
-  m = new Map();
-  for (const t of Object.values(state.teams)) {
-    if (!t.r1) continue;
-    for (const [qid, slot] of Object.entries(t.r1.slots)) {
-      for (const raw of getPlayerAsciiSlice(t.r1.codeword, slot, t.r1.size)) {
-        if (raw.trim().length <= 12) continue;
-        const line = JSON.stringify(raw).slice(1, -1);
-        if (!m.has(line)) m.set(line, new Set());
-        m.get(line)!.add(qid);
-      }
-    }
-  }
-  sliceCache.set(state, m);
-  return m;
-}
-
 function privacyViolations(state: GameState, tokens: Record<string, string>, pid: string, json: string, view: View): string[] {
   const bad: string[] = [];
   for (const p of Object.values(state.players)) {
@@ -77,19 +57,22 @@ function privacyViolations(state: GameState, tokens: Record<string, string>, pid
   for (const t of Object.values(tokens)) if (json.includes(t)) bad.push('raw token');
   if (json.includes(ADMIN_TOKEN)) bad.push('admin token');
   if (/tokenHash/i.test(json)) bad.push('tokenHash key');
+  // Codewords: only the viewer's OWN crew's codeword, only during R1_ACTIVE, only as r1.tablet. Never another crew's.
   const compact = json.toUpperCase().replace(/\s+/g, '');
-  for (const w of CODEWORDS) if (compact.includes(w.replace(/\s+/g, ''))) bad.push(`codeword ${w}`);
+  const ownTeam = state.players[pid]?.teamId ? state.teams[state.players[pid].teamId!] : undefined;
+  const ownWord = state.phase === 'R1_ACTIVE' ? ownTeam?.r1?.codeword : undefined;
+  for (const w of CODEWORDS) {
+    if (w === ownWord) continue;
+    if (compact.includes(w.replace(/\s+/g, ''))) bad.push(`codeword ${w}`);
+  }
   for (const t of Object.values(state.teams)) {
     const cw = t.r1?.codeword;
-    if (cw && compact.includes(cw.replace(/\s+/g, ''))) bad.push('team codeword');
+    if (cw && cw !== ownWord && compact.includes(cw.replace(/\s+/g, ''))) bad.push('team codeword');
   }
-  // No other player's slice lines (only phases around Round 1 can leak them; scanning all 17k views would be slow).
-  if (state.phase === 'R1_ACTIVE' || state.phase === 'R1_RESULTS' || state.phase === 'R2_PAIRING') {
-    const mySlice = new Set(view.me?.slice ?? []);
-    for (const [line, owners] of sliceLines(state)) {
-      if (!mySlice.has(line) && !(owners.size === 1 && owners.has(pid)) && json.includes(line)) bad.push(`slice line of ${[...owners].join(',')}`);
-    }
+  if (view.r1?.tablet) {
+    if (!ownWord || `${view.r1.tablet.line1} ${view.r1.tablet.line2}` !== ownWord) bad.push('tablet is not my own crew codeword');
   }
+  if ((view.me as Record<string, unknown> | undefined)?.slice !== undefined) bad.push('ascii slice still sent');
   const me = state.players[pid];
   // Only the three sections of the view may carry per-player data.
   const keys = Object.keys(view);
@@ -276,14 +259,14 @@ test('screen view is public: no private fields, small', () => {
   for (const s of samples.filter((_, i) => i % 4 === 0)) {
     const { json } = vb.screen(s.state, NOW);
     for (const p of Object.values(s.state.players)) if (p.tokenHash) assert.ok(!json.includes(p.tokenHash));
-    assert.ok(!/"(tokenHash|codeword|slice|me)"/i.test(json));
+    assert.ok(!/"(tokenHash|codeword|slice|me|tablet)"/i.test(json));
     const compact = json.toUpperCase().replace(/\s+/g, '');
     for (const w of CODEWORDS) assert.ok(!compact.includes(w.replace(/\s+/g, '')));
     assert.ok(Buffer.byteLength(json) < 6000, `${s.state.phase}: ${Buffer.byteLength(json)}`);
   }
 });
 
-test('a crew of one gets the whole tablet: the view stays <= 4096 bytes and the slice is losslessly re-encoded', () => {
+test('R1: the crew sees its own tablet lines and slot; a crew of one still fits in 4096 bytes; no ascii slice is sent', () => {
   const base = structuredClone(samples.filter(s => s.state.phase === 'R1_ACTIVE').at(-1)!.state);
   const team = Object.values(base.teams).find(t => t.r1)!;
   const pid = Object.keys(team.r1!.slots)[0];
@@ -295,9 +278,243 @@ test('a crew of one gets the whole tablet: the view stays <= 4096 bytes and the 
   const vb = new ViewBuilder({ sid: 'x' });
   const b = vb.forPlayer(state, pid, hashToken(tokens[pid]), NOW);
   assert.ok(b.bytes <= LIMITS.viewBytes, `${b.bytes}`);
-  const me = (JSON.parse(b.json) as View).me!;
-  assert.equal(me.slice!.length, 15);
-  assert.equal(me.sliceFmt, 'hash');
-  const full = getPlayerAsciiSlice(team.r1!.codeword, 0, 1);
-  assert.deepEqual(me.slice!.map(l => l.replaceAll('#', '█')), full);
+  const view = JSON.parse(b.json) as View;
+  assert.equal(view.me!.slot, 0);
+  assert.equal(view.me!.slotCount, 1);
+  assert.equal(`${view.r1!.tablet!.line1} ${view.r1!.tablet!.line2}`, team.r1!.codeword);
+  assert.ok(!('slice' in view.me!) && !('sliceFmt' in view.me!));
+  assert.equal(vb.degradedViews, 0);
+});
+
+test('R1 tablet: every member of a crew sees the same two lines, only in R1_ACTIVE, and the slots are distinct', () => {
+  const r1 = samples.filter(s => s.state.phase === 'R1_ACTIVE' && s.state.step === null).at(-1)!.state;
+  const { state, tokens } = withRealTokens(r1);
+  const vb = new ViewBuilder({ sid: 'x' });
+  for (const t of Object.values(state.teams)) {
+    if (!t.r1 || t.playerIds.length === 0) continue;
+    const views = t.playerIds.map(pid => JSON.parse(vb.forPlayer(state, pid, hashToken(tokens[pid]), NOW).json) as View);
+    const [w1, w2] = t.r1.codeword.split(' ');
+    for (const v of views) {
+      assert.deepEqual(v.r1!.tablet, { line1: w1, line2: w2 });
+      assert.equal(v.me!.slotCount, t.playerIds.length);
+    }
+    assert.deepEqual(views.map(v => v.me!.slot).sort(), t.playerIds.map((_, i) => i));
+  }
+  // not after the round
+  const results = samples.filter(s => s.state.phase === 'R1_RESULTS').at(-1)!.state;
+  const w = withRealTokens(results);
+  const pid = results.playerOrder.find(id => results.players[id].teamId)!;
+  const rv = JSON.parse(new ViewBuilder({ sid: 'x' }).forPlayer(w.state, pid, hashToken(w.tokens[pid]), NOW).json) as View;
+  assert.equal(rv.r1?.tablet, undefined);
+  assert.equal(rv.me?.slot, undefined);
+});
+
+test('briefing: views expose the step, its start and end time; hints unlock relative to the briefing end', () => {
+  const h = harness(21);
+  for (let i = 0; i < 5; i++) h.join(`pl${i}abc`);
+  h.ok(h.as('pl0abc', 'CREATE_TEAM', { name: 'Crew' }));
+  const code = h.state.teams[h.state.players.pl0abc.teamId!].emojiCode;
+  for (let i = 1; i < 5; i++) h.admin('ADMIN_MOVE_PLAYER', { playerId: `pl${i}abc`, teamId: h.state.players.pl0abc.teamId });
+  assert.ok(code);
+  h.ok(h.admin('ADMIN_START_GAME'));
+  const { state, tokens } = withRealTokens(h.state);
+  const vb = new ViewBuilder({ sid: 'x' });
+  const v = JSON.parse(vb.forPlayer(state, 'pl0abc', hashToken(tokens.pl0abc), NOW).json) as View;
+  assert.equal(v.phase.name, 'R1_ACTIVE');
+  assert.equal(v.phase.step, 'BRIEFING');
+  assert.equal(v.phase.startedAt, state.phaseStartedAt);
+  assert.equal(v.phase.endsAt! - v.phase.startedAt!, briefingSeconds(1) * 1000);
+  assert.deepEqual(v.r1!.hints.map(x => x.unlocksAt - v.phase.endsAt!), [120_000, 180_000, 240_000]);
+  assert.ok(v.r1!.tablet, 'the crew can preload its tablet during the briefing');
+  // after the briefing: no startedAt, step null, hints relative to the real clock start
+  h.nextDeadline();
+  const w = withRealTokens(h.state);
+  const v2 = JSON.parse(new ViewBuilder({ sid: 'x' }).forPlayer(w.state, 'pl0abc', hashToken(w.tokens.pl0abc), NOW).json) as View;
+  assert.equal(v2.phase.step, null);
+  assert.equal(v2.phase.startedAt, undefined);
+  assert.equal(v2.phase.endsAt, h.state.r1.startedAt! + 300_000);
+  assert.equal(v2.r1!.hints[0].unlocksAt, h.state.r1.startedAt! + 120_000);
+});
+
+test('lobby view carries the current crew size', () => {
+  const h = harness(5);
+  h.join('someone1');
+  const { state, tokens } = withRealTokens(h.state);
+  const vb = new ViewBuilder({ sid: 'x' });
+  const v = JSON.parse(vb.forPlayer(state, 'someone1', hashToken(tokens.someone1), NOW).json) as View;
+  assert.deepEqual(v.lobby, { players: 1, teams: 0, crewSize: 5 });
+  h.ok(h.admin('ADMIN_SET_CREW_SIZE', { size: 4 }));
+  const w = withRealTokens(h.state);
+  const v2 = JSON.parse(new ViewBuilder({ sid: 'x' }).forPlayer(w.state, 'someone1', hashToken(w.tokens.someone1), NOW).json) as View;
+  assert.equal(v2.lobby!.crewSize, 4);
+});
+
+/**
+ * Worst case: 40 crews of 7 (crew size 6 + the auto-group overflow), played through every step with votes cast,
+ * wave reports and leashes. Measures the largest view of any player.
+ */
+function worstCase(nameFor: (kind: 'player' | 'team', i: number) => string): { max: Record<string, number>; degraded: number; overall: number; views: number } {
+  const h = harness(77);
+  h.ok(h.admin('ADMIN_SET_CREW_SIZE', { size: 6 }));
+  const crews = 40;
+  const teamIds: string[] = [];
+  let n = 0;
+  for (let c = 0; c < crews; c++) {
+    h.ok(h.admin('ADMIN_ADD_PLAYER', { name: nameFor('player', n++) }));
+    const lead = h.state.playerOrder.at(-1)!;
+    h.join(`creator${c}`, nameFor('player', n++));
+    h.ok(h.as(`creator${c}`, 'CREATE_TEAM', { name: nameFor('team', c) }));
+    const tid = h.state.players[`creator${c}`].teamId!;
+    teamIds.push(tid);
+    h.ok(h.admin('ADMIN_MOVE_PLAYER', { playerId: lead, teamId: tid }));
+    for (let k = 0; k < 5; k++) {
+      h.ok(h.admin('ADMIN_ADD_PLAYER', { name: nameFor('player', n++), teamId: tid }));
+    }
+  }
+  assert.ok(teamIds.every(t => h.state.teams[t].playerIds.length === 7));
+  const max: Record<string, number> = {};
+  let degraded = 0;
+  let overall = 0;
+  let views = 0;
+  const measure = (label: string): void => {
+    const { state, tokens } = withRealTokens(h.state);
+    const vb = new ViewBuilder({ sid: 'w' });
+    for (const pid of state.playerOrder) {
+      // every phone has a token in this synthetic game
+      const b = vb.forPlayer(state, pid, hashToken(tokens[pid]), NOW);
+      assert.ok(b.bytes <= LIMITS.viewBytes, `${label} ${pid}: ${b.bytes} bytes`);
+      max[label] = Math.max(max[label] ?? 0, b.bytes);
+      overall = Math.max(overall, b.bytes);
+      views++;
+    }
+    degraded += vb.degradedViews;
+  };
+  measure('LOBBY');
+  const members = (t: string) => h.state.teams[t].playerIds;
+  h.ok(h.admin('ADMIN_START_GAME'));
+  measure('R1 BRIEFING');
+  h.nextDeadline();
+  // every crew takes hints (long hint texts name the members) after 4 minutes
+  h.tick(245);
+  for (const t of teamIds) for (const i of [1, 2, 3]) h.ok(h.as(members(t)[0], 'R1_HINT', { hint: i }), 'hint');
+  measure('R1 running, all hints taken');
+  h.ok(h.admin('ADMIN_SKIP_STEP'));
+  measure('R1_RESULTS');
+  h.ok(h.admin('ADMIN_START_R2'));
+  measure('R2_PAIRING');
+  h.ok(h.admin('ADMIN_R2_AUTO_PAIR'));
+  measure('R2 BRIEFING');
+  for (let clash = 1; clash <= 3; clash++) {
+    while (h.state.step !== 'VOTE') h.nextDeadline();
+    // mixed votes: stances differ per crew so that every moral status occurs
+    teamIds.forEach((t, ti) => {
+      members(t).forEach((pid, mi) => {
+        if (mi === 6) return; // one member never votes
+        const v = (ti % 4 === 1 && clash <= 2) || (ti % 4 === 0 && clash === 3) ? 'AMBUSH' : mi % 3 === 0 && ti % 2 ? 'AMBUSH' : 'TRUCE';
+        h.ok(h.as(pid, 'R2_VOTE', { vote: v }));
+      });
+    });
+    measure(`R2 clash ${clash} VOTE (all voted)`);
+    h.nextDeadline();
+    measure(`R2 clash ${clash} DEBRIEF`);
+    h.nextDeadline();
+  }
+  while (h.state.phase === 'R2_CLASH') h.nextDeadline();
+  measure('R2_RESULTS');
+  h.ok(h.admin('ADMIN_START_R3'));
+  measure('R3 BRIEFING');
+  for (let wave = 1; wave <= 6 && h.state.phase === 'R3_ACTIVE'; wave++) {
+    while (h.state.step !== 'VOTE') h.nextDeadline();
+    const active = h.state.teamOrder.filter(t => h.state.r3!.teams[t] && !h.state.r3!.teams[t].escaped);
+    active.forEach((t, ti) => {
+      const t3 = h.state.r3!.teams[t];
+      members(t).forEach((pid, mi) => {
+        const vessel = (['ROWBOAT', 'SAILBOAT', 'GHOST_SHIP'] as const)[(ti + mi + wave) % 3 === 0 && ti % 5 === 0 ? 2 : ti % 3 === 0 ? 1 : 0];
+        h.ok(h.as(pid, 'R3_VOTE', { vessel }));
+      });
+      if (t3.leashHolder && !t3.leashUsed) h.as(members(t)[0], 'R3_ARM_LEASH', {});
+    });
+    measure(`R3 wave ${wave} VOTE`);
+    h.nextDeadline();
+    measure(`R3 wave ${wave} REVEAL`);
+    h.nextDeadline();
+  }
+  if (h.state.phase === 'R3_ACTIVE') h.ok(h.admin('ADMIN_END_R3'));
+  measure('R3_RESULTS');
+  h.ok(h.admin('ADMIN_FINISH'));
+  measure('FINISHED');
+  return { max, degraded, overall, views };
+}
+
+test('worst case: 40 crews of 7, ordinary names: every view <= 4096 bytes and nothing is degraded', () => {
+  const r = worstCase((kind, i) => (kind === 'player' ? `Player ${i % 1000}` : `Crew number ${i}`));
+  console.log(`# worst case (40 crews of 7, ordinary names): max view ${r.overall} bytes over ${r.views} views; per step ${JSON.stringify(r.max)}`);
+  assert.equal(r.degraded, 0, 'no view needed degrading');
+  assert.ok(r.overall <= LIMITS.viewBytes);
+});
+
+test('worst case: 40 crews of 7 with maximum-length multibyte names stay <= 4096 bytes (degrading if needed)', () => {
+  const r = worstCase((kind, i) => String.fromCharCode(0x6f22 + (i % 50)).repeat(kind === 'player' ? 24 : 32));
+  console.log(`# worst case (40 crews of 7, multibyte names): max view ${r.overall} bytes, degraded views ${r.degraded}`);
+  assert.ok(r.overall <= LIMITS.viewBytes);
+});
+
+test('view data: R2 voted-by flags during VOTE, revealed teammate votes afterwards, R3 report and honourable flag', () => {
+  // R2: VOTE sample with at least one team where some teammates voted
+  let sawVotedBy = false;
+  for (const s of samples.filter(x => x.state.phase === 'R2_CLASH' && x.state.step === 'VOTE')) {
+    const { state, tokens } = withRealTokens(s.state);
+    const vb = new ViewBuilder({ sid: 'x' });
+    for (const t of Object.values(state.teams)) {
+      const pid = t.playerIds[0];
+      if (!pid) continue;
+      const v = JSON.parse(vb.forPlayer(state, pid, hashToken(tokens[pid]), NOW).json) as View;
+      if (!v.r2?.votedBy) continue;
+      const m = state.r2.matches[state.r2.matchOfTeam[t.id]];
+      const bucket = m.teamA === t.id ? m.clashes[state.clash - 1].votesA : m.clashes[state.clash - 1].votesB;
+      assert.deepEqual(v.r2.votedBy, t.playerIds.map(p => bucket[p] !== undefined));
+      assert.equal(v.r2.votedBy.filter(Boolean).length, v.r2.votedCount);
+      assert.ok(!JSON.stringify(v.r2).includes('AMBUSH') && !JSON.stringify(v.r2).includes('TRUCE') || state.clash > 1, 'no vote content before the reveal');
+      if (v.r2.votedBy.some(Boolean)) sawVotedBy = true;
+    }
+  }
+  assert.ok(sawVotedBy);
+  // after the reveal: myVotes lists every member's vote
+  const after = samples.filter(x => x.state.phase === 'R2_RESULTS').at(-1)!.state;
+  const { state, tokens } = withRealTokens(after);
+  const vb = new ViewBuilder({ sid: 'x' });
+  let saw = 0;
+  for (const t of Object.values(state.teams)) {
+    const pid = t.playerIds[0];
+    if (!pid) continue;
+    const v = JSON.parse(vb.forPlayer(state, pid, hashToken(tokens[pid]), NOW).json) as View;
+    for (const c of v.r2?.clashes ?? []) {
+      assert.equal(c.myVotes.length, t.playerIds.length);
+      assert.match(c.myVotes, /^[TA-]+$/);
+      saw++;
+    }
+  }
+  assert.ok(saw > 20);
+  // R3: honourable flag and the vessel report
+  let honourable = 0;
+  let report = 0;
+  for (const s of samples.filter(x => x.state.phase === 'R3_ACTIVE' && x.state.step === 'REVEAL')) {
+    const { state: st, tokens: tk } = withRealTokens(s.state);
+    const b = new ViewBuilder({ sid: 'x' });
+    for (const t of Object.values(st.teams)) {
+      const pid = t.playerIds[0];
+      if (!pid || !st.r3?.teams[t.id]) continue;
+      const v = JSON.parse(b.forPlayer(st, pid, hashToken(tk[pid]), NOW).json) as View;
+      assert.equal(v.r3?.honourable === true, st.r3.teams[t.id].honourBonus);
+      if (v.r3?.honourable) honourable++;
+      if (v.r3?.lastWave) {
+        report++;
+        assert.deepEqual(v.r3.lastWave.vessels.map(r => r[0]), ['R', 'S', 'G']);
+        const total = v.r3.lastWave.vessels.reduce((a, r) => a + r[1], 0);
+        assert.equal(total, st.r3.reports.at(-1)!.activeCrews);
+      }
+    }
+  }
+  assert.ok(report > 0);
+  assert.ok(honourable >= 0);
 });

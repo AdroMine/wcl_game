@@ -4,6 +4,7 @@ import { formTeams, harness, pairByCode, playRound2, teamVotesR2, toR2Pairing } 
 import type { Harness } from './helpers.ts';
 import { calculateClashPoints, calculateTeamStance, computeMoral, newClash } from '../../server/engine/round2.ts';
 import { R2_SCORING } from '../../server/engine/config.ts';
+import { briefingSeconds } from '../../server/content.ts';
 import { playerPrivate, round2MatchView } from '../../server/engine/index.ts';
 import type { Clash } from '../../server/engine/index.ts';
 
@@ -107,8 +108,23 @@ test('pairing: clash 1 starts automatically once every team is paired', () => {
   assert.equal(h.state.phase, 'R2_PAIRING');
   pairByCode(h, t[2], t[3]);
   assert.equal(h.state.phase, 'R2_CLASH');
-  assert.equal(h.state.step, 'HUDDLE');
+  assert.equal(h.state.step, 'BRIEFING');
   assert.equal(h.state.clash, 1);
+  assert.equal(h.state.endsAt, h.now + briefingSeconds(2) * 1000);
+  // the briefing plays first: no votes; the global clash clock (HUDDLE 50 s) starts when it ends
+  assert.equal(h.as(h.state.teams[t[0]].playerIds[0], 'R2_VOTE', { vote: 'TRUCE' }), 'WRONG_PHASE');
+  h.nextDeadline();
+  assert.equal(h.state.step, 'HUDDLE');
+  assert.equal(h.state.endsAt, h.now + 50_000);
+});
+
+test('briefing: admin skip step skips the Round 2 briefing', () => {
+  const { h, t } = r2();
+  pairByCode(h, t[0], t[1]);
+  pairByCode(h, t[2], t[3]);
+  h.tick(2);
+  h.ok(h.admin('ADMIN_SKIP_STEP'));
+  assert.equal(h.state.step, 'HUDDLE');
   assert.equal(h.state.endsAt, h.now + 50_000);
 });
 
@@ -142,6 +158,7 @@ test('timeline: 3 clashes x HUDDLE 50, PARLEY 40, VOTE 25, DEBRIEF 40 on one glo
     h.nextDeadline();
   }
   assert.deepEqual(seen, [
+    `1:BRIEFING:${briefingSeconds(2)}`,
     '1:HUDDLE:50', '1:PARLEY:40', '1:VOTE:25', '1:DEBRIEF:40',
     '2:HUDDLE:50', '2:PARLEY:40', '2:VOTE:25', '2:DEBRIEF:40',
     '3:HUDDLE:50', '3:PARLEY:40', '3:VOTE:25', '3:DEBRIEF:40',
@@ -153,6 +170,7 @@ test('timeline: 3 clashes x HUDDLE 50, PARLEY 40, VOTE 25, DEBRIEF 40 on one glo
 test('no early advance: everyone voting does not move the clock', () => {
   const { h, t } = r2([5, 5]);
   pairByCode(h, t[0], t[1]);
+  h.nextDeadline();
   h.nextDeadline();
   h.nextDeadline(); // now VOTE
   assert.equal(h.state.step, 'VOTE');
@@ -168,6 +186,8 @@ test('votes: only during VOTE, first vote is final, closed at the deadline', () 
   const { h, t } = r2([5, 5]);
   pairByCode(h, t[0], t[1]);
   const p = h.state.teams[t[0]].playerIds[0];
+  assert.equal(h.as(p, 'R2_VOTE', { vote: 'TRUCE' }), 'WRONG_PHASE'); // BRIEFING
+  h.nextDeadline();
   assert.equal(h.as(p, 'R2_VOTE', { vote: 'TRUCE' }), 'WRONG_PHASE'); // HUDDLE
   h.nextDeadline();
   assert.equal(h.as(p, 'R2_VOTE', { vote: 'TRUCE' }), 'WRONG_PHASE'); // PARLEY
@@ -188,6 +208,7 @@ test('unpaired team members cannot vote', () => {
   h.ok(h.admin('ADMIN_R2_FORCE_START'));
   h.nextDeadline();
   h.nextDeadline();
+  h.nextDeadline();
   assert.equal(h.as(h.state.teams[t[2]].playerIds[0], 'R2_VOTE', { vote: 'TRUCE' }), 'NOT_PAIRED');
 });
 
@@ -195,6 +216,7 @@ test('scoring: applied exactly once per clash at the end of VOTE; score = R1 + R
   const { h, t } = r2([5, 5]);
   h.ok(h.admin('ADMIN_ADJUST_SCORE', { teamId: t[0], delta: 40 }));
   pairByCode(h, t[0], t[1]);
+  h.nextDeadline();
   h.nextDeadline();
   h.nextDeadline();
   teamVotesR2(h, t[0], 'AMBUSH');
@@ -244,12 +266,13 @@ test('match view: during VOTE only counts, never anyone\'s vote; results reveale
   pairByCode(h, t[0], t[1]);
   h.nextDeadline();
   h.nextDeadline();
+  h.nextDeadline();
   const [a, b, c] = h.state.teams[t[0]].playerIds;
   h.ok(h.as(a, 'R2_VOTE', { vote: 'AMBUSH' }));
   h.ok(h.as(b, 'R2_VOTE', { vote: 'AMBUSH' }));
   h.ok(h.as(h.state.teams[t[1]].playerIds[0], 'R2_VOTE', { vote: 'AMBUSH' }));
   const view = round2MatchView(h.state, t[0], c)!;
-  assert.deepEqual(view.voting, { votedCount: 2, teamSize: 5 });
+  assert.deepEqual(view.voting, { votedCount: 2, teamSize: 5, votedBy: [true, true, false, false, false] });
   assert.equal(view.history.length, 0);
   assert.ok(!JSON.stringify(view).includes('AMBUSH'));
   assert.ok(!JSON.stringify(view).includes('TRUCE'));
@@ -258,12 +281,14 @@ test('match view: during VOTE only counts, never anyone\'s vote; results reveale
   const after = round2MatchView(h.state, t[0], c)!;
   assert.equal(after.voting, null);
   // only cast votes count: 2 AMBUSH vs 0 TRUCE and 1 AMBUSH vs 0 TRUCE -> both AMBUSH -> 15/15
-  assert.deepEqual(after.history, [{ clash: 1, myStance: 'AMBUSH', rivalStance: 'AMBUSH', myPts: 15, rivalPts: 15 }]);
+  // the revealed votes are aligned with the member order: a and b ambushed, c and the others did not vote
+  assert.deepEqual(after.history, [{ clash: 1, myStance: 'AMBUSH', rivalStance: 'AMBUSH', myPts: 15, rivalPts: 15, myVotes: 'AA---' }]);
 });
 
 test('a pause during a clash shifts the deadline and due() returns nothing', () => {
   const { h, t } = r2([5, 5]);
   pairByCode(h, t[0], t[1]);
+  h.nextDeadline(); // briefing
   const ends = h.state.endsAt!;
   h.tick(10);
   h.ok(h.admin('ADMIN_PAUSE'));

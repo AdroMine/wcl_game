@@ -1,6 +1,7 @@
 // Full admin snapshot for the control panel. Admin-only: it includes things a phone never sees
 // (every team's codeword, ids, hint state, R3 state). It never includes token hashes.
 import { createHash } from 'node:crypto';
+import { crewSizeOf } from '../engine/index.ts';
 import type { GameState } from '../engine/index.ts';
 
 export interface AdminViewInput {
@@ -19,6 +20,8 @@ export function buildAdminView(input: AdminViewInput): { stable: string; hash: s
     v: s.version,
     phase: { name: s.phase, step: s.step, clash: s.clash, wave: s.wave, phaseSeq: s.phaseSeq, endsAt: s.endsAt, paused: s.pausedAt != null, pausedAt: s.pausedAt, startedAt: s.phaseStartedAt },
     config: s.config,
+    /** Maximum crew size N (3..6), settable in the lobby with ADMIN_SET_CREW_SIZE. */
+    crewSize: crewSizeOf(s),
     notice: input.notice,
     counts: { players: s.playerOrder.length, teams: s.teamOrder.length, connected: s.playerOrder.filter(id => connected.has(id)).length },
     players: s.playerOrder.map(id => {

@@ -2,7 +2,7 @@
 // phase change, to every configured store; restore the newest snapshot on boot into a PAUSED state.
 // The live game never reads a store, and a failing store never blocks or crashes the game.
 import { randomBytes } from 'node:crypto';
-import { createInitialState, reduce } from '../engine/index.ts';
+import { createInitialState, normalizeRestoredState, reduce } from '../engine/index.ts';
 import type { GameState } from '../engine/index.ts';
 import type { ServerConfig } from '../config.ts';
 import type { Runtime } from '../runtime.ts';
@@ -209,7 +209,8 @@ export class Persistence {
  * Put a restored state into the PAUSED state, with the clock frozen at the moment the snapshot was taken
  * so no game time is lost or invented during the downtime. A state that is already paused is left alone.
  */
-export function pauseRestored(state: GameState, savedAt: number, bootId: string): GameState {
+export function pauseRestored(rawState: GameState, savedAt: number, bootId: string): GameState {
+  const state = normalizeRestoredState(rawState);
   if (state.pausedAt != null) return state;
   const r = reduce(state, { commandId: `sys:restore-pause:${bootId}`, type: 'ADMIN_PAUSE', actor: { kind: 'admin' }, payload: {} }, { now: savedAt });
   // Pausing is not new game content: a restored state keeps the version it was saved with.

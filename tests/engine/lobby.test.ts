@@ -65,12 +65,14 @@ test('team codes are unique across many teams', () => {
   assert.equal(new Set(teams.map(t => t.emojiCode)).size, 60);
 });
 
-test('join by emoji code: roles unique for the first five, sixth repeats, seventh refused', () => {
+test('join by emoji code: default crew size 5 refuses a sixth; with crew size 6 a sixth repeats a role and a seventh is refused', () => {
   const h = harness();
   const [tid] = formTeams(h, [5]);
   const code = h.state.teams[tid].emojiCode;
-  // a sixth joins and repeats a role
   h.join('x6');
+  assert.equal(h.as('x6', 'JOIN_TEAM', { code }), 'TEAM_FULL');
+  h.ok(h.admin('ADMIN_SET_CREW_SIZE', { size: 6 }));
+  // a sixth joins and repeats a role
   h.ok(h.as('x6', 'JOIN_TEAM', { code }));
   assert.equal(h.state.teams[tid].playerIds.length, 6);
   h.join('x7');
@@ -149,7 +151,7 @@ test('previewTeamByEmoji is a pure selector with conflict detection', () => {
   assert.ok(r.ok);
   if (r.ok) {
     assert.equal(r.preview.memberCount, 3);
-    assert.equal(r.preview.maxMembers, 6);
+    assert.equal(r.preview.maxMembers, 5);
     assert.equal(r.preview.isFull, false);
     const taken = h.state.teams[tid].playerIds.some(p => h.state.players[p].role === h.state.players.visitor.role);
     assert.equal(r.preview.hasRoleConflict, taken);

@@ -8,6 +8,7 @@ import { asObj, recomputeScore, reqString } from './common.ts';
 import { rngShuffle } from './rng.ts';
 import { nextId } from './ids.ts';
 import { setStep } from './clock.ts';
+import { briefingSeconds } from '../content.ts';
 import type { Clash, GameEvent, GameState, Handler, Match, Moral, Stance } from './types.ts';
 import { NOOP, fail } from './types.ts';
 
@@ -111,12 +112,15 @@ export function initRound2Pairing(d: GameState): void {
   d.r2 = { matches: {}, matchOfTeam: {}, moral: {} };
 }
 
-/** Start clash 1 for every pairing. */
+/**
+ * Start Round 2's global clash clock for every pairing. Clash 1 opens with the BRIEFING step (the
+ * story plays, no votes); its HUDDLE starts when the briefing ends (phases.ts).
+ */
 export function startClashes(d: GameState, now: number, ev: GameEvent[]): void {
   for (const m of Object.values(d.r2.matches)) {
     m.clashes = [newClash(1)];
   }
-  setStep(d, now, 'R2_CLASH', 'HUDDLE', { durationMs: d.config.r2.HUDDLE * 1000, clash: 1 }, ev);
+  setStep(d, now, 'R2_CLASH', 'BRIEFING', { durationMs: briefingSeconds(2) * 1000, clash: 1 }, ev);
 }
 
 export function beginNextClash(d: GameState, n: number): void {

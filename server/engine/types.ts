@@ -13,6 +13,7 @@ export type Phase =
   | 'FINISHED';
 
 export type Step =
+  | 'BRIEFING'
   | 'HUDDLE'
   | 'PARLEY'
   | 'VOTE'
@@ -97,6 +98,8 @@ export interface Durations {
   r2: { HUDDLE: number; PARLEY: number; VOTE: number; DEBRIEF: number };
   r3: { BLUFF: number; VOTE: number; REVEAL: number };
   sdSeconds: number;
+  /** Maximum crew size N (3..6, default 5). Old snapshots lack it: always read it through crewSizeOf(). */
+  crewSize: number;
 }
 
 export interface Player {

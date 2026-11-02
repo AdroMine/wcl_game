@@ -354,9 +354,10 @@ test('phase change reaches every connected client quickly (50 clients)', async (
     await Promise.all(ls.map(l => l.waitFor(() => l.views().at(-1)?.phase.name === 'R1_ACTIVE', 2000)));
     const took = Date.now() - t0;
     assert.ok(took < 2000, `took ${took} ms`);
-    // each player sees their own slice, and nobody sees another player's
-    const slices = ls.map(l => (l.views().at(-1)?.me?.slice ?? []).join('|'));
-    assert.ok(slices.filter(x => x.length > 0).length >= 45);
+    // each player sees their own slot of the crew tablet, and the crew's two lines
+    const last = ls.map(l => l.views().at(-1));
+    assert.ok(last.filter(v => v?.me?.slot !== undefined && v.r1?.tablet).length >= 45);
+    assert.ok(last.every(v => v?.phase.step === 'BRIEFING'));
     ls.forEach(l => l.close());
   } finally {
     await s.cleanup();

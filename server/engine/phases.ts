@@ -3,7 +3,7 @@
 // (LOBBY, R1_RESULTS, R2_PAIRING, R2_RESULTS, R3_RESULTS) are left by admin commands.
 import { R2_CLASHES, MIN_DEADLINE_MS } from './config.ts';
 import { setStep } from './clock.ts';
-import { closeRound1 } from './round1.ts';
+import { closeRound1, startRound1Clock } from './round1.ts';
 import { beginNextClash, computeAllMoral, resolveClash } from './round2.ts';
 import { r3ShouldFinish, resolveSd, resolveWave, startNextWave } from './round3.ts';
 import type { GameEvent, GameState, Handler, HandlerResult } from './types.ts';
@@ -32,11 +32,20 @@ export function advance(d: GameState, now: number, ev: GameEvent[]): HandlerResu
   const c = d.config;
   switch (d.phase) {
     case 'R1_ACTIVE':
+      if (d.step === 'BRIEFING') {
+        // The story is over: the 5:00 clock (deadline, hint unlocks, speed tiers) starts now.
+        startRound1Clock(d, now);
+        setStep(d, now, 'R1_ACTIVE', null, { durationMs: c.r1Seconds * 1000 }, ev);
+        return undefined;
+      }
       closeRound1(d);
       setStep(d, now, 'R1_RESULTS', null, { durationMs: null }, ev);
       return undefined;
     case 'R2_CLASH':
       switch (d.step) {
+        case 'BRIEFING': // the global clash clock starts now: clash 1 begins with its huddle
+          setStep(d, now, 'R2_CLASH', 'HUDDLE', { durationMs: c.r2.HUDDLE * 1000, clash: d.clash }, ev);
+          return undefined;
         case 'HUDDLE':
           setStep(d, now, 'R2_CLASH', 'PARLEY', { durationMs: c.r2.PARLEY * 1000, clash: d.clash }, ev);
           return undefined;
@@ -61,6 +70,9 @@ export function advance(d: GameState, now: number, ev: GameEvent[]): HandlerResu
       }
     case 'R3_ACTIVE':
       switch (d.step) {
+        case 'BRIEFING': // wave 1 starts now
+          setStep(d, now, 'R3_ACTIVE', 'BLUFF', { durationMs: c.r3.BLUFF * 1000, wave: d.wave }, ev);
+          return undefined;
         case 'BLUFF':
           setStep(d, now, 'R3_ACTIVE', 'VOTE', { durationMs: c.r3.VOTE * 1000, wave: d.wave }, ev);
           return undefined;

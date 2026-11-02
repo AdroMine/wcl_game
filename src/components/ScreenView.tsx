@@ -19,7 +19,7 @@ const PHASE_TITLES: Record<string, string> = {
   R3_RESULTS: 'The river is crossed',
   FINISHED: 'Final standings',
 };
-const STEP_NAMES: Record<string, string> = { HUDDLE: 'Huddle', PARLEY: 'Dialogue', VOTE: 'Vote', DEBRIEF: 'Reveal', BLUFF: 'Bluff', REVEAL: 'Reveal', SUDDEN_DEATH: 'Sudden Death' };
+const STEP_NAMES: Record<string, string> = { BRIEFING: 'Briefing', HUDDLE: 'Huddle', PARLEY: 'Dialogue', VOTE: 'Vote', DEBRIEF: 'Reveal', BLUFF: 'Bluff', REVEAL: 'Reveal', SUDDEN_DEATH: 'Sudden Death' };
 const VESSELS: Record<string, string> = { R: 'Rowboat', S: 'Sailboat', G: 'Ghost Ship' };
 
 export const ScreenView: React.FC = () => {
@@ -80,7 +80,10 @@ export const ScreenView: React.FC = () => {
   const showFleet = !!data.fleet && data.fleet.length > 0 && inR3;
   const down = status === 'reconnecting' || status === 'offline';
 
-  let subtitle = stepName;
+  const briefing = p.step === 'BRIEFING';
+  // Crew size is shown when the server includes it in the lobby view (optional field).
+  const crewSize = (data as ScreenData & { lobby?: { crewSize?: number } }).lobby?.crewSize;
+  let subtitle = briefing ? 'Briefing' : stepName;
   if (p.name === 'R2_CLASH') subtitle = `Clash ${p.clash} of 3 • ${stepName}`;
   if (p.name === 'R3_ACTIVE') subtitle = `Wave ${p.wave} • ${stepName}`;
 
@@ -116,12 +119,13 @@ export const ScreenView: React.FC = () => {
           {left === null && p.paused && <div className="text-7xl font-black text-amber-300">PAUSED</div>}
 
           <p data-testid="screen-instruction" className="text-4xl leading-snug text-[#cbd5e1] max-w-4xl">
-            {data.instruction}
+            {briefing ? 'Briefing — the story is playing on your phones' : data.instruction}
           </p>
 
           <div className="flex items-center gap-6 text-3xl font-mono text-[#a9b4c7]">
             <span>{data.counts.players} players</span>
             <span>{data.counts.teams} crews</span>
+            {p.name === 'LOBBY' && crewSize != null && <span data-testid="screen-crew-size">crew size {crewSize}</span>}
           </div>
         </div>
 

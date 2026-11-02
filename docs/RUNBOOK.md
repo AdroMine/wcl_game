@@ -16,11 +16,11 @@ npm install                 # once, after pulling the rebuild branch
 npm test                    # engine + server tests
 npm run sim                 # 200-player simulated game, must print "all invariants hold"
 npm run build               # web app (tsc + vite); fix any type errors it reports
-npm run dev                 # server on :3001 + vite on :5173 (proxied)
+npm run dev                 # server on :3001 + vite on :5174 (proxied)
 ```
 
-- Open `http://localhost:5173/admin` and use the development admin token `dev-admin-token-change-me`. It works only when `NODE_ENV` is not `production`.
-- To play from phones on the same Wi-Fi, use `http://<your-laptop-ip>:5173/`.
+- Open `http://localhost:5174/admin` and use the development admin token `dev-admin-token-change-me`. It works only when `NODE_ENV` is not `production`.
+- To play from phones on the same Wi-Fi, use `http://<your-laptop-ip>:5174/`.
 - Optional browser end-to-end test: `npm i -D playwright && npx playwright install chromium && npm run build && node tests/e2e/fullgame.e2e.mjs`.
 
 ## 2. One-time setup
@@ -70,7 +70,7 @@ npm run swarm -- --target https://<your-app>.onrender.com --admin-token <ADMIN_T
 **Before players arrive:**
 - 15 minutes early: open `/health`, then `/admin` (log in) and `/screen` on the projector. Keep `/admin` open all night.
 - Confirm that `/health` shows `snapshotAgeSec` under 10 once the game has changed, and that `lastSnapshotOk` is `true`.
-- Download a backup from `/admin` before the game starts and after each round.
+- Snapshots are written to Supabase automatically (every few seconds when the game changed, and at every phase change). For an extra copy, run `curl -H "Authorization: Bearer $ADMIN_TOKEN" https://<your-host>/api/admin/backup -o backup.json` before the game starts and after each round. The admin page has no backup or restore buttons.
 
 **Running the game:**
 1. Lobby: players scan the QR code, enter a name, and create or join a crew by tapping the crew's 3 emojis. Set the **crew size** (3 to 6, default 5) in `/admin` before players form crews; it is the maximum crew size, and phones show it. **Auto-group** builds crews of that size and adds 1 or 2 stragglers to existing crews (a few crews may have one extra). Crew size can only be changed in the lobby.
@@ -87,15 +87,24 @@ npm run swarm -- --target https://<your-app>.onrender.com --admin-token <ADMIN_T
 | Server restarts (Render, a crash, a deploy) | Wait for it to return. The game restores **paused**. Check the snapshot age in `/admin`, then press **Resume**. Phones reconnect on their own, so do not ask players to refresh. |
 | Phones show "Reconnecting…" for more than about 30 seconds | Check `/health` and the venue network. Pause the game from `/admin` and announce it on the microphone. |
 | A step or phase is stuck | **Skip step**, or adjust the timer ±30 s. |
-| Wrong score or distance | Adjust it in `/admin`. If the state itself is broken, restore the last good backup. It comes back paused. |
+| Wrong score or distance | Adjust it in `/admin`. If the state itself is broken, restore the last good backup with curl (see **Restoring a backup**, below). It comes back paused. |
 | Some phones look out of date | **Resync all** in `/admin`. |
 | Render is down | Plan B, below. |
 | Everything fails | Paper scoring sheet; run the remaining rounds by hand. |
 
+**Restoring a backup** (the `/admin` page has no backup or restore buttons; use the existing endpoints):
+```bash
+# take a backup (GET /api/admin/backup)
+curl -H "Authorization: Bearer $ADMIN_TOKEN" https://<your-host>/api/admin/backup -o backup.json
+# restore it (POST /api/admin/restore); the game comes back PAUSED, then press Resume in /admin
+curl -X POST -H "Authorization: Bearer $ADMIN_TOKEN" -H "Content-Type: application/json" --data-binary @backup.json https://<your-host>/api/admin/restore
+```
+Phase durations are no longer editable from `/admin`; the server defaults apply.
+
 **Plan B (laptop):**
 1. On the laptop, run `npm run build && npm run build:server`.
 2. Start the server with `NODE_ENV=production ADMIN_TOKEN=… STATIC_DIR=dist node dist-server/server/index.js`. On Windows PowerShell, set the variables first with `$env:NODE_ENV='production'`, and so on.
-3. Restore the latest backup from `/admin`.
+3. Restore the latest backup with curl (see **Restoring a backup**, below).
 4. Expose the laptop with `cloudflared tunnel --url http://localhost:3001` and show the new link and QR on the projector.
 
 ## 4. Never

@@ -10,6 +10,7 @@ import { LeaderboardDrawer } from './components/LeaderboardDrawer';
 
 const AdminControlPanel = React.lazy(() => import('./components/AdminControlPanel').then(m => ({ default: m.AdminControlPanel })));
 const ScreenView = React.lazy(() => import('./components/ScreenView').then(m => ({ default: m.ScreenView })));
+const SoloTester = React.lazy(() => import('./components/SoloTester').then(m => ({ default: m.SoloTester })));
 
 /** A known device waits here for the server. It never sees the Join screen. */
 const Waiting: React.FC<{ known: boolean }> = ({ known }) => {
@@ -104,6 +105,13 @@ export function App() {
     return (
       <React.Suspense fallback={<Loading what="projector view" />}>
         <ScreenView />
+      </React.Suspense>
+    );
+  }
+  if (path === '/solotester' || path.startsWith('/solotester/')) {
+    return (
+      <React.Suspense fallback={<Loading what="solo tester" />}>
+        <SoloTester />
       </React.Suspense>
     );
   }

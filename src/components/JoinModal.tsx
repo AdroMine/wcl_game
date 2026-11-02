@@ -36,7 +36,7 @@ export const JoinModal: React.FC = () => {
           </div>
           <h2 className="text-2xl font-serif font-black tracking-wide text-[#f4f0e8] uppercase">Journey into the Underworld</h2>
           <p className="text-sm text-[#cbd5e1] leading-relaxed max-w-sm mx-auto font-serif italic">
-            You awaken on the cold shores of the Underworld, a lone shade wandering the edge of Tartarus. The iron gates behind you have sealed forever, but rumors whisper of an escape route across the Styx. You cannot survive alone—unite with four other lost souls, bind your fates together, and claim your escape.
+            You awaken on the cold shores of the Underworld, a lone shade wandering the edge of Tartarus. The iron gates behind you have sealed forever, but rumors whisper of an escape route across the Styx. You cannot survive alone—unite with your fellow lost souls, bind your fates together, and claim your escape.
           </p>
         </div>
 

@@ -2,12 +2,12 @@
 // Nothing here is shown to players; the token is typed by the host and kept in sessionStorage.
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  Activity, Download, Eye, Pause, Play, RefreshCw, RotateCcw, Shield, SkipForward, Trash2, Upload, Users, Megaphone, Timer,
+  Activity, Eye, Pause, Play, RefreshCw, RotateCcw, Shield, SkipForward, Trash2, Users, Megaphone, Timer,
 } from 'lucide-react';
 import {
-  adminCommand, adminPost, downloadBackup, fetchAdminView, fetchHealth, getAdminToken, setAdminToken,
+  adminCommand, adminPost, fetchAdminView, fetchHealth, getAdminToken, setAdminToken,
 } from '../game/admin';
-import type { AdminViewData, Durations, Health } from '../game/admin';
+import type { AdminViewData, Health } from '../game/admin';
 import { rand } from '../game/backoff';
 import { formatClock } from '../game/clock';
 import { apiUrl, loadRuntimeConfig } from '../game/config';
@@ -38,6 +38,7 @@ export const AdminControlPanel: React.FC = () => {
   const [view, setView] = useState<AdminViewData | null>(null);
   const [health, setHealth] = useState<Health | null>(null);
   const [online, setOnline] = useState(true);
+  const [problem, setProblem] = useState('');
   const [tab, setTab] = useState<Tab>('game');
   const [log, setLog] = useState<string>('');
   const [busy, setBusy] = useState(false);
@@ -45,32 +46,57 @@ export const AdminControlPanel: React.FC = () => {
   const offsetRef = useRef(0);
   useTick(500);
 
-  // ---- polling: admin snapshot (ETag) + /health, every 2 s with jitter
+  // ---- polling: admin snapshot (ETag) + /health, every 2 s with jitter.
+  // The two requests are tracked separately; "not reachable" needs 3 failed polls in a row, and the
+  // timer is always rescheduled (finally) so the loop can never stall.
   useEffect(() => {
     if (!token) return;
     let stopped = false;
     let timer: ReturnType<typeof setTimeout> | null = null;
+    let fails = 0;
     const poll = async () => {
-      const [v, h] = await Promise.all([fetchAdminView(etag.current), fetchHealth()]);
-      if (stopped) return;
-      if (v === 'unauthorized') {
-        setAdminToken('');
-        setToken('');
-        setAuthError('The admin token was refused.');
-        return;
+      let rescheduled = true;
+      try {
+        const [v, h] = await Promise.all([fetchAdminView(etag.current), fetchHealth()]);
+        if (stopped) return;
+        if (v.kind === 'unauthorized') {
+          rescheduled = false;
+          setAdminToken('');
+          setToken('');
+          setAuthError('The admin token was refused.');
+          return;
+        }
+        const problems: string[] = [];
+        if (v.kind === 'fail') problems.push(`admin view: ${v.reason}`);
+        if (h.kind === 'fail') problems.push(`health: ${h.reason}`);
+        if (h.kind === 'ok') setHealth(h.value);
+        if (v.kind === 'ok') {
+          etag.current = v.value.etag;
+          offsetRef.current = v.value.data.serverNow - Date.now();
+          setView(v.value.data);
+        }
+        if (problems.length === 0) {
+          fails = 0;
+          setOnline(true);
+          setProblem('');
+        } else {
+          fails += 1;
+          setProblem(problems.join('; '));
+          if (fails >= 3) setOnline(false);
+        }
+      } catch (e) {
+        fails += 1;
+        setProblem(`poll error: ${e instanceof Error ? e.name : 'unknown'}`);
+        if (fails >= 3) setOnline(false);
+      } finally {
+        if (!stopped && rescheduled) timer = setTimeout(() => void poll(), rand(1800, 2400));
       }
-      setOnline(v !== null && h !== null);
-      if (h) setHealth(h);
-      if (v && v !== 'same') {
-        etag.current = v.etag;
-        offsetRef.current = v.data.serverNow - Date.now();
-        setView(v.data);
-      }
-      timer = setTimeout(poll, rand(1800, 2400));
     };
-    void loadRuntimeConfig().then(() => {
-      if (!stopped) void poll();
-    });
+    void loadRuntimeConfig()
+      .catch(() => undefined)
+      .then(() => {
+        if (!stopped) void poll();
+      });
     return () => {
       stopped = true;
       if (timer) clearTimeout(timer);
@@ -149,8 +175,13 @@ export const AdminControlPanel: React.FC = () => {
           </div>
           <div className="flex items-center gap-2">
             <span data-testid="admin-online" className={`text-xs font-mono ${online ? 'text-emerald-400' : 'text-red-400'}`}>
-              {online ? 'CONNECTED' : 'SERVER NOT REACHABLE'}
+              {online ? 'CONNECTED' : `SERVER NOT REACHABLE (${problem || 'no detail'})`}
             </span>
+            {online && problem && (
+              <span data-testid="admin-problem" className="text-xs font-mono text-amber-300">
+                retrying: {problem}
+              </span>
+            )}
             <button
               className={BTN}
               onClick={() => {
@@ -184,7 +215,7 @@ export const AdminControlPanel: React.FC = () => {
                 <div className={H}>Current phase</div>
                 <div data-testid="admin-phase" className="text-2xl font-serif font-black">
                   {phase.name}
-                  {phase.step ? ` / ${phase.step}` : ''}
+                  {phase.step === 'BRIEFING' ? ' / Briefing (story on phones)' : phase.step ? ` / ${phase.step}` : ''}
                   {phase.name === 'R2_CLASH' ? ` (clash ${phase.clash})` : ''}
                   {phase.name === 'R3_ACTIVE' ? ` (wave ${phase.wave})` : ''}
                 </div>
@@ -264,7 +295,7 @@ export const AdminControlPanel: React.FC = () => {
               ['teams', 'Crews', Users],
               ['players', 'Players', Eye],
               ['round2', 'Round 2 pairing', Activity],
-              ['settings', 'Settings & backup', RotateCcw],
+              ['settings', 'Settings', RotateCcw],
             ] as [Tab, string, React.ComponentType<{ className?: string }>][]
           ).map(([id, label, Icon]) => (
             <button key={id} data-testid={`tab-${id}`} onClick={() => setTab(id)} className={`${BTN} ${tab === id ? '!border-[#c4a45a] !bg-[#c4a45a]/15' : ''}`}>
@@ -278,7 +309,7 @@ export const AdminControlPanel: React.FC = () => {
         {view && tab === 'teams' && <TeamsTab view={view} run={run} busy={busy} />}
         {view && tab === 'players' && <PlayersTab view={view} run={run} busy={busy} nameOf={nameOf} />}
         {view && tab === 'round2' && <PairingTab view={view} run={run} busy={busy} nameOf={nameOf} />}
-        {view && tab === 'settings' && <SettingsTab view={view} run={run} busy={busy} setLog={setLog} />}
+        {view && tab === 'settings' && <SettingsTab run={run} busy={busy} />}
         {!view && <div className="text-sm text-[#8e95a5] font-mono">Loading the game state…</div>}
       </div>
     </div>
@@ -331,6 +362,24 @@ const TeamsTab: React.FC<{ view: AdminViewData; run: Run; busy: boolean }> = ({ 
           Adjust amount
           <input type="number" value={delta} onChange={e => setDelta(Number(e.target.value) || 0)} className={`${INPUT} w-24`} aria-label="Adjust amount" />
         </label>
+      </div>
+      <div className="rounded-xl border border-[#2a2e3d] p-3 space-y-2" data-testid="crew-size">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className={H}>Crew size</span>
+          {[3, 4, 5, 6].map(n => (
+            <button
+              key={n}
+              data-testid={`crew-size-${n}`}
+              disabled={busy || view.phase.name !== 'LOBBY'}
+              aria-pressed={view.crewSize === n}
+              className={`${BTN} min-w-[48px] ${view.crewSize === n ? '!border-[#c4a45a] !bg-[#c4a45a]/20 text-[#e5cb87]' : ''}`}
+              onClick={() => void run(`Crew size ${n}`, 'ADMIN_SET_CREW_SIZE', { size: n })}
+            >
+              {n}
+            </button>
+          ))}
+        </div>
+        <p className="text-xs text-[#8e95a5]">Max crew size. Auto-group builds crews of this size; 1–2 stragglers join existing crews. Lobby only.</p>
       </div>
       {view.phase.name === 'LOBBY' && (
         <button className={BTN} disabled={busy} onClick={() => void run('Auto-group', 'ADMIN_AUTO_GROUP')}>
@@ -536,96 +585,11 @@ const PairingTab: React.FC<{ view: AdminViewData; run: Run; busy: boolean; nameO
   );
 };
 
-// ------------------------------------------------------------------ settings, backup, reset
-const SettingsTab: React.FC<{ view: AdminViewData; run: Run; busy: boolean; setLog: (s: string) => void }> = ({ view, run, busy, setLog }) => {
-  const [d, setD] = useState<Durations>(view.config);
-  const [dirty, setDirty] = useState(false);
+// ------------------------------------------------------------------ reset
+const SettingsTab: React.FC<{ run: Run; busy: boolean }> = ({ run, busy }) => {
   const [resetText, setResetText] = useState('');
-  const fileRef = useRef<HTMLInputElement>(null);
-  useEffect(() => {
-    if (!dirty) setD(view.config);
-  }, [view.config, dirty]);
-
-  const num = (v: string) => Math.max(0, Math.round(Number(v) || 0));
-  const set = (fn: (x: Durations) => void) => {
-    const c = structuredClone(d);
-    fn(c);
-    setD(c);
-    setDirty(true);
-  };
-  const field = (label: string, value: number, onChange: (n: number) => void) => (
-    <label className="text-xs font-mono text-[#a9b4c7] space-y-1">
-      <div>{label}</div>
-      <input type="number" min={5} max={3600} value={value} onChange={e => onChange(num(e.target.value))} className={`${INPUT} w-full`} />
-    </label>
-  );
-
-  const restore = async (file: File) => {
-    if (!confirm('Restore this backup? The game comes back PAUSED and every phone resyncs.')) return;
-    const text = await file.text();
-    const r = await adminPost('/api/admin/restore', text);
-    setLog(`${new Date().toLocaleTimeString()} Restore: ${r.ok ? 'OK (game is paused, press Resume)' : `FAILED (${r.error ?? r.status})`}`);
-  };
-
   return (
     <div className="space-y-4">
-      <div className={BOX}>
-        <div className={H}>Phase durations (seconds)</div>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          {field('Round 1', d.r1Seconds, n => set(c => (c.r1Seconds = n)))}
-          {field('R2 Huddle', d.r2.HUDDLE, n => set(c => (c.r2.HUDDLE = n)))}
-          {field('R2 Dialogue', d.r2.PARLEY, n => set(c => (c.r2.PARLEY = n)))}
-          {field('R2 Vote', d.r2.VOTE, n => set(c => (c.r2.VOTE = n)))}
-          {field('R2 Reveal', d.r2.DEBRIEF, n => set(c => (c.r2.DEBRIEF = n)))}
-          {field('R3 Bluff', d.r3.BLUFF, n => set(c => (c.r3.BLUFF = n)))}
-          {field('R3 Vote', d.r3.VOTE, n => set(c => (c.r3.VOTE = n)))}
-          {field('R3 Reveal', d.r3.REVEAL, n => set(c => (c.r3.REVEAL = n)))}
-          {field('Sudden death', d.sdSeconds, n => set(c => (c.sdSeconds = n)))}
-        </div>
-        <button
-          data-testid="save-durations"
-          className={BTN_PRIMARY}
-          disabled={busy || !dirty}
-          onClick={() => void run('Set durations', 'ADMIN_SET_DURATIONS', d, () => setDirty(false))}
-        >
-          Apply durations
-        </button>
-      </div>
-
-      <div className={BOX}>
-        <div className={H}>Backup and restore</div>
-        <div className="flex flex-wrap gap-2">
-          <button
-            data-testid="download-backup"
-            className={BTN}
-            onClick={async () => {
-              const r = await downloadBackup();
-              setLog(`${new Date().toLocaleTimeString()} Backup download: ${r.ok ? 'OK' : 'FAILED'}`);
-            }}
-          >
-            <Download className="w-4 h-4" />
-            Download backup
-          </button>
-          <button className={BTN} onClick={() => fileRef.current?.click()}>
-            <Upload className="w-4 h-4" />
-            Restore from file…
-          </button>
-          <input
-            ref={fileRef}
-            data-testid="restore-file"
-            type="file"
-            accept="application/json,.json"
-            className="hidden"
-            onChange={e => {
-              const f = e.target.files?.[0];
-              e.target.value = '';
-              if (f) void restore(f);
-            }}
-          />
-        </div>
-        <p className="text-xs text-[#8e95a5]">A restored game is paused. Check the state, then press Resume.</p>
-      </div>
-
       <div className={`${BOX} !border-red-500/50`}>
         <div className="text-[11px] font-mono uppercase tracking-wider text-red-300 font-bold">Reset game</div>
         <p className="text-sm text-[#cbd5e1]">Deletes every crew, score and round state and returns to the lobby. Players have to join again.</p>

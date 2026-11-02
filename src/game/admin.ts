@@ -70,6 +70,8 @@ export interface AdminViewData {
   v: number;
   phase: { name: PhaseName; step: StepName | null; clash: number; wave: number; phaseSeq: number; endsAt: number | null; paused: boolean; pausedAt?: number | null };
   config: Durations;
+  /** Maximum crew size N (3..6). */
+  crewSize: number;
   notice: string | null;
   counts: { players: number; teams: number; connected: number };
   players: AdminPlayer[];
@@ -156,43 +158,59 @@ export async function adminPost(path: string, body: unknown): Promise<AdminResul
   }
 }
 
-export async function downloadBackup(): Promise<AdminResult> {
+const POLL_TIMEOUT_MS = 6000;
+
+/** Outcome of one poll request. `fail` carries a short, human-readable reason such as "429" or "timeout". */
+export type PollResult<T> = { kind: 'ok'; value: T } | { kind: 'same' } | { kind: 'unauthorized' } | { kind: 'fail'; reason: string };
+
+async function timedFetch(url: string, init: RequestInit): Promise<Response> {
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), POLL_TIMEOUT_MS);
   try {
-    const res = await fetch(apiUrl('/api/admin/backup'), { headers: authHeaders(), cache: 'no-store' });
-    if (!res.ok) return { ok: false, status: res.status, error: `HTTP ${res.status}` };
-    const blob = await res.blob();
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = `underworld-backup-${new Date().toISOString().replace(/[:.]/g, '-')}.json`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    setTimeout(() => URL.revokeObjectURL(a.href), 5000);
-    return { ok: true, status: 200 };
-  } catch {
-    return { ok: false, status: 0, error: 'NETWORK' };
+    return await fetch(url, { ...init, signal: ctl.signal });
+  } finally {
+    clearTimeout(timer);
   }
 }
 
-export async function fetchHealth(): Promise<Health | null> {
+function describeError(e: unknown): string {
+  const name = e instanceof Error ? e.name : 'error';
+  if (name === 'AbortError') return 'timeout';
+  if (name === 'TypeError') return 'network error';
+  return name;
+}
+
+export async function fetchHealth(): Promise<PollResult<Health>> {
+  let res: Response;
   try {
-    const res = await fetch(apiUrl('/health'), { cache: 'no-store' });
-    return res.ok ? ((await res.json()) as Health) : null;
-  } catch {
-    return null;
+    res = await timedFetch(apiUrl('/health'), { cache: 'no-store' });
+  } catch (e) {
+    return { kind: 'fail', reason: describeError(e) };
+  }
+  if (res.status === 304) return { kind: 'same' };
+  if (!res.ok) return { kind: 'fail', reason: String(res.status) };
+  try {
+    return { kind: 'ok', value: (await res.json()) as Health };
+  } catch (e) {
+    return { kind: 'fail', reason: e instanceof Error && e.name === 'AbortError' ? 'timeout' : 'bad JSON' };
   }
 }
 
-/** One admin view poll. Returns 'same' for 304, 'unauthorized' for a bad token, null on network trouble. */
-export async function fetchAdminView(etag: string | null): Promise<{ data: AdminViewData; etag: string | null } | 'same' | 'unauthorized' | null> {
+/** One admin view poll. 304 is success ('same'); a bad token is 'unauthorized'; anything else is a described failure. */
+export async function fetchAdminView(etag: string | null): Promise<PollResult<{ data: AdminViewData; etag: string | null }>> {
+  let res: Response;
   try {
     const headers = authHeaders(etag ? { 'If-None-Match': etag } : {});
-    const res = await fetch(apiUrl('/api/admin/view'), { headers, cache: 'no-store' });
-    if (res.status === 304) return 'same';
-    if (res.status === 401 || res.status === 503) return 'unauthorized';
-    if (!res.ok) return null;
-    return { data: (await res.json()) as AdminViewData, etag: res.headers.get('ETag') };
-  } catch {
-    return null;
+    res = await timedFetch(apiUrl('/api/admin/view'), { headers, cache: 'no-store' });
+  } catch (e) {
+    return { kind: 'fail', reason: describeError(e) };
+  }
+  if (res.status === 304) return { kind: 'same' };
+  if (res.status === 401 || res.status === 503) return { kind: 'unauthorized' };
+  if (!res.ok) return { kind: 'fail', reason: String(res.status) };
+  try {
+    return { kind: 'ok', value: { data: (await res.json()) as AdminViewData, etag: res.headers.get('ETag') } };
+  } catch (e) {
+    return { kind: 'fail', reason: e instanceof Error && e.name === 'AbortError' ? 'timeout' : 'bad JSON' };
   }
 }

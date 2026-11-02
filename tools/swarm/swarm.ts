@@ -10,6 +10,7 @@ import { SpawnedServer } from './context.ts';
 import type { ScenarioResult, SwarmOptions } from './context.ts';
 import { SCENARIOS, runScenario } from './scenarios.ts';
 import type { ScenarioName } from './scenarios.ts';
+import { runPractice } from './practice.ts';
 
 function usage(): never {
   console.error(`usage: node tools/swarm/swarm.ts [options]
@@ -23,19 +24,26 @@ function usage(): never {
   --join-seconds <n>     spread of the join storm (default 60)
   --dup-rate <0..1>      chance a command is sent again with the same commandId (default 0.1)
   --abort-rate <0..1>    chance a request is abandoned right after sending (lost response) (default 0.02)
-  --seed <n>             random seed (default 1)
+  --scenario practice    bots fill the other crews while YOU drive /admin and play seats (needs no admin token):
+                           --crews <n> (default 4)  --bots-per-crew <n> (default 3)  --leave-rival-for-humans <true|false> (default true)
+                           --reset (reset the game first; needs the admin token)
+  --seed <n>           random seed (default 1)
   --json <file>          also write the results as JSON
   --verbose              progress logging`);
   process.exit(2);
 }
 
-function parse(argv: string[]): { opts: SwarmOptions; scenarios: ScenarioName[] } {
+type Parsed =
+  | { opts: SwarmOptions; scenarios: ScenarioName[]; practice?: undefined }
+  | { opts: null; scenarios: ScenarioName[]; practice: Parameters<typeof runPractice>[0] };
+
+function parse(argv: string[]): Parsed {
   const a: Record<string, string | true> = {};
   for (let i = 0; i < argv.length; i++) {
     const k = argv[i];
     if (!k.startsWith('--')) usage();
     const key = k.slice(2);
-    if (['fast', 'spawn-server', 'verbose', 'help'].includes(key)) a[key] = true;
+    if (['fast', 'spawn-server', 'verbose', 'help', 'reset'].includes(key)) a[key] = true;
     else {
       const v = argv[++i];
       if (v === undefined) usage();
@@ -45,6 +53,22 @@ function parse(argv: string[]): { opts: SwarmOptions; scenarios: ScenarioName[] 
   if (a.help) usage();
   const num = (k: string, d: number) => (a[k] === undefined ? d : Number(a[k]));
   const scen = String(a.scenario ?? 'all');
+  if (scen === 'practice') {
+    return {
+      opts: null,
+      scenarios: [],
+      practice: {
+        target: String(a.target ?? process.env.TARGET_URL ?? 'http://127.0.0.1:3001').replace(/\/+$/, ''),
+        crews: num('crews', 4),
+        botsPerCrew: num('bots-per-crew', 3),
+        leaveRivalForHumans: String(a['leave-rival-for-humans'] ?? 'true') !== 'false',
+        reset: a.reset === true,
+        adminToken: String(a['admin-token'] ?? process.env.ADMIN_TOKEN ?? ''),
+        seed: num('seed', 1),
+        verbose: a.verbose === true,
+      },
+    };
+  }
   const scenarios = scen === 'all' ? [...SCENARIOS] : scen.split(',').map(s => s.trim());
   for (const s of scenarios) if (!(SCENARIOS as readonly string[]).includes(s)) {
     console.error(`unknown scenario: ${s}`);
@@ -81,7 +105,9 @@ function print(res: ScenarioResult): void {
 }
 
 async function main(): Promise<number> {
-  const { opts, scenarios } = parse(process.argv.slice(2));
+  const parsed = parse(process.argv.slice(2));
+  if (parsed.practice) return runPractice(parsed.practice);
+  const { opts, scenarios } = parsed;
   let spawned: SpawnedServer | null = null;
   const results: ScenarioResult[] = [];
   try {

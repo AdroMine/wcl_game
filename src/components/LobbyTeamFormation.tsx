@@ -27,6 +27,8 @@ export const LobbyTeamFormation: React.FC = () => {
 
   const pool = meta?.emojiPool ?? [];
   const size = meta?.teamSize ?? { min: 3, target: 5, max: 6 };
+  // Live crew size (admin-settable in the lobby); fall back to the meta default.
+  const crewSize = view?.lobby?.crewSize ?? size.target;
 
   useEffect(() => {
     if (picked.length !== 3) {
@@ -64,7 +66,7 @@ export const LobbyTeamFormation: React.FC = () => {
     const count = team.members.length;
     // One card per role: filled with the first member holding it, otherwise Missing Role.
     const used = new Set<number>();
-    const cards = roles.map(r => {
+    const cards = roles.slice(0, Math.min(crewSize, 5)).map(r => {
       const idx = team.members.findIndex((m, i) => m.role === r.id && !used.has(i));
       if (idx >= 0) used.add(idx);
       return { role: r, member: idx >= 0 ? team.members[idx] : null };
@@ -130,7 +132,7 @@ export const LobbyTeamFormation: React.FC = () => {
 
           <div className="p-4 rounded-xl bg-gradient-to-r from-[#161922] via-[#12151e] to-[#161922] border border-[#c4a45a]/60 text-center space-y-1.5 shadow-gold-glow">
             <span className="text-[10px] font-mono uppercase tracking-widest text-[#a9b4c7] font-bold block">TEAM JOIN CODE</span>
-            <div data-testid="team-code" className="text-5xl tracking-widest font-black py-1">
+            <div data-testid="team-code" className="text-5xl tracking-widest font-black py-1 animate-pulse">
               {team.emojiCode}
             </div>
             <div className="text-xs font-mono font-bold text-[#e5cb87] uppercase tracking-wider">
@@ -142,10 +144,10 @@ export const LobbyTeamFormation: React.FC = () => {
           <div className="space-y-2">
             <div className="flex items-center justify-between">
               <p className="text-[11px] font-mono uppercase tracking-wider text-[#a9b4c7]">
-                Crew Roster ({count} of {size.target} Shades)
+                Crew Roster ({count} of {crewSize} Shades)
               </p>
               <span data-testid="size-hint" className={`text-[11px] font-mono ${enough ? 'text-emerald-400' : 'text-amber-400'}`}>
-                {enough ? `Ready: ${size.min} to ${size.max} allowed` : `Need at least ${size.min}, aim for ${size.target}`}
+                {enough ? `Ready: ${size.min} to ${crewSize} allowed` : `Need at least ${size.min}, aim for ${crewSize}`}
               </span>
             </div>
 
@@ -232,7 +234,7 @@ export const LobbyTeamFormation: React.FC = () => {
 
           <div className="p-4 rounded-xl bg-gradient-to-b from-[#161922] to-[#08090c] border border-[#c4a45a]/40 text-center space-y-2">
             <div className="inline-flex items-center space-x-1.5 text-xs font-mono text-[#e5cb87] font-bold">
-              <Sparkles className="w-3.5 h-3.5" />
+              <Sparkles className="w-3.5 h-3.5 animate-spin" style={{ animationDuration: '4s' }} />
               <span>THE DESCENT IS APPROACHING</span>
             </div>
             <p className="text-sm text-[#cbd5e1] leading-relaxed">
@@ -263,12 +265,15 @@ export const LobbyTeamFormation: React.FC = () => {
         >
           <div className="absolute -top-12 -right-12 w-48 h-48 rounded-full blur-3xl opacity-30 pointer-events-none" style={{ backgroundColor: role.color }} />
           <div className="relative z-10 space-y-4">
-            <span
-              className="text-[10px] font-mono uppercase tracking-widest font-bold px-2 py-0.5 rounded-full"
-              style={{ backgroundColor: `${role.color}20`, color: role.color, border: `1px solid ${role.color}40` }}
-            >
-              Assigned Underworld Role
-            </span>
+            <div className="flex items-center justify-between">
+              <span
+                className="text-[10px] font-mono uppercase tracking-widest font-bold px-2 py-0.5 rounded-full"
+                style={{ backgroundColor: `${role.color}20`, color: role.color, border: `1px solid ${role.color}40` }}
+              >
+                Assigned Underworld Role
+              </span>
+              <div className="w-3 h-3 rounded-full animate-ping" style={{ backgroundColor: role.color }} />
+            </div>
             <div className="flex items-center space-x-3.5">
               <div
                 className="w-14 h-14 rounded-2xl flex items-center justify-center shadow-lg border shrink-0"
@@ -304,7 +309,7 @@ export const LobbyTeamFormation: React.FC = () => {
                 <span>Physical Social Objective:</span>
               </div>
               <p className="text-sm text-[#8e95a5] leading-relaxed">
-                Mingle with other players in the room. Find {size.target - 1} other shades holding different roles to complete your escape crew ({size.min} to {size.max} players per crew):
+                Mingle with other players in the room. Find {crewSize - 1} other shades holding different roles to complete your escape crew ({size.min} to {crewSize} players per crew):
               </p>
               <div className="flex flex-wrap gap-1.5 pt-1">
                 {roles.map(r => (
@@ -389,6 +394,12 @@ export const LobbyTeamFormation: React.FC = () => {
                     ))}
                   </div>
                   {preview.isFull && <p className="text-sm text-red-300">This team is full.</p>}
+                  {!preview.isFull && !preview.hasRoleConflict && role && (
+                    <p data-testid="role-open" className="text-xs text-emerald-200 flex items-center gap-1.5">
+                      <Check className="w-4 h-4 text-emerald-400 shrink-0" />
+                      <span>Your role ({role.name}) is open for this crew!</span>
+                    </p>
+                  )}
                   {preview.hasRoleConflict && !preview.isFull && (
                     <p className="text-sm text-amber-300 flex items-start gap-1.5">
                       <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />

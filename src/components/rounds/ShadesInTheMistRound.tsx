@@ -1,17 +1,11 @@
 // Round 2: Shades in the Mist. The server owns the clock and the steps; this screen only displays them.
-import React, { useEffect, useState } from 'react';
-import { Delete, Handshake, Swords, Users, Check } from 'lucide-react';
+import React, { useEffect, useRef, useState } from 'react';
+import { Clock, Crown, Delete, Handshake, Lock, MessageSquare, Shield, Skull, Swords, Users, Vote, Check } from 'lucide-react';
+import confetti from 'canvas-confetti';
 import type { MoralStatus, Stance } from '../../../shared/protocol.ts';
 import { useGame } from '../../game/useGame';
+import { usePendingVote, VoteFeedback } from '../../game/usePendingVote';
 import { BTN_GOLD, CARD, Countdown, ErrorNote, LABEL, pts } from '../ui';
-
-const STEP_NAMES: Record<string, string> = { HUDDLE: 'Huddle', PARLEY: 'Dialogue', VOTE: 'Vote', DEBRIEF: 'Reveal' };
-const STEP_HELP: Record<string, string> = {
-  HUDDLE: 'Whisper with your own crew. Decide: Truce or Ambush?',
-  PARLEY: 'Face your rival crew and talk. Bluffing is allowed.',
-  VOTE: 'Vote now. Your crew majority decides. A tie is a Truce.',
-  DEBRIEF: 'The clash is scored. See what your rival chose.',
-};
 
 // ------------------------------------------------------------------ pairing
 const PairingStep: React.FC = () => {
@@ -125,6 +119,13 @@ const PairingStep: React.FC = () => {
 };
 
 // ------------------------------------------------------------------ history
+const StanceText: React.FC<{ s: Stance; emoji?: boolean }> = ({ s, emoji }) => (
+  <span className={s === 'TRUCE' ? 'text-emerald-300 font-bold' : 'text-red-300 font-bold'}>
+    {emoji ? (s === 'TRUCE' ? '🤝 ' : '🗡️ ') : ''}
+    {s === 'TRUCE' ? 'Truce' : 'Ambush'}
+  </span>
+);
+
 const History: React.FC = () => {
   const { view } = useGame();
   const r2 = view?.r2;
@@ -136,7 +137,7 @@ const History: React.FC = () => {
         <div key={c.clash} className="flex items-center justify-between text-sm p-3 min-h-[56px] rounded-xl bg-[#161922] border border-[#2a2e3d]">
           <span className="font-mono text-[#a9b4c7]">Clash {c.clash}</span>
           <span className="text-[#f4f0e8]">
-            <StanceText s={c.myStance} /> vs <StanceText s={c.rivalStance} />
+            <StanceText s={c.myStance} emoji /> <span className="text-[#a9b4c7]">vs</span> <StanceText s={c.rivalStance} emoji />
           </span>
           <span className="font-mono font-bold text-[#e5cb87]">{pts(c.myPts)}</span>
         </div>
@@ -145,25 +146,59 @@ const History: React.FC = () => {
   );
 };
 
-const StanceText: React.FC<{ s: Stance }> = ({ s }) => (
-  <span className={s === 'TRUCE' ? 'text-emerald-300 font-bold' : 'text-red-300 font-bold'}>{s === 'TRUCE' ? 'Truce' : 'Ambush'}</span>
+// ------------------------------------------------------------------ the phase progress bar
+const SEGMENTS: { id: string; label: string; on: string }[] = [
+  { id: 'HUDDLE', label: 'Huddle', on: 'bg-[#c4a45a] text-[#08090c] font-black' },
+  { id: 'PARLEY', label: 'Dialogue', on: 'bg-cyan-500 text-[#08090c] font-black shadow-lg shadow-cyan-900/40' },
+  { id: 'VOTE', label: 'Vote', on: 'bg-purple-500 text-[#08090c] font-black shadow-lg shadow-purple-900/40' },
+  { id: 'DEBRIEF', label: 'Debrief', on: 'bg-emerald-500 text-[#08090c] font-black' },
+];
+
+const PhaseBar: React.FC<{ step: string }> = ({ step }) => (
+  <div className="grid grid-cols-4 gap-1.5 bg-[#10121a] p-1.5 rounded-xl border border-[#3a4157]" data-testid="r2-phasebar">
+    {SEGMENTS.map((s, i) => (
+      <div key={s.id} className={`py-2 px-1 rounded-lg text-center transition-all ${step === s.id ? s.on : 'text-[#a9b4c7] bg-[#161922]/50'}`}>
+        <span className="text-xs font-mono block">PHASE {i + 1}</span>
+        <span className="text-xs font-serif font-bold uppercase block truncate">{s.label}</span>
+      </div>
+    ))}
+  </div>
 );
 
 // ------------------------------------------------------------------ a clash
+interface Mate {
+  name: string;
+  role: string;
+  color: string;
+  isSelf: boolean;
+}
+
 const ClashStep: React.FC = () => {
-  const { view, send } = useGame();
-  const [chosen, setChosen] = useState<Stance | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const { view, meta, send } = useGame();
   const phase = view?.phase;
   const r2 = view?.r2;
   const clash = phase?.clash ?? 0;
   const step = phase?.step ?? '';
+  const vote = usePendingVote<Stance>((view?.me?.myVote as Stance | undefined) ?? null, `r2:${clash}:${step}`);
 
+  // Vibrate and flash cyan when the dialogue starts (not when the app opens in the middle of it).
+  const prevStep = useRef<string | null>(null);
+  const [flash, setFlash] = useState(false);
   useEffect(() => {
-    setChosen(null);
-    setError(null);
-  }, [clash]);
+    if (prevStep.current !== null && prevStep.current !== step && step === 'PARLEY') {
+      try {
+        if ('vibrate' in navigator) navigator.vibrate(200);
+      } catch {
+        /* ignore */
+      }
+      setFlash(true);
+      const t = setTimeout(() => setFlash(false), 2000);
+      prevStep.current = step;
+      return () => clearTimeout(t);
+    }
+    prevStep.current = step;
+    return undefined;
+  }, [step]);
 
   if (!phase || !r2) return null;
   if (!r2.paired || !r2.rival) {
@@ -175,100 +210,299 @@ const ClashStep: React.FC = () => {
     );
   }
 
-  const myVote = (view?.me?.myVote as Stance | undefined) ?? chosen ?? undefined;
-  const voteNow = async (vote: Stance) => {
-    if (busy || myVote) return;
-    setBusy(true);
-    setError(null);
-    setChosen(vote);
-    const r = await send('R2_VOTE', { vote });
-    setBusy(false);
-    if (!r.ok) {
-      setChosen(null);
-      setError(r.message ?? 'Vote not accepted.');
-    }
+  const rival = r2.rival;
+  const myName = view?.me?.name;
+  const roleColor = (id: string) => meta?.roles.find(r => r.id === id)?.color ?? '#c4a45a';
+  const roleName = (id: string) => meta?.roles.find(r => r.id === id)?.name ?? '';
+  const mates: Mate[] = (view?.team?.members ?? []).map(m => ({ name: m.name, role: roleName(m.role), color: roleColor(m.role), isSelf: m.name === myName }));
+  const stakes = meta?.r2Stakes.find(s => s.clash === clash);
+  const current = r2.clashes.find(c => c.clash === clash);
+  const totalClashes = meta?.r2Stakes.length ?? 3;
+
+  const cast = (v: Stance) => {
+    if (vote.locked) return;
+    void vote.submit(v, () => send('R2_VOTE', { vote: v }));
   };
 
-  const current = r2.clashes.find(c => c.clash === clash);
-
   return (
-    <div className="space-y-4">
-      <div className={`${CARD} text-center space-y-2`}>
-        <span className={LABEL}>
-          Clash {clash} of 3 • versus {r2.rival.name}
-        </span>
-        <h3 data-testid="r2-step" className="text-3xl font-serif font-black text-[#f4f0e8] tracking-wide">
-          {STEP_NAMES[step] ?? step}
-        </h3>
-        <div>
-          <Countdown endsAt={phase.endsAt} className="text-6xl" />
+    <div className={`space-y-3.5 transition-all duration-500 ${flash ? 'ring-4 ring-cyan-400 ring-offset-2 ring-offset-[#08090c] rounded-2xl' : ''}`}>
+      <div className={`${CARD} flex items-center justify-between gap-3`}>
+        <div className="min-w-0">
+          <span className={LABEL}>Round 2: Shades in the Mist</span>
+          <h3 data-testid="r2-step" className="text-xl font-serif font-black text-[#f4f0e8] leading-tight">
+            Clash {clash} of {totalClashes}
+          </h3>
+          <div className="text-sm font-mono text-[#a9b4c7] flex items-center space-x-1 mt-0.5 min-w-0">
+            <span>Rival:</span>
+            <span className="text-cyan-300 font-bold truncate">{rival.name}</span>
+            <span className="text-[#e5cb87] shrink-0">[{rival.battleCode}]</span>
+          </div>
         </div>
-        <p className="text-base text-[#cbd5e1] leading-snug">{STEP_HELP[step] ?? ''}</p>
+        <div className="text-right shrink-0">
+          <div className="flex items-center space-x-1 justify-end text-xs font-mono text-[#a9b4c7]">
+            <Clock className="w-3.5 h-3.5 text-[#e5cb87]" />
+            <span>PHASE TIMER</span>
+          </div>
+          <Countdown endsAt={phase.endsAt} className="text-4xl" />
+        </div>
       </div>
 
-      {step === 'VOTE' && (
-        <div className={`${CARD} space-y-3`}>
-          <div className="grid grid-cols-1 gap-3">
-            <button
-              data-testid="vote-truce"
-              disabled={!!myVote || busy}
-              onClick={() => voteNow('TRUCE')}
-              className={`min-h-[96px] rounded-2xl border-2 flex flex-col items-center justify-center space-y-1 transition disabled:cursor-not-allowed ${
-                myVote === 'TRUCE' ? 'bg-emerald-800/70 border-emerald-300' : myVote ? 'bg-[#161922] border-[#2a2e3d] opacity-40' : 'bg-emerald-950/50 border-emerald-500/70 active:scale-[0.98]'
-              }`}
-            >
-              <Handshake className="w-8 h-8 text-emerald-300" />
-              <span className="text-2xl font-serif font-black text-emerald-100">TRUCE</span>
-            </button>
-            <button
-              data-testid="vote-ambush"
-              disabled={!!myVote || busy}
-              onClick={() => voteNow('AMBUSH')}
-              className={`min-h-[96px] rounded-2xl border-2 flex flex-col items-center justify-center space-y-1 transition disabled:cursor-not-allowed ${
-                myVote === 'AMBUSH' ? 'bg-red-800/70 border-red-300' : myVote ? 'bg-[#161922] border-[#2a2e3d] opacity-40' : 'bg-red-950/50 border-red-500/70 active:scale-[0.98]'
-              }`}
-            >
-              <Swords className="w-8 h-8 text-red-300" />
-              <span className="text-2xl font-serif font-black text-red-100">AMBUSH</span>
-            </button>
-          </div>
-          <ErrorNote text={error} />
-          {myVote ? (
-            <p data-testid="r2-voted" className="text-center text-base text-[#f4f0e8]">
-              Your vote is locked: <StanceText s={myVote} />
-            </p>
-          ) : (
-            <p className="text-center text-sm text-[#a9b4c7]">The first vote you cast is final.</p>
-          )}
-          <div className="flex items-center justify-center space-x-2 text-sm font-mono text-[#e5cb87]" data-testid="r2-voted-count">
-            <Users className="w-4 h-4" />
-            <span>
-              {r2.votedCount ?? 0} of {r2.teamSize} teammates voted
-            </span>
-          </div>
+      {step === 'BRIEFING' ? (
+        <div data-testid="r2-briefing" className={`${CARD} text-center space-y-1`}>
+          <h3 className="text-xl font-serif font-black text-[#f4f0e8]">Briefing...</h3>
+          <p className="text-sm text-[#a9b4c7]">Round 2 begins when the briefing ends. Voting is closed.</p>
         </div>
-      )}
+      ) : (
+        <>
+          <PhaseBar step={step} />
 
-      {step === 'DEBRIEF' && current && (
-        <div data-testid="r2-reveal" className={`${CARD} space-y-3`}>
-          <span className={LABEL}>Reveal</span>
-          <div className="grid grid-cols-2 gap-3 text-center">
-            <div className="p-3 rounded-xl bg-[#161922] border border-[#3a4157]">
-              <div className="text-[11px] font-mono text-[#a9b4c7] uppercase">Your crew</div>
-              <div className="text-2xl font-serif font-black mt-1">
-                <StanceText s={current.myStance} />
+          {stakes && (
+            <div className="bg-[#10121a] border border-[#3a4157] rounded-xl px-3 py-2.5 text-sm font-mono space-y-1" data-testid="r2-stakes">
+              <span className="text-[#e5cb87] font-bold block">CLASH {clash} STAKES</span>
+              <div className="flex flex-wrap gap-x-3 gap-y-0.5">
+                <span className="text-emerald-300 font-bold">Both Truce: {pts(stakes.bothTruce)}</span>
+                <span className="text-amber-300 font-bold">Ambush wins: {pts(stakes.ambushWin)}</span>
+                <span className="text-red-300 font-bold">Both Ambush: {pts(stakes.bothAmbush)}</span>
+                <span className="text-[#a9b4c7] font-bold">Betrayed: {pts(stakes.truceLoss)}</span>
               </div>
-              <div className="text-lg font-mono font-bold text-[#e5cb87] mt-1">{pts(current.myPts)} pts</div>
             </div>
-            <div className="p-3 rounded-xl bg-[#161922] border border-[#3a4157]">
-              <div className="text-[11px] font-mono text-[#a9b4c7] uppercase truncate">{r2.rival.name}</div>
-              <div className="text-2xl font-serif font-black mt-1">
-                <StanceText s={current.rivalStance} />
+          )}
+
+          {step === 'HUDDLE' && (
+            <div className="bg-[#161922] border-2 border-[#c4a45a] rounded-2xl p-5 space-y-4 text-center">
+              <div className="w-12 h-12 rounded-full bg-[#c4a45a]/20 border border-[#c4a45a] flex items-center justify-center mx-auto text-[#c4a45a]">
+                <Shield className="w-6 h-6" />
               </div>
-              <div className="text-lg font-mono font-bold text-[#e5cb87] mt-1">{pts(current.rivalPts)} pts</div>
+              <h3 className="text-xl font-serif font-black text-[#f4f0e8] uppercase tracking-wide">🛡️ Private Crew Huddle</h3>
+              <p className="text-base text-[#cbd5e1] font-serif leading-relaxed">
+                Huddle with your teammates only. Do <strong className="text-red-400 font-bold">NOT</strong> speak to the other table yet. Are they trustworthy friends or enemies who will betray you? What is our strategy for Clash {clash}?
+              </p>
+              <div className="p-3 rounded-xl bg-[#08090c] border border-[#3a4157] text-left space-y-2">
+                <span className="text-xs font-mono text-[#e5cb87] uppercase font-bold block">Crew roster and strategy</span>
+                <div className="grid grid-cols-2 gap-2">
+                  {mates.map((m, i) => (
+                    <div key={i} className="flex items-center space-x-2 min-w-0">
+                      <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: m.color }} />
+                      <span className="text-[#f4f0e8] truncate text-sm font-medium">{m.isSelf ? `${m.name} (You)` : m.name}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div className="text-sm font-mono text-[#a9b4c7] italic">🔒 Voting buttons stay locked until Phase 3.</div>
             </div>
-          </div>
-        </div>
+          )}
+
+          {step === 'PARLEY' && (
+            <div className="bg-[#161922] border-2 border-cyan-400 rounded-2xl p-5 space-y-4 text-center">
+              <div className="w-12 h-12 rounded-full bg-cyan-950/60 border border-cyan-400 flex items-center justify-center mx-auto text-cyan-300 animate-pulse">
+                <MessageSquare className="w-6 h-6" />
+              </div>
+              <h3 className="text-xl font-serif font-black text-cyan-300 uppercase tracking-wide">🗣️ The Dialogue</h3>
+              <p className="text-base text-[#cbd5e1] font-serif leading-relaxed">
+                Turn to the other table. Look them in the eye. Are they trustworthy friends or enemies who will betray you? Negotiate your pact, demand promises, or feed them false confidence. Bluffing is allowed.
+              </p>
+              <div className="p-3.5 rounded-xl bg-cyan-950/40 border border-cyan-500/40 text-left space-y-2">
+                <div className="flex items-center justify-between gap-2 text-cyan-300 font-mono text-sm font-bold">
+                  <span className="truncate">Rival crew: {rival.name}</span>
+                  <span className="shrink-0">Table code [{rival.battleCode}]</span>
+                </div>
+                <p className="text-sm text-[#cbd5e1] italic">When the dialogue timer ends, every player casts a secret vote on their own phone.</p>
+              </div>
+            </div>
+          )}
+
+          {step === 'VOTE' && (
+            <div className="space-y-3.5">
+              <div className="bg-[#10121a] border border-purple-500/50 rounded-2xl p-4 text-center space-y-1">
+                <div className="inline-flex items-center space-x-1.5 text-purple-300 text-sm font-mono uppercase font-bold tracking-wider">
+                  <Vote className="w-4 h-4" />
+                  <span>Phase 3: Secret ballot</span>
+                </div>
+                <h3 className="text-xl font-serif font-black text-[#f4f0e8]">CAST YOUR SECRET BALLOT</h3>
+                <p className="text-sm text-[#a9b4c7]">Your choice stays hidden until the reveal. Your crew majority decides. A tie is a Truce.</p>
+              </div>
+
+              <div className="grid grid-cols-1 gap-3">
+                {(['TRUCE', 'AMBUSH'] as Stance[]).map(s => {
+                  const picked = vote.choice === s;
+                  const dim = vote.choice && !picked;
+                  const truce = s === 'TRUCE';
+                  const reward = truce ? stakes?.bothTruce : stakes?.ambushWin;
+                  return (
+                    <button
+                      key={s}
+                      type="button"
+                      data-testid={truce ? 'vote-truce' : 'vote-ambush'}
+                      disabled={vote.locked}
+                      onClick={() => cast(s)}
+                      className={`w-full min-h-[88px] py-3 px-4 rounded-2xl border-2 flex items-center justify-between transition disabled:cursor-not-allowed ${
+                        picked
+                          ? truce
+                            ? 'bg-emerald-800/70 border-emerald-300 ring-2 ring-emerald-300/50'
+                            : 'bg-red-800/70 border-red-300 ring-2 ring-red-300/50'
+                          : dim
+                            ? 'bg-[#161922] border-[#2a2e3d] opacity-40'
+                            : truce
+                              ? 'bg-emerald-950/50 border-emerald-500/70 active:scale-[0.98]'
+                              : 'bg-red-950/50 border-red-500/70 active:scale-[0.98]'
+                      }`}
+                    >
+                      <span className="flex items-center space-x-3 text-left min-w-0">
+                        <span className="text-3xl">{truce ? '🤝' : '🗡️'}</span>
+                        <span className="min-w-0">
+                          <span className={`block text-xl font-serif font-black ${truce ? 'text-emerald-100' : 'text-red-100'}`}>
+                            {truce ? 'VOTE TRUCE' : 'VOTE AMBUSH'}
+                          </span>
+                          <span className={`block text-sm font-mono ${truce ? 'text-emerald-200' : 'text-rose-200'}`}>
+                            {truce ? 'Share supplies honourably' : 'Steal enemy supplies by surprise'}
+                          </span>
+                        </span>
+                      </span>
+                      {reward !== undefined && (
+                        <span className={`font-mono text-sm font-bold px-2.5 py-1 rounded-lg border shrink-0 ml-2 ${truce ? 'bg-emerald-950/80 border-emerald-400/30 text-emerald-100' : 'bg-red-950/80 border-red-400/30 text-red-100'}`}>
+                          {pts(reward)} pts
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+
+              <VoteFeedback vote={vote} testId="r2-voted" registeredText={`Vote registered: ${vote.choice === 'TRUCE' ? 'Truce' : 'Ambush'}`} />
+              <ErrorNote text={vote.error} />
+              {vote.status === 'idle' && <p className="text-center text-sm text-[#a9b4c7]">The first vote you cast is final.</p>}
+
+              <div className={`${CARD} space-y-2.5`}>
+                <div className="flex items-center justify-between gap-2">
+                  <span className={LABEL}>Squad ballot status</span>
+                  <span className="flex items-center space-x-1.5 text-sm font-mono text-[#e5cb87]" data-testid="r2-voted-count">
+                    <Users className="w-4 h-4" />
+                    <span>
+                      {r2.votedCount ?? 0} of {r2.teamSize} voted
+                    </span>
+                  </span>
+                </div>
+                <div className="space-y-1.5">
+                  {mates.map((m, i) => {
+                    const done = r2.votedBy?.[i] === true || (m.isSelf && vote.status === 'registered');
+                    return (
+                      <div key={i} className="flex items-center justify-between gap-2 p-2.5 min-h-[48px] rounded-xl bg-[#161922] border border-[#2a2e3d]">
+                        <span className="flex items-center space-x-2 min-w-0">
+                          <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: m.color }} />
+                          <span className="min-w-0">
+                            <span className="font-serif font-bold text-[#f4f0e8] text-sm block truncate">{m.isSelf ? `${m.name} (You)` : m.name}</span>
+                            <span className="text-xs font-mono text-[#a9b4c7] block">{m.role}</span>
+                          </span>
+                        </span>
+                        {done ? (
+                          <span className="px-2.5 py-1 rounded bg-emerald-950/70 border border-emerald-500/50 text-emerald-300 font-mono text-xs font-bold flex items-center space-x-1 shrink-0">
+                            <Lock className="w-3.5 h-3.5" />
+                            <span>LOCKED</span>
+                          </span>
+                        ) : (
+                          <span className="px-2.5 py-1 rounded bg-amber-950/40 border border-amber-500/40 text-amber-300 font-mono text-xs font-bold shrink-0">waiting</span>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+                <p className="text-xs font-mono text-[#a9b4c7] text-center">When the timer reaches 0:00, anyone who has not voted counts as abstaining. Nobody sees another vote until the reveal.</p>
+              </div>
+            </div>
+          )}
+
+          {step === 'DEBRIEF' && current && (() => {
+            const my = current.myStance;
+            const their = current.rivalStance;
+            let title = '🤝 HONOURABLE TRUCE';
+            let bg = 'from-emerald-950/80 to-[#10121a] border-emerald-500';
+            let color = 'text-emerald-300';
+            if (my === 'TRUCE' && their === 'AMBUSH') {
+              title = '⚡ BETRAYED IN TARTARUS!';
+              bg = 'from-red-950/80 to-[#10121a] border-red-500';
+              color = 'text-red-400';
+            } else if (my === 'AMBUSH' && their === 'TRUCE') {
+              title = '🗡️ RUTHLESS AMBUSH!';
+              bg = 'from-amber-950/80 to-[#10121a] border-[#c4a45a]';
+              color = 'text-[#e5cb87]';
+            } else if (my === 'AMBUSH' && their === 'AMBUSH') {
+              title = '⚔️ BLOODIED STALEMATE';
+              bg = 'from-slate-900/90 to-[#10121a] border-slate-500';
+              color = 'text-slate-300';
+            }
+            const votes = current.myVotes;
+            const truceCount = [...votes].filter(c => c === 'T').length;
+            const ambushCount = [...votes].filter(c => c === 'A').length;
+            const abstainCount = [...votes].filter(c => c === '-').length;
+            return (
+              <div data-testid="r2-reveal" className="space-y-3.5">
+                <div className={`bg-gradient-to-b ${bg} border-2 rounded-2xl p-5 text-center space-y-3 shadow-2xl`}>
+                  <div className="text-xs font-mono uppercase tracking-widest text-[#a9b4c7] font-bold">CLASH {clash} REVEAL</div>
+                  <h3 className={`text-2xl font-serif font-black ${color}`}>{title}</h3>
+                  <div className="flex items-center justify-center space-x-3 py-1 font-mono">
+                    <div className="p-2.5 rounded-xl bg-[#08090c] border border-[#2a2e3d] text-center min-w-[112px]">
+                      <span className="text-xs text-[#a9b4c7] block">YOUR CREW</span>
+                      <span className={`text-base font-black ${my === 'TRUCE' ? 'text-emerald-400' : 'text-red-400'}`}>{my === 'TRUCE' ? 'TRUCE' : 'AMBUSH'}</span>
+                    </div>
+                    <span className="text-base font-serif text-[#a9b4c7]">VS</span>
+                    <div className="p-2.5 rounded-xl bg-[#08090c] border border-[#2a2e3d] text-center min-w-[112px]">
+                      <span className="text-xs text-[#a9b4c7] block truncate max-w-[112px]">{rival.name}</span>
+                      <span className={`text-base font-black ${their === 'TRUCE' ? 'text-emerald-400' : 'text-red-400'}`}>{their === 'TRUCE' ? 'TRUCE' : 'AMBUSH'}</span>
+                    </div>
+                  </div>
+                  <div className="p-3 rounded-xl bg-[#08090c]/90 border border-[#2a2e3d] flex items-center justify-around font-mono">
+                    <div>
+                      <span className="text-xs text-[#a9b4c7] block">YOUR CREW</span>
+                      <span className="text-xl font-black text-emerald-400">{pts(current.myPts)} pts</span>
+                    </div>
+                    <div className="w-px h-10 bg-[#2a2e3d]" />
+                    <div>
+                      <span className="text-xs text-[#a9b4c7] block">RIVAL CREW</span>
+                      <span className="text-xl font-black text-cyan-400">{pts(current.rivalPts)} pts</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className={`${CARD} space-y-3`}>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className={LABEL}>Your squad votes</span>
+                    <span className="text-sm font-mono text-[#a9b4c7]">
+                      {truceCount} Truce • {ambushCount} Ambush{abstainCount > 0 ? ` • ${abstainCount} Abstain` : ''}
+                    </span>
+                  </div>
+                  <div className="space-y-1.5">
+                    {mates.map((m, i) => {
+                      const c = votes[i] ?? '-';
+                      return (
+                        <div key={i} className="flex items-center justify-between gap-2 p-2.5 min-h-[48px] rounded-xl bg-[#161922] border border-[#2a2e3d]">
+                          <span className="flex items-center space-x-2 min-w-0">
+                            <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: m.color }} />
+                            <span className="font-serif font-bold text-[#f4f0e8] text-sm truncate">{m.isSelf ? `${m.name} (You)` : m.name}</span>
+                          </span>
+                          <span
+                            className={`px-2.5 py-1 rounded font-mono text-xs font-bold shrink-0 ${
+                              c === 'T' ? 'bg-emerald-950/80 text-emerald-300 border border-emerald-500/50' : c === 'A' ? 'bg-red-950/80 text-red-300 border border-red-500/50' : 'bg-slate-900 text-slate-400 border border-slate-700'
+                            }`}
+                          >
+                            {c === 'T' ? '🤝 Truce' : c === 'A' ? '🗡️ Ambush' : 'Abstain'}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div className={`${CARD} text-center space-y-1`}>
+                  <span className="text-xs font-mono text-[#a9b4c7] uppercase font-bold block">
+                    {clash < totalClashes ? `Clash ${clash + 1} begins in` : 'Round 2 results in'}
+                  </span>
+                  <Countdown endsAt={phase.endsAt} className="text-3xl" testId="r2-breather" />
+                  <p className="text-sm text-[#a9b4c7] italic">Use this breather for table banter and psychological warfare.</p>
+                </div>
+              </div>
+            );
+          })()}
+        </>
       )}
 
       <History />
@@ -277,24 +511,93 @@ const ClashStep: React.FC = () => {
 };
 
 // ------------------------------------------------------------------ results
+const MORAL_STYLE: Record<string, { box: string; chip: string; text: string; icon: React.ReactNode; flavour: string }> = {
+  HONOURABLE: {
+    box: 'from-emerald-950/80 to-[#10121a] border-emerald-500',
+    chip: 'bg-emerald-950 border-emerald-500/60 text-emerald-300',
+    text: 'text-emerald-200/90',
+    icon: <Handshake className="w-6 h-6" />,
+    flavour: 'Neither crew broke faith in the Stygian mist. You stood honourable before Charon.',
+  },
+  BETRAYED: {
+    box: 'from-red-950/80 to-[#10121a] border-red-500',
+    chip: 'bg-red-950 border-red-500/60 text-red-300',
+    text: 'text-red-200/90',
+    icon: <Skull className="w-6 h-6 animate-pulse" />,
+    flavour: 'They took your supplies in the Stygian mist. Hades remembers this debt. Seek vengeance in the trials ahead.',
+  },
+  AGGRESSOR: {
+    box: 'from-amber-950/80 to-[#10121a] border-[#c4a45a]',
+    chip: 'bg-amber-950 border-[#c4a45a]/60 text-[#e5cb87]',
+    text: 'text-[#f4f0e8]/90',
+    icon: <Crown className="w-6 h-6" />,
+    flavour: 'You outsmarted your rival across the mist. Watch your back in the trials ahead; they will not forget.',
+  },
+  BLOOD_FEUD: {
+    box: 'from-cyan-950/80 to-[#10121a] border-cyan-500',
+    chip: 'bg-cyan-950 border-cyan-500/60 text-cyan-300',
+    text: 'text-cyan-200/90',
+    icon: <Swords className="w-6 h-6" />,
+    flavour: 'Blood was spilled on both sides of the mist. No honour, no debt, only the river ahead.',
+  },
+};
+
 const Results: React.FC = () => {
   const { view, meta } = useGame();
   const r2 = view?.r2;
+  const total = r2 ? r2.clashes.reduce((a, c) => a + c.myPts, 0) : 0;
+  const played = !!r2?.paired && r2.clashes.length > 0;
+
+  // Confetti once when the results appear.
+  const fired = useRef(false);
+  useEffect(() => {
+    if (!played || fired.current) return;
+    fired.current = true;
+    try {
+      confetti({ particleCount: 50, spread: 60, origin: { y: 0.6 }, colors: ['#c4a45a', '#38bdf8', '#fb923c'] });
+    } catch {
+      /* ignore */
+    }
+  }, [played]);
+
   if (!r2) return null;
-  const moral = r2.moral && r2.moral !== 'NONE' ? meta?.moralStatuses.find(m => m.id === (r2.moral as MoralStatus)) : undefined;
-  const total = r2.clashes.reduce((a, c) => a + c.myPts, 0);
+  const id = r2.moral && r2.moral !== 'NONE' ? (r2.moral as MoralStatus) : undefined;
+  const moral = id ? meta?.moralStatuses.find(m => m.id === id) : undefined;
+  const style = id ? MORAL_STYLE[id] : undefined;
+
   return (
     <div className="space-y-4">
-      <div className={`${CARD} text-center space-y-2`}>
-        <span className={LABEL}>Round 2 complete</span>
-        <h3 className="text-2xl font-serif font-black text-[#f4f0e8]">Your moral legacy</h3>
-        <div data-testid="r2-moral" className="text-3xl font-serif font-black text-[#e5cb87]">
-          {moral?.name ?? (r2.paired ? r2.moral : 'No clash played')}
+      {style ? (
+        <div className={`bg-gradient-to-b ${style.box} border-2 rounded-2xl p-6 text-center space-y-3 shadow-2xl`}>
+          <div className={`w-12 h-12 rounded-full border flex items-center justify-center mx-auto ${style.chip}`}>{style.icon}</div>
+          <div className={`inline-block px-3 py-1 rounded-full border font-mono text-xs uppercase font-bold tracking-widest ${style.chip}`}>Your moral legacy</div>
+          <h2 data-testid="r2-moral" className="text-2xl font-serif font-black text-[#f4f0e8]">
+            {moral?.name ?? id}
+          </h2>
+          <p className={`text-base font-serif italic max-w-xs mx-auto leading-relaxed ${style.text}`}>{moral?.note ?? style.flavour}</p>
         </div>
-        {moral && <p className="text-sm text-[#cbd5e1] leading-relaxed">{moral.note}</p>}
-        <p className="text-base font-mono text-[#f4f0e8]">Round 2 points: {pts(total)}</p>
+      ) : (
+        <div className={`${CARD} text-center space-y-2`}>
+          <span className={LABEL}>Round 2 complete</span>
+          <h3 data-testid="r2-moral" className="text-2xl font-serif font-black text-[#e5cb87]">
+            {r2.paired ? 'No moral status' : 'No clash played'}
+          </h3>
+        </div>
+      )}
+
+      <div className={`${CARD} flex items-center justify-between`}>
+        <div>
+          <span className="text-xs font-mono uppercase tracking-wider text-[#a9b4c7] font-bold block">Round 2 points earned</span>
+          <span className="text-sm text-[#f4f0e8]">All clashes finalised</span>
+        </div>
+        <div className="text-right">
+          <span className="text-3xl font-mono font-black text-emerald-400">{pts(total)}</span>
+          <span className="text-xs font-mono text-[#a9b4c7] ml-1">PTS</span>
+        </div>
       </div>
+
       <History />
+      <div className="p-3 rounded-xl bg-[#161922]/50 border border-[#2a2e3d]/40 text-center text-sm text-[#a9b4c7]">Waiting for the Game Master to announce the Round 2 leaderboard.</div>
     </div>
   );
 };
@@ -306,4 +609,3 @@ export const ShadesInTheMistRound: React.FC = () => {
   if (name === 'R2_CLASH') return <ClashStep />;
   return <Results />;
 };
-

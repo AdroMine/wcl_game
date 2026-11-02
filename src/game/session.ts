@@ -3,6 +3,41 @@
 import { randomToken } from '../../shared/protocol.ts';
 import type { View } from '../../shared/protocol.ts';
 
+/**
+ * Seat mode (/solotester): `/?seat=K` makes this tab an independent player. Every localStorage key that starts with
+ * `uw.` (identity, cached view, name, briefing flags, meta, clock offset) is stored as `uw.sK.<rest>`. Without a valid
+ * seat nothing changes. The wrapper is installed once, here, because this module is loaded before any key is read.
+ */
+export function seatFromSearch(search: string): string | null {
+  const m = /^[0-9]{1,9}$/.exec(new URLSearchParams(search).get('seat') ?? '');
+  return m ? m[0] : null;
+}
+
+export const SEAT: string | null = typeof window === 'undefined' ? null : seatFromSearch(window.location.search);
+
+/** The namespaced form of a storage key for a seat (used by the solo tester to reset seats). */
+export function seatKeyPrefix(seat: string | number): string {
+  return `uw.s${seat}.`;
+}
+
+if (SEAT && typeof Storage !== 'undefined') {
+  const prefix = seatKeyPrefix(SEAT);
+  const map = (k: string) => (k.startsWith('uw.') ? prefix + k.slice(3) : k);
+  const proto = Storage.prototype;
+  const get = proto.getItem;
+  const set = proto.setItem;
+  const del = proto.removeItem;
+  proto.getItem = function (this: Storage, k: string) {
+    return get.call(this, map(k));
+  };
+  proto.setItem = function (this: Storage, k: string, v: string) {
+    set.call(this, map(k), v);
+  };
+  proto.removeItem = function (this: Storage, k: string) {
+    del.call(this, map(k));
+  };
+}
+
 const KEY_ID = 'uw.playerId';
 const KEY_TOKEN = 'uw.token';
 const KEY_VIEW = 'uw.lastView';

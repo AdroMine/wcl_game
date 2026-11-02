@@ -9,24 +9,6 @@ import { OdysseyEscapeRoyaleRound } from './rounds/OdysseyEscapeRoyaleRound';
 import { BoardList } from './LeaderboardDrawer';
 import { CARD, Countdown, LABEL } from './ui';
 
-const BRIEFED_KEY = 'uw.briefed';
-const BRIEF_PHASES: PhaseName[] = ['R1_ACTIVE', 'R2_PAIRING', 'R3_ACTIVE'];
-
-function readBriefed(): string[] {
-  try {
-    return JSON.parse(localStorage.getItem(BRIEFED_KEY) ?? '[]') as string[];
-  } catch {
-    return [];
-  }
-}
-function writeBriefed(list: string[]): void {
-  try {
-    localStorage.setItem(BRIEFED_KEY, JSON.stringify(list));
-  } catch {
-    /* ignore */
-  }
-}
-
 function roundOf(name: PhaseName): 1 | 2 | 3 | 0 {
   if (name.startsWith('R1')) return 1;
   if (name.startsWith('R2')) return 2;
@@ -34,45 +16,33 @@ function roundOf(name: PhaseName): 1 | 2 | 3 | 0 {
   return 0;
 }
 
-/** Shown once per phase (and never again after a refresh). A new game (lobby) forgets it. */
+/**
+ * The story/rules briefing is a server-timed step (phase.step === 'BRIEFING'): every phone shows it, driven by server time,
+ * and it closes by itself when the step ends. The Rules button reopens it manually (closable, everything shown).
+ */
 export const RoundContainer: React.FC = () => {
   const { view, meta } = useGame();
   const name = view?.phase.name;
-  const [showBriefing, setShowBriefing] = useState(false);
-  const [animate, setAnimate] = useState(false);
-  const openedIn = useRef<string>('');
   const step = view?.phase.step ?? '';
+  const startedAt = view?.phase.startedAt;
+  const [showManual, setShowManual] = useState(false);
+  const [dismissedKey, setDismissedKey] = useState('');
+  const openedIn = useRef<string>('');
 
-  // A briefing never covers a vote: close it when the phase moves on or a VOTE step starts.
+  // A manual briefing never covers a vote: close it when the phase moves on or a VOTE step starts.
   useEffect(() => {
-    if (showBriefing && (name !== openedIn.current || step === 'VOTE')) {
-      setShowBriefing(false);
-      setAnimate(false);
-    }
-  }, [name, step, showBriefing]);
-
-  useEffect(() => {
-    if (!name) return;
-    if (name === 'LOBBY') {
-      writeBriefed([]);
-      return;
-    }
-    if (BRIEF_PHASES.includes(name)) {
-      const seen = readBriefed();
-      if (!seen.includes(name)) {
-        writeBriefed([...seen, name]);
-        openedIn.current = name;
-        setAnimate(true);
-        setShowBriefing(true);
-      }
-    }
-  }, [name]);
+    if (showManual && (name !== openedIn.current || step === 'VOTE')) setShowManual(false);
+  }, [name, step, showManual]);
 
   if (!view || !name) return null;
   const round = roundOf(name);
   const briefing = round ? meta?.rounds[round - 1] : undefined;
   const hasTimer = view.phase.endsAt != null;
-  const showTimerInHeader = hasTimer && !(name === 'R2_CLASH' || name === 'R3_ACTIVE');
+  const inBriefing = step === 'BRIEFING' && startedAt != null;
+  const briefingKey = `${name}:${startedAt}`;
+  const autoOpen = inBriefing && !!briefing && dismissedKey !== briefingKey;
+  const waiting = inBriefing && !autoOpen;
+  const showTimerInHeader = hasTimer && !inBriefing && !(name === 'R2_CLASH' || name === 'R3_ACTIVE');
 
   const body =
     round === 1 ? (
@@ -87,15 +57,17 @@ export const RoundContainer: React.FC = () => {
 
   return (
     <div className="space-y-3.5 py-2">
-      {showBriefing && briefing && (
+      {autoOpen && briefing ? (
         <RoundBriefingModal
           briefing={briefing}
-          animate={animate}
-          onClose={() => {
-            setShowBriefing(false);
-            setAnimate(false);
-          }}
+          mode="auto"
+          startedAt={startedAt}
+          endsAt={view.phase.endsAt}
+          onClose={() => setDismissedKey(briefingKey)}
         />
+      ) : (
+        showManual &&
+        briefing && <RoundBriefingModal briefing={briefing} mode="manual" onClose={() => setShowManual(false)} />
       )}
 
       <div className={`${CARD} flex items-center justify-between !p-4`}>
@@ -106,8 +78,7 @@ export const RoundContainer: React.FC = () => {
               <button
                 onClick={() => {
                   openedIn.current = name;
-                  setAnimate(false);
-                  setShowBriefing(true);
+                  setShowManual(true);
                 }}
                 data-testid="open-rules"
                 className="inline-flex items-center space-x-1 px-2.5 min-h-[32px] rounded-full bg-[#161922] border border-[#3a4157] text-[11px] font-mono text-[#e5cb87]"
@@ -129,7 +100,15 @@ export const RoundContainer: React.FC = () => {
         )}
       </div>
 
-      {body}
+      {waiting ? (
+        <div className={`${CARD} text-center space-y-2`} data-testid="briefing-waiting">
+          <span className={LABEL}>Get ready</span>
+          <h3 className="text-xl font-serif font-black text-[#f4f0e8]">The round is about to begin</h3>
+          <Countdown endsAt={view.phase.endsAt} className="text-3xl" testId="briefing-countdown" />
+        </div>
+      ) : (
+        body
+      )}
 
       {(name.endsWith('_RESULTS') || name === 'FINISHED') && (
         <div className={`${CARD} space-y-3`}>

@@ -1,5 +1,5 @@
 // Admin API helpers for /admin. The token lives in sessionStorage and is sent as Authorization: Bearer.
-import type { MoralStatus, PhaseName, StepName } from '../../shared/protocol.ts';
+import type { MoralStatus, PhaseName, StepName, Vessel } from '../../shared/protocol.ts';
 import { rand, sleep } from './backoff.ts';
 import { apiUrl } from './config.ts';
 import { newCommandId } from './commands.ts';
@@ -37,9 +37,8 @@ export interface AdminTeam {
   playerIds: string[];
   r1Points: number;
   r2Points: number;
-  adminAdjust: number;
   score: number;
-  r1: { codeword: string; solved: boolean; points: number; solveSeconds: number | null; hintsTaken: number[]; markedByAdmin: boolean } | null;
+  r1: { codeword: string; solved: boolean; points: number; solveSeconds: number | null; hintsTaken: number[] } | null;
 }
 export interface AdminPlayer {
   id: string;
@@ -49,26 +48,89 @@ export interface AdminPlayer {
   connected: boolean;
   canLogin: boolean;
 }
+export interface AdminClash {
+  clash: number;
+  resolved: boolean;
+  stanceA: string | null;
+  stanceB: string | null;
+  ptsA: number;
+  ptsB: number;
+  votedA: number;
+  votedB: number;
+}
 export interface AdminMatch {
   id: string;
   teamA: string;
   teamB: string;
   cancelled: boolean;
-  clashes: { clash: number; resolved: boolean; stanceA: string | null; stanceB: string | null; ptsA: number; ptsB: number; votedA: number; votedB: number }[];
+  clashes: AdminClash[];
+}
+export interface AdminMoral {
+  status: MoralStatus;
+  rivalTeamId: string | null;
+  nemesisTeamId: string | null;
+  mutualTruce: number;
+  myAmbush: number;
+  rivalAmbush: number;
+  mutualAmbush: number;
 }
 export interface AdminR3Team {
   distance: number;
+  startDistance: number;
   honourBonus: boolean;
+  leashHolder: boolean;
+  nemesis: string | null;
+  leashUsed: boolean;
   escaped: boolean;
   escapeRank: number | null;
-  leashHolder: boolean;
-  leashUsed: boolean;
+  escapedInWave: number | null;
+}
+export interface AdminWaveOutcome {
+  vessel: Vessel;
+  unanimity: number;
+  baseMeters: number;
+  leashDelta: number;
+  gained: number;
+  newDistance: number;
+  escaped: boolean;
+  escapeRank: number | null;
+}
+export interface AdminWaveReport {
+  wave: number;
+  activeCrews: number;
+  sailboatCapacity: number;
+  sailboatCapsized: boolean;
+  ghostCollided: boolean;
+  ghostSoloTeamId: string | null;
+  outcomes: Record<string, AdminWaveOutcome>;
+}
+export interface AdminSuddenDeath {
+  teamA: string;
+  teamB: string;
+  votesA: number;
+  votesB: number;
+  stanceA: string | null;
+  stanceB: string | null;
+  resolved: boolean;
+  winnerTeamId: string | null;
+  text: string | null;
+}
+export interface AdminR3 {
+  teams: Record<string, AdminR3Team>;
+  escapeOrder: string[];
+  /** Armed Stygian Leash this wave: holder crew id -> target crew id. */
+  leashArmed: Record<string, string>;
+  /** Phones that have voted this wave, per crew. */
+  votedThisWave: Record<string, number>;
+  waves: number;
+  lastReport: AdminWaveReport | null;
+  sd: AdminSuddenDeath | null;
 }
 export interface AdminViewData {
   serverNow: number;
   sid: string;
   v: number;
-  phase: { name: PhaseName; step: StepName | null; clash: number; wave: number; phaseSeq: number; endsAt: number | null; paused: boolean; pausedAt?: number | null };
+  phase: { name: PhaseName; step: StepName | null; clash: number; wave: number; phaseSeq: number; endsAt: number | null; paused: boolean; pausedAt?: number | null; startedAt?: number };
   config: Durations;
   /** Maximum crew size N (3..6). */
   crewSize: number;
@@ -78,8 +140,8 @@ export interface AdminViewData {
   teams: AdminTeam[];
   matches: AdminMatch[];
   unpairedTeamIds: string[];
-  moral: Record<string, { status: MoralStatus }>;
-  r3: { teams: Record<string, AdminR3Team>; escapeOrder: string[]; waves: number; sd: unknown } | null;
+  moral: Record<string, AdminMoral>;
+  r3: AdminR3 | null;
 }
 
 export interface Health {
@@ -213,4 +275,47 @@ export async function fetchAdminView(etag: string | null): Promise<PollResult<{ 
   } catch (e) {
     return { kind: 'fail', reason: e instanceof Error && e.name === 'AbortError' ? 'timeout' : 'bad JSON' };
   }
+}
+
+export type LightLevel = 'ok' | 'slow' | 'down';
+export interface ServerLight {
+  level: LightLevel;
+  /** Short text for the status line. */
+  label: string;
+}
+
+export interface LightInput {
+  hasView: boolean;
+  health: Health | null;
+  /** Consecutive failed polls, per request, with the latest reason. */
+  viewFails: number;
+  viewReason: string | null;
+  healthFails: number;
+  healthReason: string | null;
+  /** Seconds since this panel last saw the game state change (null: no change seen since it opened). */
+  sinceChangeSec: number | null;
+}
+
+/** One light for the whole server. "Not reachable" only after 3 failed admin-view polls in a row. */
+export function computeServerLight(i: LightInput): ServerLight {
+  if (i.viewFails >= 3) {
+    const parts = [`admin view: ${i.viewReason ?? 'failed'}`];
+    if (i.healthFails >= 1) parts.push(`health: ${i.healthReason ?? 'failed'}`);
+    return { level: 'down', label: `Not reachable (${parts.join('; ')})` };
+  }
+  if (!i.hasView && i.healthFails >= 3) return { level: 'down', label: `Not reachable (health: ${i.healthReason ?? 'failed'})` };
+  const h = i.health;
+  const slow: string[] = [];
+  if (h) {
+    if (h.eventLoopLagMs > 200) slow.push(`lag ${Math.round(h.eventLoopLagMs)} ms`);
+    if (!h.lastSnapshotOk) slow.push('snapshot failing');
+    // The snapshot age is time since the last write, which grows while nothing changes. It is only a problem
+    // when the game changed and the newest snapshot is older than that change by 30 s or more.
+    else if (h.snapshotAgeSec != null && i.sinceChangeSec != null && i.sinceChangeSec > 30 && h.snapshotAgeSec > i.sinceChangeSec) {
+      slow.push(`snapshot ${Math.round(h.snapshotAgeSec)} s old`);
+    }
+  }
+  if (slow.length > 0) return { level: 'slow', label: `Slow (${slow.join(', ')})` };
+  if (i.healthFails >= 2) return { level: 'ok', label: `OK (health check failing: ${i.healthReason ?? 'failed'})` };
+  return { level: 'ok', label: 'OK' };
 }

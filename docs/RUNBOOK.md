@@ -72,13 +72,15 @@ npm run swarm -- --target https://<your-app>.onrender.com --admin-token <ADMIN_T
 - Confirm that `/health` shows `snapshotAgeSec` under 10 once the game has changed, and that `lastSnapshotOk` is `true`.
 - Snapshots are written to Supabase automatically (every few seconds when the game changed, and at every phase change). For an extra copy, run `curl -H "Authorization: Bearer $ADMIN_TOKEN" https://<your-host>/api/admin/backup -o backup.json` before the game starts and after each round. The admin page has no backup or restore buttons.
 
+**The admin panel** is built for a phone. The top bar always shows the phase and countdown, the venue counts, the phones connected and one server light (OK, Slow, Not reachable; **Server details** shows the raw numbers), plus the main flow button, **Skip**, and **Pause/Resume**. Below it: timer adjust (-30 s, -15 s, +15 s, +30 s, +1 min), **Join QR**, **Standings** (private), **Resync** and **Reset game** (type RESET). Tabs: **Live game** (one card for the current phase), **Crews & roster**, **Announcements**. The admin has game-flow and roster controls only; it cannot change scores, distances, honour or solved flags, and cannot rename crews.
+
 **Running the game:**
 1. Lobby: players scan the QR code, enter a name, and create or join a crew by tapping the crew's 3 emojis. Set the **crew size** (3 to 6, default 5) in `/admin` before players form crews; it is the maximum crew size for players, and phones show it. **Auto-group** builds new crews of that size; a remainder of 2 or more forms one smaller crew (a crew of 2 is possible), and a single leftover player stays unassigned for you to place with Move player (you can put anyone into any crew that has fewer than 6 members; no crew can exceed 6). Auto-group never adds players to existing crews. Crew size can only be changed in the lobby.
 2. **Start Round 1.** A short briefing (about 26 s, the story plays on every phone) comes first; the 5:00 clock starts when it ends, and **Skip step** skips the briefing. At 5:00 the round closes and unsolved crews score 0. If you add, move or remove a player while Round 1 runs, that crew's tablet pieces are recomputed so each member still holds one piece.
 3. **Next**: Round 1 results.
 4. **Next**: Round 2 pairing. Each crew types its rival's 2-digit code. The clash clock starts for everyone at once when all crews are paired. Otherwise, use **Force-start clashes**; unpaired crews sit out.
 5. Round 2 starts with a briefing (about 26 s, no votes), then runs on its own: 3 clashes × Huddle 50 s / Dialogue 40 s / Vote 25 s / Reveal 40 s. Announce each step from the projector; every crew is on the same step.
-6. **Next**: Round 2 results, then **Next** to start Round 3 (a briefing of about 28 s plays before wave 1). Waves repeat until 3 crews escape. Use **End Round 3** if needed and **Sudden death** for a standoff.
+6. **Next**: Round 2 results, then **Next** to start Round 3 (a briefing of about 28 s plays before wave 1). Waves repeat until 3 crews escape. Use **End Round 3** if needed and **Trigger Sudden Death** (Live game tab, Round 3) for a standoff.
 
 **When something goes wrong:**
 
@@ -87,8 +89,9 @@ npm run swarm -- --target https://<your-app>.onrender.com --admin-token <ADMIN_T
 | Server restarts (Render, a crash, a deploy) | Wait for it to return. The game restores **paused**. Check the snapshot age in `/admin`, then press **Resume**. Phones reconnect on their own, so do not ask players to refresh. |
 | Phones show "Reconnecting…" for more than about 30 seconds | Check `/health` and the venue network. Pause the game from `/admin` and announce it on the microphone. |
 | A step or phase is stuck | **Skip step**, or adjust the timer ±30 s. |
-| Wrong score or distance | Adjust it in `/admin`. If the state itself is broken, restore the last good backup with curl (see **Restoring a backup**, below). It comes back paused. |
-| Some phones look out of date | **Resync all** in `/admin`. |
+| Wrong score or distance | There is no manual adjust: the admin panel cannot change scores, distances, honour bonuses or solved flags, and cannot rename crews. Scores come only from play. Only if the state itself is broken, restore the last good backup with curl (see **Restoring a backup**, below). It comes back paused. |
+| Some phones look out of date | **Resync** in `/admin`. |
+| `/admin` itself looks old after a deploy | Reload the page once. The service worker loads HTML from the network first (and keeps a copy for offline use), so a normal reload gets the new version. |
 | Render is down | Plan B, below. |
 | Everything fails | Paper scoring sheet; run the remaining rounds by hand. |
 

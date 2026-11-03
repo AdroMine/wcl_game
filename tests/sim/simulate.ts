@@ -80,7 +80,6 @@ export function runSimulation(opts: SimOptions): SimResult {
   const failures: string[] = [];
   const timesMs: number[] = [];
   const later = new Map<number, Command[]>();
-  const adminAdjust: Record<string, number> = {};
   const firstVote = new Map<string, string>(); // `${phaseSeq}:${playerId}` -> first vote sent
   const fail = (m: string) => {
     if (failures.length < 50) failures.push(m);
@@ -207,7 +206,6 @@ export function runSimulation(opts: SimOptions): SimResult {
       lastSeq = state.phaseSeq;
       phaseTick0 = tick;
       todo.length = 0;
-      let adminMarked = false;
       for (const tid of state.teamOrder) {
         const t = state.teams[tid];
         const solveAt = rnd() < 0.78 ? range(20, 295) : null;
@@ -225,9 +223,6 @@ export function runSimulation(opts: SimOptions): SimResult {
           const w2 = who();
           todo.push({ at: solveAt, make: () => mk('R1_SUBMIT', P(w), { answer: state.teams[tid].r1!.codeword.toLowerCase() }) });
           if (rnd() < 0.2) todo.push({ at: solveAt, make: () => mk('R1_SUBMIT', P(w2), { answer: ` ${state.teams[tid].r1!.codeword} ` }) });
-        } else if (!adminMarked && rnd() < 0.5) {
-          adminMarked = true;
-          todo.push({ at: 250, make: () => mk('ADMIN_MARK_R1_SOLVED', ADMIN, { teamId: tid }) });
         }
         for (let k = int(4); k > 0; k--) {
           const at = range(5, 290);
@@ -426,19 +421,6 @@ export function runSimulation(opts: SimOptions): SimResult {
       if (state.phase === 'R1_RESULTS') todo.push({ at: 8, make: () => mk('ADMIN_START_R2', ADMIN, {}) });
       if (state.phase === 'R2_RESULTS') {
         todo.push({ at: 10, make: () => mk('ADMIN_START_R3', ADMIN, {}) });
-        // a couple of admin score adjustments (tracked for the invariant)
-        const tids = state.teamOrder;
-        for (let k = 0; k < 3; k++) {
-          const tid = tids[int(tids.length)];
-          const delta = (k === 1 ? -1 : 1) * range(5, 40);
-          todo.push({
-            at: 3 + k,
-            make: () => {
-              adminAdjust[tid] = (adminAdjust[tid] ?? 0) + delta;
-              return mk('ADMIN_ADJUST_SCORE', ADMIN, { teamId: tid, delta });
-            },
-          });
-        }
       }
     }
     const elapsed = tick - phaseTick0;
@@ -532,7 +514,7 @@ export function runSimulation(opts: SimOptions): SimResult {
   }
   if (finishedAtTick < 0) fail(`game did not finish within ${MAX_TICKS} ticks (phase ${state.phase})`);
 
-  checkInvariants(state, adminAdjust, firstVote, failures);
+  checkInvariants(state, firstVote, failures);
 
   const nameOf = (id: string | null) => (id ? (state.teams[id]?.name ?? id) : null);
   const pod = podium(state);
@@ -552,7 +534,7 @@ export function runSimulation(opts: SimOptions): SimResult {
 
 // ---- invariants -----------------------------------------------------------------------------
 
-function checkInvariants(s: GameState, adminAdjust: Record<string, number>, firstVote: Map<string, string>, failures: string[]): void {
+function checkInvariants(s: GameState, firstVote: Map<string, string>, failures: string[]): void {
   const fail = (m: string) => {
     if (failures.length < 50) failures.push(m);
   };
@@ -610,7 +592,7 @@ function checkInvariants(s: GameState, adminAdjust: Record<string, number>, firs
     const t = s.teams[tid];
     r2Total += t.r2Points;
     if (t.score !== t.r1Points + t.r2Points + t.adminAdjust) fail(`score mismatch ${tid}`);
-    if ((adminAdjust[tid] ?? 0) !== t.adminAdjust) fail(`admin adjustments mismatch ${tid}: ${adminAdjust[tid] ?? 0} vs ${t.adminAdjust}`);
+    if (t.adminAdjust !== 0) fail(`legacy adminAdjust must stay 0 ${tid}: ${t.adminAdjust}`);
     const r1 = t.r1;
     const expectR1 = r1 && r1.solved ? calculateRound1Score(r1.solveSeconds ?? 0, r1.hintsTaken.length).finalPoints : 0;
     if (t.r1Points !== expectR1) fail(`R1 points mismatch ${tid}: ${t.r1Points} vs ${expectR1}`);

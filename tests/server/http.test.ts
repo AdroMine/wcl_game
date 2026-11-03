@@ -90,9 +90,12 @@ test('admin endpoints require the bearer token', async () => {
     const wrong = await fetch(`${srv.url}${path}`, { method, headers: { Authorization: 'Bearer nope' }, body: method === 'POST' ? '{}' : undefined });
     assert.equal(wrong.status, 401, `${path} with wrong token`);
   }
-  const ok = await admin(srv.url, 'ADMIN_RENAME_TEAM', { teamId: 'nope', name: 'x' });
+  const ok = await admin(srv.url, 'ADMIN_MOVE_PLAYER', { playerId: 'nope', teamId: null });
   assert.equal(ok.ok, false);
-  assert.equal(ok.error, 'UNKNOWN_TEAM');
+  assert.equal(ok.error, 'UNKNOWN_PLAYER');
+  const removed = await admin(srv.url, 'ADMIN_ADJUST_SCORE', { teamId: 'nope', delta: 5 });
+  assert.equal(removed.ok, false);
+  assert.equal(removed.error, 'BAD_REQUEST'); // not in the command registry any more
   const unknown = await fetch(`${srv.url}/api/admin/command`, { method: 'POST', headers: { Authorization: `Bearer ${ADMIN_TOKEN}` }, body: JSON.stringify({ type: 'ADMIN_NOPE' }) });
   assert.equal(unknown.status, 400);
 });

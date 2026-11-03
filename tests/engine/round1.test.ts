@@ -69,7 +69,6 @@ test('start: the briefing runs first; the 5:00 clock starts when it ends', () =>
   // nothing is accepted while the story plays
   assert.equal(h.as(p, 'R1_SUBMIT', { answer: word }), 'WRONG_PHASE');
   assert.equal(h.as(p, 'R1_HINT', { hint: 1 }), 'WRONG_PHASE');
-  assert.equal(h.admin('ADMIN_MARK_R1_SOLVED', { teamId: t0 }), 'WRONG_PHASE');
   assert.equal(h.state.teams[t0].r1Points, 0);
   // the clock starts at the end of the briefing
   const briefingEnd = h.state.endsAt!;
@@ -331,20 +330,6 @@ test('hints unlock on active time, not wall time, across a pause', () => {
   assert.equal(h.as(p, 'R1_HINT', { hint: 1 }), 'HINT_LOCKED'); // only 100 s active
   h.tick(20);
   h.ok(h.as(p, 'R1_HINT', { hint: 1 }));
-});
-
-test('admin: mark solved scores as if solved now, with hints taken', () => {
-  const { h, teams } = started();
-  const p = h.state.teams[teams[0]].playerIds[0];
-  h.tick(130);
-  h.ok(h.as(p, 'R1_HINT', { hint: 1 }));
-  h.ok(h.admin('ADMIN_MARK_R1_SOLVED', { teamId: teams[0] }));
-  assert.equal(h.state.teams[teams[0]].r1Points, 170);
-  assert.equal(h.state.teams[teams[0]].r1!.markedByAdmin, true);
-  const v = h.state.version;
-  h.ok(h.admin('ADMIN_MARK_R1_SOLVED', { teamId: teams[0] }));
-  assert.equal(h.state.version, v);
-  assert.equal(h.admin('ADMIN_MARK_R1_SOLVED', { teamId: 'nope' }), 'UNKNOWN_TEAM');
 });
 
 test('selectors never expose the codeword or the token hash', () => {

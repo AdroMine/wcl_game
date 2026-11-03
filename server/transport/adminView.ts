@@ -38,9 +38,8 @@ export function buildAdminView(input: AdminViewInput): { stable: string; hash: s
         playerIds: t.playerIds,
         r1Points: t.r1Points,
         r2Points: t.r2Points,
-        adminAdjust: t.adminAdjust,
         score: t.score,
-        r1: t.r1 ? { codeword: t.r1.codeword, solved: t.r1.solved, points: t.r1.points, solveSeconds: t.r1.solveSeconds, hintsTaken: t.r1.hintsTaken, markedByAdmin: t.r1.markedByAdmin } : null,
+        r1: t.r1 ? { codeword: t.r1.codeword, solved: t.r1.solved, points: t.r1.points, solveSeconds: t.r1.solveSeconds, hintsTaken: t.r1.hintsTaken } : null,
       };
     }),
     matches: Object.values(s.r2.matches).map(m => ({

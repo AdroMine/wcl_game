@@ -124,6 +124,7 @@ export interface R1TeamState {
   solveSeconds: number | null;
   points: number;
   solvedBy: string | null;
+  /** Legacy, always false (the admin can no longer mark Round 1 solved). Kept so old snapshots restore. */
   markedByAdmin: boolean;
 }
 
@@ -135,6 +136,7 @@ export interface Team {
   playerIds: string[];
   r1Points: number;
   r2Points: number;
+  /** Legacy, always 0 (the admin can no longer adjust scores). Kept so old snapshots restore. */
   adminAdjust: number;
   /** Always r1Points + r2Points + adminAdjust. */
   score: number;

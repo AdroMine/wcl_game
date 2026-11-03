@@ -31,9 +31,9 @@ function everySelector(s: GameState, now: number): string {
 }
 
 test('determinism: same state + command + now gives deep-equal results; input is not mutated', () => {
-  const { h, t } = setupR3(101, [5, 5, 4, 3], (c, _t, i) => (i === 1 && c === 1 ? 'AMBUSH' : 'TRUCE'));
+  const { h } = setupR3(101, [5, 5, 4, 3], (c, _t, i) => (i === 1 && c === 1 ? 'AMBUSH' : 'TRUCE'));
   const before = JSON.stringify(h.state);
-  const cmd: Command = { commandId: 'det-1', type: 'ADMIN_ADJUST_DISTANCE', actor: { kind: 'admin' }, payload: { teamId: t[0], delta: 33 } };
+  const cmd: Command = { commandId: 'det-1', type: 'ADMIN_ADJUST_DEADLINE', actor: { kind: 'admin' }, payload: { seconds: 33 } };
   const a = reduce(h.state, cmd, { now: h.now });
   const b = reduce(h.state, cmd, { now: h.now });
   assert.deepEqual(a, b);

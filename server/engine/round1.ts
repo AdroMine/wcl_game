@@ -123,7 +123,7 @@ export function closeRound1(d: GameState): void {
   d.r1.closed = true;
 }
 
-function awardSolve(d: GameState, t: Team, now: number, by: string | null, byAdmin: boolean, ev: GameEvent[]): void {
+function awardSolve(d: GameState, t: Team, now: number, by: string | null, ev: GameEvent[]): void {
   const r1 = t.r1!;
   const elapsed = r1ElapsedSeconds(d, now);
   const breakdown = calculateRound1Score(elapsed, r1.hintsTaken.length);
@@ -131,7 +131,7 @@ function awardSolve(d: GameState, t: Team, now: number, by: string | null, byAdm
   r1.solveSeconds = elapsed;
   r1.points = breakdown.finalPoints;
   r1.solvedBy = by;
-  r1.markedByAdmin = byAdmin;
+  r1.markedByAdmin = false; // legacy field, kept so old snapshots still restore
   t.r1Points = breakdown.finalPoints;
   recomputeScore(t);
   ev.push({ type: 'R1_SOLVED', teamId: t.id, points: breakdown.finalPoints, seconds: elapsed });
@@ -156,7 +156,7 @@ const submit: Handler = (d, c, now, ev) => {
   if (d.endsAt != null && now >= d.endsAt) return fail('ROUND_CLOSED');
   if (!t.r1) return fail('NOT_PLAYING');
   if (normalizeAnswer(answer) !== normalizeAnswer(t.r1.codeword)) return fail('WRONG_ANSWER');
-  awardSolve(d, t, now, (c.actor as { playerId: string }).playerId, false, ev);
+  awardSolve(d, t, now, (c.actor as { playerId: string }).playerId, ev);
   return undefined;
 };
 
@@ -181,17 +181,6 @@ const hint: Handler = (d, c, now, ev) => {
   ev.push({ type: 'R1_HINT_TAKEN', teamId: t.id, hint: cfg.hintIndex });
   return undefined;
 };
-
-/** Admin: mark a team's Round 1 as solved; scores as if solved right now. */
-export function adminMarkSolved(d: GameState, teamId: string, now: number, ev: GameEvent[]): ReturnType<Handler> {
-  const t = d.teams[teamId];
-  if (!t) return fail('UNKNOWN_TEAM');
-  if (d.phase !== 'R1_ACTIVE' || d.step === 'BRIEFING') return fail('WRONG_PHASE');
-  if (!t.r1) return fail('NOT_PLAYING');
-  if (t.r1.solved) return NOOP;
-  awardSolve(d, t, now, null, true, ev);
-  return undefined;
-}
 
 export const round1Handlers: Record<string, Handler> = {
   R1_SUBMIT: submit,

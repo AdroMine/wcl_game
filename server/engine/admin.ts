@@ -1,19 +1,19 @@
-// Admin commands. Authentication happens in the server; the engine only checks actor.kind.
+// Admin commands: game flow and roster only (organizer ruling Nov 3: no manual score, distance, honour or solved changes, no crew rename).
+// Authentication happens in the server; the engine only checks actor.kind.
 // Behaviour ported from the supabaseAdmin* functions in src/lib/supabaseService.ts.
 import { CREW_SIZE_MAX, CREW_SIZE_MIN, MIN_DEADLINE_MS, ROLE_IDS } from './config.ts';
-import { asObj, cleanName, detachPlayer, maxAdminSize, recomputeScore, removeTeam, reqInt, reqString } from './common.ts';
+import { asObj, cleanName, detachPlayer, maxAdminSize, removeTeam, reqInt, reqString } from './common.ts';
 import { effNow, setStep } from './clock.ts';
 import { nextNumber } from './ids.ts';
 import { addToTeam, autoGroup, pickBalancedRole, removePlayer } from './lobby.ts';
 import { advance, endRound3 } from './phases.ts';
-import { initRound1, adminMarkSolved } from './round1.ts';
+import { initRound1 } from './round1.ts';
 import { briefingSeconds } from '../content.ts';
 import { adminAutoPair, adminPairAndMaybeStart, initRound2Pairing, startClashes, unpairTeam } from './round2.ts';
-import { adminAdjustDistance, adminToggleHonour, startRound3, triggerSuddenDeath } from './round3.ts';
+import { startRound3, triggerSuddenDeath } from './round3.ts';
 import { createInitialState } from './state.ts';
 import type { Handler, RoleId } from './types.ts';
 import { NOOP, fail } from './types.ts';
-import { MAX_TEAM_NAME } from './config.ts';
 
 const startGame: Handler = (d, _c, now, ev) => {
   if (d.phase !== 'LOBBY') return fail('WRONG_PHASE');
@@ -87,34 +87,6 @@ const adjustDeadline: Handler = (d, c, now) => {
   return undefined;
 };
 
-const adjustScore: Handler = (d, c, _now, ev) => {
-  const o = asObj(c.payload);
-  const id = reqString(o, 'teamId', 64);
-  const delta = reqInt(o, 'delta');
-  if (!id || delta === null) return fail('INVALID_PAYLOAD');
-  const t = d.teams[id];
-  if (!t) return fail('UNKNOWN_TEAM');
-  if (delta === 0) return NOOP;
-  t.adminAdjust += delta;
-  recomputeScore(t);
-  ev.push({ type: 'SCORE_ADJUSTED', teamId: id, delta });
-  return undefined;
-};
-
-const adjustDistance: Handler = (d, c, _now, ev) => {
-  const o = asObj(c.payload);
-  const id = reqString(o, 'teamId', 64);
-  const delta = reqInt(o, 'delta');
-  if (!id || delta === null) return fail('INVALID_PAYLOAD');
-  return adminAdjustDistance(d, id, delta, ev);
-};
-
-const toggleHonour: Handler = (d, c, _now, ev) => {
-  const id = reqString(asObj(c.payload), 'teamId', 64);
-  if (!id) return fail('INVALID_PAYLOAD');
-  return adminToggleHonour(d, id, ev);
-};
-
 const movePlayer: Handler = (d, c, _now, ev) => {
   const o = asObj(c.payload);
   const pid = reqString(o, 'playerId', 64);
@@ -171,19 +143,6 @@ const deleteTeam: Handler = (d, c, _now, ev) => {
   if (!d.teams[id]) return fail('UNKNOWN_TEAM');
   removeTeam(d, id);
   ev.push({ type: 'TEAM_DELETED', teamId: id });
-  return undefined;
-};
-
-const renameTeam: Handler = (d, c, _now, ev) => {
-  const o = asObj(c.payload);
-  const id = reqString(o, 'teamId', 64);
-  const name = cleanName(o?.name, MAX_TEAM_NAME);
-  if (!id || !name) return fail('INVALID_PAYLOAD');
-  const t = d.teams[id];
-  if (!t) return fail('UNKNOWN_TEAM');
-  if (t.name === name) return NOOP;
-  t.name = name;
-  ev.push({ type: 'TEAM_RENAMED', teamId: id });
   return undefined;
 };
 
@@ -247,12 +206,6 @@ const suddenDeath: Handler = (d, c, now, ev) => {
   return triggerSuddenDeath(d, a, b, now, ev);
 };
 
-const markSolved: Handler = (d, c, now, ev) => {
-  const id = reqString(asObj(c.payload), 'teamId', 64);
-  if (!id) return fail('INVALID_PAYLOAD');
-  return adminMarkSolved(d, id, now, ev);
-};
-
 const r2Pair: Handler = (d, c, now, ev) => {
   const o = asObj(c.payload);
   const a = reqString(o, 'teamA', 64);
@@ -284,20 +237,15 @@ export const adminHandlers: Record<string, Handler> = {
   ADMIN_RESUME: resume,
   ADMIN_SKIP_STEP: skipStep,
   ADMIN_ADJUST_DEADLINE: adjustDeadline,
-  ADMIN_ADJUST_SCORE: adjustScore,
-  ADMIN_ADJUST_DISTANCE: adjustDistance,
-  ADMIN_TOGGLE_HONOUR: toggleHonour,
   ADMIN_MOVE_PLAYER: movePlayer,
   ADMIN_REMOVE_PLAYER: removePlayerCmd,
   ADMIN_ADD_PLAYER: addPlayer,
   ADMIN_DELETE_TEAM: deleteTeam,
-  ADMIN_RENAME_TEAM: renameTeam,
   ADMIN_AUTO_GROUP: autoGroupCmd,
   ADMIN_SET_DURATIONS: setDurations,
   ADMIN_SET_CREW_SIZE: setCrewSize,
   ADMIN_RESET_GAME: resetGame,
   ADMIN_TRIGGER_SUDDEN_DEATH: suddenDeath,
-  ADMIN_MARK_R1_SOLVED: markSolved,
   ADMIN_R2_PAIR: r2Pair,
   ADMIN_R2_UNPAIR: r2Unpair,
   ADMIN_R2_AUTO_PAIR: r2AutoPair,

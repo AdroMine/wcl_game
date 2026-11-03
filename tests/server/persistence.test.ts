@@ -399,7 +399,7 @@ test('runtime persistence listener: snapshot content equals the live state', asy
     const rt = new Runtime(sampleState());
     const p = new Persistence(loadConfig({ SNAPSHOT_DIR: dir }), { intervalMs: 20 });
     p.start(rt);
-    rt.apply({ commandId: 'x1', type: 'ADMIN_RENAME_TEAM', actor: { kind: 'admin' }, payload: { teamId: rt.state.teamOrder[0], name: 'Renamed Crew' } });
+    rt.apply({ commandId: 'x1', type: 'ADMIN_ADD_PLAYER', actor: { kind: 'admin' }, payload: { name: 'Added Offline' } });
     await sleep(120);
     const snap = await new FileSnapshotStore(dir).loadLatest();
     assert.deepEqual(snap?.state, JSON.parse(JSON.stringify(rt.state)));

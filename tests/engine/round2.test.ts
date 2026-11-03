@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { formTeams, harness, pairByCode, playRound2, teamVotesR2, toR2Pairing } from './helpers.ts';
+import { addPoints, formTeams, harness, pairByCode, playRound2, teamVotesR2, toR2Pairing } from './helpers.ts';
 import type { Harness } from './helpers.ts';
 import { calculateClashPoints, calculateTeamStance, computeMoral, newClash } from '../../server/engine/round2.ts';
 import { R2_SCORING } from '../../server/engine/config.ts';
@@ -214,7 +214,7 @@ test('unpaired team members cannot vote', () => {
 
 test('scoring: applied exactly once per clash at the end of VOTE; score = R1 + R2', () => {
   const { h, t } = r2([5, 5]);
-  h.ok(h.admin('ADMIN_ADJUST_SCORE', { teamId: t[0], delta: 40 }));
+  addPoints(h, t[0], 40);
   pairByCode(h, t[0], t[1]);
   h.nextDeadline();
   h.nextDeadline();

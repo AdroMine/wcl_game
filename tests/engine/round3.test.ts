@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { formTeams, harness, pairByCode, playRound2, setupR3, toR2Pairing, toReveal, toVote, voteR3 } from './helpers.ts';
+import { addPoints, formTeams, harness, pairByCode, playRound2, setDistance, setupR3, toR2Pairing, toReveal, toVote, voteR3 } from './helpers.ts';
 import {
   calculateHeadstartMeters,
   calculateRound3StartingDistance,
@@ -190,7 +190,7 @@ test('start distance caps the head-start at 200 m', () => {
   toR2Pairing(h);
   pairByCode(h, t[0], t[1]);
   playRound2(h, () => 'TRUCE');
-  h.ok(h.admin('ADMIN_ADJUST_SCORE', { teamId: t[0], delta: 5000 }));
+  addPoints(h, t[0], 5000);
   h.ok(h.admin('ADMIN_START_R3'));
   assert.equal(h.state.r3!.teams[t[0]].distance, 200 + 75);
   assert.equal(h.state.r3!.teams[t[0]].startDistance, 275);
@@ -355,7 +355,7 @@ function nearPortal(seed: number, n: number) {
 test('escape: crews at >= 1000 m stop playing; waves continue until 3 have escaped (Q9)', () => {
   const { h, t } = nearPortal(51, 6);
   // put four crews 20 m from the portal; a rowboat (+150) carries them over
-  for (const id of t.slice(0, 4)) h.ok(h.admin('ADMIN_ADJUST_DISTANCE', { teamId: id, delta: 1000 - 20 - h.state.r3!.teams[id].distance }));
+  for (const id of t.slice(0, 4)) setDistance(h, id, 980);
   toVote(h);
   toReveal(h);
   assert.equal(h.state.r3!.escapeOrder.length, 4); // all four cross in wave 1
@@ -369,7 +369,7 @@ test('escape: crews at >= 1000 m stop playing; waves continue until 3 have escap
 
 test('waves keep going when fewer than 3 have escaped; escaped crews no longer vote or race', () => {
   const { h, t } = nearPortal(52, 5);
-  h.ok(h.admin('ADMIN_ADJUST_DISTANCE', { teamId: t[0], delta: 1000 - 20 - h.state.r3!.teams[t[0]].distance }));
+  setDistance(h, t[0], 980);
   toReveal(h);
   assert.deepEqual(h.state.r3!.escapeOrder, [t[0]]);
   h.nextDeadline();
@@ -388,7 +388,7 @@ test('waves keep going when fewer than 3 have escaped; escaped crews no longer v
 
 test('round ends when every active crew has escaped (fewer than 3 crews)', () => {
   const { h, t } = nearPortal(53, 2);
-  for (const id of t) h.ok(h.admin('ADMIN_ADJUST_DISTANCE', { teamId: id, delta: 1000 - 20 - h.state.r3!.teams[id].distance }));
+  for (const id of t) setDistance(h, id, 980);
   toReveal(h);
   h.nextDeadline();
   assert.equal(h.state.phase, 'R3_RESULTS');
@@ -397,8 +397,8 @@ test('round ends when every active crew has escaped (fewer than 3 crews)', () =>
 test('same-wave crossers are ranked by overshoot, boldness, unanimity, then prior points', () => {
   const { h, t } = nearPortal(54, 4);
   // all at 900: a ghost (alone, 1350) beats two rowboats (1050); equal rowboats -> unanimity -> prior points
-  for (const id of t) h.ok(h.admin('ADMIN_ADJUST_DISTANCE', { teamId: id, delta: 900 - h.state.r3!.teams[id].distance }));
-  h.ok(h.admin('ADMIN_ADJUST_SCORE', { teamId: t[1], delta: 500 }));
+  for (const id of t) setDistance(h, id, 900);
+  addPoints(h, t[1], 500);
   toVote(h);
   voteR3(h, t[3], 'GHOST_SHIP');
   const p2 = h.state.teams[t[2]].playerIds;
@@ -409,9 +409,9 @@ test('same-wave crossers are ranked by overshoot, boldness, unanimity, then prio
   assert.deepEqual(h.state.r3!.escapeOrder, [t[3], t[1], t[0], t[2]]);
 });
 
-test('admin: end round 3 manually; distance never below 0', () => {
+test('admin: end round 3 manually', () => {
   const { h, t } = nearPortal(55, 3);
-  h.ok(h.admin('ADMIN_ADJUST_DISTANCE', { teamId: t[0], delta: -100000 }));
+  setDistance(h, t[0], 0);
   assert.equal(h.state.r3!.teams[t[0]].distance, 0);
   h.ok(h.admin('ADMIN_END_R3'));
   assert.equal(h.state.phase, 'R3_RESULTS');
@@ -421,20 +421,10 @@ test('admin: end round 3 manually; distance never below 0', () => {
   assert.equal(h.state.endsAt, null);
 });
 
-test('admin: honour toggle moves 75 m and flips the flag', () => {
-  const { h, t } = nearPortal(56, 2);
-  const before = h.state.r3!.teams[t[0]].distance;
-  assert.equal(h.state.r3!.teams[t[0]].honourBonus, true);
-  h.ok(h.admin('ADMIN_TOGGLE_HONOUR', { teamId: t[0] }));
-  assert.equal(h.state.r3!.teams[t[0]].distance, before - 75);
-  h.ok(h.admin('ADMIN_TOGGLE_HONOUR', { teamId: t[0] }));
-  assert.equal(h.state.r3!.teams[t[0]].distance, before);
-});
-
 function sdGame(seed: number) {
   const g = nearPortal(seed, 5);
   const { h, t } = g;
-  for (const id of t.slice(0, 3)) h.ok(h.admin('ADMIN_ADJUST_DISTANCE', { teamId: id, delta: 1000 - 20 - h.state.r3!.teams[id].distance }));
+  for (const id of t.slice(0, 3)) setDistance(h, id, 980);
   toReveal(h);
   return g;
 }
@@ -468,7 +458,7 @@ test('sudden death: admin only, between two escaped crews, 40 s, decides podium 
 test('sudden death: identical maneuvers -> higher R1+R2 points wins', () => {
   const { h } = sdGame(62);
   const [a, , c] = h.state.r3!.escapeOrder;
-  h.ok(h.admin('ADMIN_ADJUST_SCORE', { teamId: c, delta: 10_000 }));
+  addPoints(h, c, 10_000);
   h.ok(h.admin('ADMIN_TRIGGER_SUDDEN_DEATH', { teamA: a, teamB: c }));
   h.nextDeadline(); // nobody voted: both SHIELDS -> deadlock
   assert.equal(h.state.r3!.sd!.winnerTeamId, c);

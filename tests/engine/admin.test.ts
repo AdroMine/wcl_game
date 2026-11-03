@@ -93,15 +93,16 @@ test('adjust deadline: +/- seconds, never earlier than now + 5 s, not for untime
   assert.equal(h.runDue(), 1);
 });
 
-test('score adjustments accumulate and keep score = r1 + r2 + adjust', () => {
+test('adjust deadline accepts the panel presets: -30, -15, +15, +30, +60 s', () => {
   const h = harness();
-  const [t] = formTeams(h, [3]);
-  h.ok(h.admin('ADMIN_ADJUST_SCORE', { teamId: t, delta: 100 }));
-  h.ok(h.admin('ADMIN_ADJUST_SCORE', { teamId: t, delta: -30 }));
-  assert.equal(h.state.teams[t].score, 70);
-  assert.equal(h.state.teams[t].adminAdjust, 70);
-  assert.equal(h.admin('ADMIN_ADJUST_SCORE', { teamId: 'x', delta: 1 }), 'UNKNOWN_TEAM');
-  assert.equal(h.admin('ADMIN_ADJUST_SCORE', { teamId: t, delta: 1.5 }), 'INVALID_PAYLOAD');
+  formTeams(h, [3]);
+  h.ok(h.admin('ADMIN_START_GAME'));
+  // the panel's preset steps: -30, -15, +15, +30, +60 s
+  for (const s of [15, 30, 60, -15, -30]) {
+    const before = h.state.endsAt!;
+    h.ok(h.admin('ADMIN_ADJUST_DEADLINE', { seconds: s }));
+    assert.equal(h.state.endsAt, Math.max(before + s * 1000, h.now + 5000));
+  }
 });
 
 test('move / remove / add players, with team size limits', () => {
@@ -213,20 +214,6 @@ test('reset game returns to an empty lobby and keeps monotonic counters', () => 
   assert.equal(h.state.playerOrder.length, 1);
 });
 
-test('mark R1 solved only while Round 1 is running', () => {
-  const h = harness();
-  const [t] = formTeams(h, [3]);
-  assert.equal(h.admin('ADMIN_MARK_R1_SOLVED', { teamId: t }), 'WRONG_PHASE');
-});
-
-test('round 3 admin tools need a running Round 3', () => {
-  const h = harness();
-  const [t] = formTeams(h, [3]);
-  assert.equal(h.admin('ADMIN_ADJUST_DISTANCE', { teamId: t, delta: 5 }), 'WRONG_PHASE');
-  assert.equal(h.admin('ADMIN_TOGGLE_HONOUR', { teamId: t }), 'WRONG_PHASE');
-  assert.equal(h.admin('ADMIN_TRIGGER_SUDDEN_DEATH', { teamA: t, teamB: 'x' }), 'WRONG_PHASE');
-});
-
 test('a skipped VOTE step still resolves the wave exactly once', () => {
   const { h } = setupR3(9, [3, 3, 3], () => 'TRUCE');
   toVote(h);
@@ -234,4 +221,14 @@ test('a skipped VOTE step still resolves the wave exactly once', () => {
   assert.equal(h.state.step, 'REVEAL');
   assert.equal(h.state.r3!.reports.length, 1);
   void playRound2;
+});
+
+test('removed admin tools are rejected as unknown commands (no manual score, distance, honour, solved or rename)', () => {
+  const h = harness();
+  const [t] = formTeams(h, [3]);
+  const before = JSON.stringify(h.state.teams[t]);
+  for (const type of ['ADMIN_ADJUST_SCORE', 'ADMIN_ADJUST_DISTANCE', 'ADMIN_TOGGLE_HONOUR', 'ADMIN_MARK_R1_SOLVED', 'ADMIN_RENAME_TEAM']) {
+    assert.equal(h.admin(type, { teamId: t, delta: 100, name: 'Hacked' }), 'UNKNOWN_COMMAND', type);
+  }
+  assert.equal(JSON.stringify(h.state.teams[t]), before);
 });

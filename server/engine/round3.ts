@@ -340,29 +340,6 @@ export function escapeNow(d: GameState, teamId: string): void {
   rankEscapees(d);
 }
 
-export function adminAdjustDistance(d: GameState, teamId: string, delta: number, ev: GameEvent[]) {
-  const t3 = d.r3?.teams[teamId];
-  if (!d.r3) return fail('WRONG_PHASE');
-  if (!t3) return fail('UNKNOWN_TEAM');
-  if (t3.escaped) return fail('ALREADY_ESCAPED');
-  t3.distance = Math.max(0, t3.distance + delta);
-  if (t3.distance >= R3.targetDistance) escapeNow(d, teamId);
-  ev.push({ type: 'R3_DISTANCE_ADJUSTED', teamId, delta });
-  return undefined;
-}
-
-export function adminToggleHonour(d: GameState, teamId: string, ev: GameEvent[]) {
-  const t3 = d.r3?.teams[teamId];
-  if (!d.r3) return fail('WRONG_PHASE');
-  if (!t3) return fail('UNKNOWN_TEAM');
-  if (t3.escaped) return fail('ALREADY_ESCAPED');
-  t3.honourBonus = !t3.honourBonus;
-  t3.distance = Math.max(0, t3.distance + (t3.honourBonus ? R3.honourBonus : -R3.honourBonus));
-  if (t3.distance >= R3.targetDistance) escapeNow(d, teamId);
-  ev.push({ type: 'R3_HONOUR_TOGGLED', teamId, granted: t3.honourBonus });
-  return undefined;
-}
-
 // ---- votes ------------------------------------------------------------------
 
 function armLeash(d: GameState, teamId: string, requested: string | undefined): { error: ReturnType<typeof fail> } | { changed: boolean } {

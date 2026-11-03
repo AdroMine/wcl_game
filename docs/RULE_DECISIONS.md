@@ -24,6 +24,10 @@ Organizer rulings (Areeb, Nov 1, 2026) where `GAME_MASTER_RULES_AND_DESIGN.md` c
 - Round 1 speed tiers are based on whole seconds elapsed: ≤60 s → 300, ≤120 → 250, ≤180 → 200, ≤240 → 150, otherwise 100.
 - Round 3 head-start = min(200 m, floor(R1+R2 points / 5)), plus 75 m if Honourable.
 
+## Confirmed later (Nov 3): admin controls
+
+- **Game flow and roster only.** The admin has no manual score, distance, honour or solved changes, and cannot rename crews (organizer, Nov 3). `ADMIN_ADJUST_SCORE`, `ADMIN_ADJUST_DISTANCE`, `ADMIN_TOGGLE_HONOUR`, `ADMIN_MARK_R1_SOLVED` and `ADMIN_RENAME_TEAM` are removed. The admin can still pause, skip, adjust timers, pair crews, move or remove players, disband a crew in the lobby, set crew size, trigger Sudden Death and end Round 3. The admin panel is designed for a phone.
+
 ## Confirmed later (Nov 2): UI restore
 
 - **Server-timed briefing step.** Round 1, Round 2 (before clash 1's huddle, once the global clash clock starts) and Round 3 (before wave 1's Bluff) each open with a `BRIEFING` step whose length is computed from the round's story and rules: `ceil(sentences * 2.8 + 3 + (rules + 1) * 2 + 3)` seconds (26 s, 26 s and 28 s with the current text). During the briefing no answers, hints or votes are accepted (`WRONG_PHASE`), and the round's real clock (the Round 1 5:00 deadline, hint unlocks and speed tiers, the Round 2 clash timers, the Round 3 wave timers) starts only when the briefing ends. **Skip step** skips the briefing. Scoring values and rules are unchanged; only the moment the clock starts moved.

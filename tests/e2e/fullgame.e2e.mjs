@@ -82,6 +82,14 @@ async function skipBriefing(phase) {
 // The Round 2 step is shown by the highlighted segment of the phase bar ("Huddle", "Dialogue", "Vote", "Debrief").
 const r2StepOf = page => page.getByTestId('r2-phasebar').evaluate(el => ([...el.children].find(c => /font-black/.test(c.className))?.textContent ?? '').replace(/PHASE d/i, '').trim()).catch(() => '');
 const waitR2Step = (page, re, timeout = 20000) => waitFor(async () => re.test(await r2StepOf(page)), `R2 step ~ ${re}`, timeout);
+// The admin header exposes the machine phase in data-phase (its visible text is for humans: "Round 1 · 03:42").
+const adminPhaseIs = (page, re) => page.getByTestId('admin-phase').getAttribute('data-phase').then(v => re.test(v ?? '')).catch(() => false);
+const waitAdminPhase = (page, re, timeout = 20000) => waitFor(() => adminPhaseIs(page, re), `admin phase ~ ${re}`, timeout);
+// Main flow button: every "next" action has a confirm step.
+async function adminNext(page) {
+  await page.getByTestId('admin-next').click();
+  await page.getByTestId('confirm-yes').click();
+}
 const shot = (page, name) => page.screenshot({ path: join(SHOTS, `${name}.png`), fullPage: true });
 
 // ---------------------------------------------------------------- server
@@ -167,7 +175,8 @@ try {
 
   // ---- admin panel + projector
   step('Admin panel and projector open');
-  const adminCtx = await browser.newContext({ viewport: { width: 1100, height: 900 }, serviceWorkers: 'block' });
+  // The organizer runs the game from a phone: the admin page is driven at 390x844.
+  const adminCtx = await browser.newContext({ viewport: { width: 390, height: 844 }, serviceWorkers: 'block' });
   const admin = await adminCtx.newPage();
   let adminIgnore = true; // the deliberate wrong-token attempt below logs a 401
   admin.on('console', m => m.type() === 'error' && !adminIgnore && consoleErrors.push(`admin: ${m.text()}`));
@@ -182,9 +191,20 @@ try {
   adminIgnore = false;
   await admin.getByTestId('admin-token').fill(ADMIN_TOKEN);
   await admin.getByTestId('admin-login').click();
-  await waitText(admin, 'admin-phase', /LOBBY/);
+  await waitAdminPhase(admin, /LOBBY/);
   ok(true, 'admin: signed in, phase LOBBY visible');
-  ok(await shown(admin, 'admin-status'), 'admin: status strip visible');
+  ok(await shown(admin, 'admin-status'), 'admin: status line visible');
+  await waitText(admin, 'admin-light', /OK/);
+  ok(true, 'admin: the server light says OK');
+  ok(/0 shades · 0 crews · crew size 5/.test(await text(admin, 'admin-venue')), 'admin: venue line shows shades, crews and crew size');
+  ok(!(await shown(admin, 'admin-details')), 'admin: server details are hidden until toggled');
+  await admin.getByTestId('admin-details-toggle').click();
+  ok(await shown(admin, 'admin-details'), 'admin: server details toggle shows the raw metrics');
+  await admin.getByTestId('admin-details-toggle').click();
+  const noHScroll = async what => ok(await admin.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1), `admin: no horizontal scroll (${what})`);
+  await noHScroll('lobby');
+  const tiny = await admin.evaluate(() => [...document.querySelectorAll('button')].filter(b => b.offsetParent && b.getBoundingClientRect().height < 43).map(b => b.textContent.trim()));
+  ok(tiny.length === 0, `admin: every visible button is at least 44 px high (${tiny.join(', ') || 'none too small'})`);
 
   const screenCtx = await browser.newContext({ viewport: { width: 1600, height: 900 }, serviceWorkers: 'block' });
   const screen = await screenCtx.newPage();
@@ -202,10 +222,9 @@ try {
   ok(dres.ok !== false, 'admin API: ADMIN_SET_DURATIONS accepted');
   await waitFor(async () => (await adminView()).config.r1Seconds === 40, 'durations applied');
   ok(true, 'durations applied (R1 40 s, R2 8/6/14/8, R3 12/14/8)');
-  await admin.getByTestId('tab-settings').click();
+  await admin.getByTestId('tab-roster').click();
   ok((await admin.getByLabel('Round 1', { exact: true }).count()) === 0, 'admin: there is no durations editor in the UI');
-  await shot(admin, '01-admin-settings');
-  await admin.getByTestId('tab-game').click();
+  await admin.getByTestId('tab-live').click();
 
   // ---- 11 phones join
   step('Players join (name entry only)');
@@ -235,11 +254,11 @@ try {
   ok((await phones[0].page.getByTestId('role-card-missing').count()) === 4 && (await phones[0].page.getByTestId('role-card-filled').count()) === 1, 'lobby: 1 filled role card, 4 "Missing Role" cards');
   ok(/missing role/i.test(await phones[0].page.locator('body').innerText()), 'lobby: explicit "Missing Role" badge text');
   await shot(phones[0].page, '04-lobby-team-1-of-5');
-  ok(/Need at least 3/.test(await text(phones[0].page, 'size-hint')), 'lobby: 1 member shows "Need at least 3"');
+  ok(/Room for 4 more/.test(await text(phones[0].page, 'size-hint')), 'lobby: 1 member shows "Room for 4 more"');
   ok(/crew size 5/.test(await text(screen, 'screen-crew-size')), 'screen: lobby shows crew size 5');
 
   step('Admin crew-size control changes the roster cards and the projector');
-  await admin.getByTestId('tab-teams').click();
+  await admin.getByTestId('tab-live').click();
   await admin.getByTestId('crew-size-3').click();
   await waitFor(async () => (await adminView()).crewSize === 3, 'crew size 3 applied');
   await waitText(screen, 'screen-crew-size', /crew size 3/);
@@ -251,7 +270,6 @@ try {
   await waitFor(async () => (await adminView()).crewSize === 5, 'crew size back to 5');
   await waitText(screen, 'screen-crew-size', /crew size 5/);
   await waitFor(async () => (await phones[0].page.getByTestId('role-card-missing').count()) === 4, 'four missing roles at crew size 5');
-  await admin.getByTestId('tab-game').click();
   const codeB = await createTeam(phones[5].page);
   const codeSolo = await createTeam(phones[10].page);
   ok(codeA !== codeB && codeB !== codeSolo, 'three different team codes');
@@ -277,13 +295,27 @@ try {
   await waitText(phones[0].page, 'team-name', /Team Alpha/);
   await waitText(phones[1].page, 'team-name', /Team Alpha/);
   ok(true, 'team renamed, teammates see it');
-  await adminHttp('ADMIN_RENAME_TEAM', { teamId: (await adminView()).teams[1].id, name: 'Team Bravo' });
+  await phones[5].page.getByLabel('Rename crew').click();
+  await phones[5].page.getByLabel('Crew name').fill('Team Bravo');
+  await phones[5].page.getByText('Save', { exact: true }).click();
+  await waitText(phones[5].page, 'team-name', /Team Bravo/);
+  for (const bad of ['ADMIN_RENAME_TEAM', 'ADMIN_ADJUST_SCORE', 'ADMIN_ADJUST_DISTANCE', 'ADMIN_TOGGLE_HONOUR', 'ADMIN_MARK_R1_SOLVED']) {
+    ok((await adminHttp(bad, { teamId: (await adminView()).teams[0].id, delta: 5, name: 'x' })).ok === false, `admin API: ${bad} is gone`);
+  }
   await waitShown(screen, 'screen-instruction');
 
   // ---- Round 1
+  await shot(admin, 'admin-01-lobby');
+  await admin.getByTestId('tab-roster').click();
+  await admin.getByRole('button', { name: 'Expand all' }).click();
+  ok((await admin.getByTestId('admin-team').count()) >= 2, 'admin roster: crew cards listed');
+  ok(!(await admin.getByRole('button', { name: /rename/i }).count()), 'admin roster: no rename control');
+  ok(!(await bodyHas(admin, /codeword/i)), 'admin roster: no codeword in the lobby');
+  await shot(admin, 'admin-01b-roster');
+  await admin.getByTestId('tab-live').click();
   step('Round 1');
-  await admin.getByTestId('admin-next').click(); // Start Round 1
-  await waitText(admin, 'admin-phase', /R1_ACTIVE/);
+  await adminNext(admin); // Start Round 1
+  await waitAdminPhase(admin, /R1_ACTIVE/);
   await Promise.all(phones.map(p => waitShown(p.page, 'briefing')));
   ok(true, 'R1: every phone shows the briefing (story + rules) during the server-timed BRIEFING step');
   const briefText = await phones[0].page.getByTestId('briefing').innerText();
@@ -328,6 +360,11 @@ try {
   ok(true, 'R1: team A solved, every teammate sees the solved state');
   ok(/\+\d+ PTS/.test(await text(phones[1].page, 'r1-solved')), 'R1: points shown');
   await shot(phones[1].page, '10-round1-solved');
+  await admin.getByTestId('tab-live').click();
+  await waitText(admin, 'r1-solved-count', /1 of \d+ solved/);
+  ok(/codeword/i.test(await text(admin, 'card-r1')), 'admin live: Round 1 card shows codewords');
+  await noHScroll('round 1');
+  await shot(admin, 'admin-02-r1-active');
   ok(!(await shown(phones[5].page, 'r1-solved')), 'R1: team B is not solved');
 
   // refresh mid-round
@@ -345,7 +382,7 @@ try {
   ok(/Player 2|Team Alpha/.test(await phones[2].page.locator('body').innerText()), 'refresh: still the same player and crew');
 
   // R1 closes by itself (40 s) -> results
-  await waitText(admin, 'admin-phase', /R1_RESULTS/, 60000);
+  await waitAdminPhase(admin, /R1_RESULTS/, 60000);
   await Promise.all(
     phones.map(p =>
       waitBody(p.page, /standings/i).catch(async e => {
@@ -362,8 +399,8 @@ try {
 
   // ---- Round 2
   step('Round 2 pairing');
-  await admin.getByTestId('admin-next').click(); // Start Round 2
-  await waitText(admin, 'admin-phase', /R2_PAIRING/);
+  await adminNext(admin); // Start Round 2
+  await waitAdminPhase(admin, /R2_PAIRING/);
   const pA = phones[1].page;
   const pB = phones[6].page;
   await Promise.all([waitShown(pA, 'my-battle-code'), waitShown(pB, 'my-battle-code')]);
@@ -393,6 +430,10 @@ try {
   ok(true, 'R2: both crews see the briefing step');
   await shot(pA, '14b-round2-briefing');
   await skipBriefing('R2_CLASH');
+  await waitShown(admin, 'card-clash');
+  await sleep(1200);
+  await noHScroll('round 2 clash');
+  await shot(admin, 'admin-03-r2-clash');
   await Promise.all([waitShown(pA, 'r2-step'), waitShown(pB, 'r2-step')]);
   await waitR2Step(pA, /huddle/i);
   const stepA = await r2StepOf(pA);
@@ -433,7 +474,7 @@ try {
     await adminHttp('ADMIN_SKIP_STEP', { phaseSeq: ph.phaseSeq });
     await sleep(120);
   }
-  await waitText(admin, 'admin-phase', /R2_RESULTS/, 20000);
+  await waitAdminPhase(admin, /R2_RESULTS/, 20000);
   await Promise.all([0, 5].map(i => waitShown(phones[i].page, 'r2-moral')));
   ok(/Betrayed/.test(await text(phones[0].page, 'r2-moral')), 'R2: team A (ambushed once) is Betrayed');
   ok(await shown(phones[0].page, 'r2-history'), 'R2: clash history shown');
@@ -441,8 +482,8 @@ try {
 
   // ---- pause / resume while a clock runs happens in round 3
   step('Round 3');
-  await admin.getByTestId('admin-next').click(); // Start Round 3
-  await waitText(admin, 'admin-phase', /R3_ACTIVE/);
+  await adminNext(admin); // Start Round 3
+  await waitAdminPhase(admin, /R3_ACTIVE/);
   await Promise.all([0, 5].map(i => waitShown(phones[i].page, 'briefing')));
   ok(true, 'R3: phones show the briefing step first');
   await skipBriefing('R3_ACTIVE');
@@ -516,19 +557,43 @@ try {
   // escapes and podium
   const av3 = await adminView();
   const idOf = code => av3.teams.find(t => t.emojiCode === code).id;
-  await adminHttp('ADMIN_ADJUST_DISTANCE', { teamId: idOf(codeA), delta: 1500 });
-  await adminHttp('ADMIN_ADJUST_DISTANCE', { teamId: idOf(codeB), delta: 1500 });
+  await waitShown(admin, 'card-r3');
+  await noHScroll('round 3');
+  await shot(admin, 'admin-04-r3');
+  await admin.getByTestId('admin-standings').click();
+  await waitShown(admin, 'modal-standings');
+  ok((await admin.getByTestId('standing-row').count()) >= 2, 'admin: standings modal lists the crews');
+  await admin.screenshot({ path: join(SHOTS, 'admin-05-standings-modal.png') });
+  await admin.getByRole('button', { name: 'Close', exact: true }).first().click();
+  await admin.getByTestId('admin-qr').click();
+  await waitShown(admin, 'modal-qr');
+  ok((await text(admin, 'qr-url')).startsWith(BASE), 'admin: QR modal shows the join URL');
+  await waitFor(async () => (await admin.locator('[data-testid="modal-qr"] img').count()) === 1, 'QR image');
+  await admin.screenshot({ path: join(SHOTS, 'admin-06-qr-modal.png') });
+  await admin.getByRole('button', { name: 'Close', exact: true }).first().click();
+  // The admin cannot move crews any more. Make two crews escape the way an operator could in an emergency:
+  // edit a backup and restore it (the game comes back paused), then resume from the panel.
+  const bk = await (await fetch(`${BASE}/api/admin/backup`, { headers: A })).json();
+  [idOf(codeA), idOf(codeB)].forEach((id, i) => {
+    const r3 = bk.state.r3;
+    Object.assign(r3.teams[id], { distance: 1000, escaped: true, escapedInWave: bk.state.wave, escapeRank: i + 1 });
+    r3.escapeOrder.push(id);
+  });
+  const rs = await (await fetch(`${BASE}/api/admin/restore`, { method: 'POST', headers: A, body: JSON.stringify(bk) })).json();
+  ok(rs.ok === true, 'admin API: edited backup restored for the escape scenario');
+  await waitShown(admin, 'admin-resume');
+  await admin.getByTestId('admin-resume').click();
   await waitShown(phones[0].page, 'r3-escaped');
   ok(true, 'R3: escaped crew sees the escaped state');
-  await admin.getByRole('button', { name: 'End Round 3' }).click();
-  await waitText(admin, 'admin-phase', /R3_RESULTS/);
+  await adminNext(admin); // End Round 3
+  await waitAdminPhase(admin, /R3_RESULTS/);
   await Promise.all([0, 5].map(i => waitShown(phones[i].page, 'r3-podium')));
   ok(/Team Alpha|Team Bravo/.test(await text(phones[0].page, 'r3-podium')), 'R3: podium shown');
   await shot(phones[0].page, '30-round3-podium');
   await waitShown(screen, 'screen-podium');
   await shot(screen, '31-screen-podium');
-  await admin.getByTestId('admin-next').click(); // Finish
-  await waitText(admin, 'admin-phase', /FINISHED/);
+  await adminNext(admin); // Finish
+  await waitAdminPhase(admin, /FINISHED/);
   await waitShown(phones[0].page, 'final-rank');
   ok(/rank \d of 2/.test(await text(phones[0].page, 'final-rank')), 'finished: final rank shown');
   await shot(phones[0].page, '32-finished');
@@ -537,7 +602,7 @@ try {
   ok((await phones[0].page.getByTestId('board-drawer').innerText()).includes('Team'), 'leaderboard drawer lists the crews');
   await shot(phones[0].page, '33-leaderboard-drawer');
   await phones[0].page.getByLabel('Close standings').click();
-  await shot(admin, '34-admin-finished');
+  await shot(admin, 'admin-07-finished');
   ok((await admin.getByTestId('admin-status').innerText()).toLowerCase().includes('phones connected'), 'admin: status strip shows live health data');
 
   // ---- backup, reset, restore
@@ -547,17 +612,17 @@ try {
   writeFileSync(backupPath, await (await fetch(`${BASE}/api/admin/backup`, { headers: A })).text());
   const backup = JSON.parse(readFileSync(backupPath, 'utf8'));
   ok(backup.format === 1 && !!backup.state, 'admin API: backup downloaded (format 1)');
-  await admin.getByTestId('tab-settings').click();
+  await admin.getByTestId('admin-reset').click();
   ok(await admin.getByTestId('reset-game').isDisabled(), 'admin: reset button disabled until RESET is typed');
   await admin.getByTestId('reset-confirm').fill('RESET');
   await admin.getByTestId('reset-game').click();
-  await waitText(admin, 'admin-phase', /LOBBY/);
+  await waitAdminPhase(admin, /LOBBY/);
   await waitShown(phones[0].page, 'join-name', 15000);
   ok(true, 'reset: an unknown player (server forgot them) is shown the Join screen');
   await shot(phones[0].page, '35-after-reset-join');
   const restored = await (await fetch(`${BASE}/api/admin/restore`, { method: 'POST', headers: A, body: readFileSync(backupPath, 'utf8') })).json();
   ok(restored.ok === true && restored.paused === true, 'admin API: restore accepted, game comes back paused');
-  await waitText(admin, 'admin-phase', /FINISHED/, 15000);
+  await waitAdminPhase(admin, /FINISHED/, 15000);
   await waitShown(phones[0].page, 'final-rank', 20000);
   ok(await bodyHas(phones[0].page, /Paused by the host/), 'restore: game is back PAUSED and the known player is recognised again');
 

@@ -1,5 +1,7 @@
 // Test helpers: a tiny harness around reduce()/due() with a fake clock.
 import { createInitialState, due, reduce } from '../../server/engine/index.ts';
+import { recomputeScore } from '../../server/engine/common.ts';
+import { escapeNow } from '../../server/engine/round3.ts';
 import type { Actor, Command, ErrorCode, GameEvent, GameState } from '../../server/engine/index.ts';
 
 export interface Harness {
@@ -178,4 +180,18 @@ export function toReveal(h: Harness): void {
 export function toVote(h: Harness): void {
   let guard = 0;
   while (!(h.state.phase === 'R3_ACTIVE' && h.state.step === 'VOTE') && guard++ < 10) h.nextDeadline();
+}
+
+/** TEST SETUP ONLY: the admin can no longer move crews. Puts a crew at an exact Round 3 distance (escaping it if at the portal). */
+export function setDistance(h: Harness, teamId: string, meters: number): void {
+  const t3 = h.state.r3!.teams[teamId];
+  t3.distance = Math.max(0, meters);
+  if (t3.distance >= 1000) escapeNow(h.state, teamId);
+}
+
+/** TEST SETUP ONLY: gives a crew extra prior points (the admin can no longer adjust scores). */
+export function addPoints(h: Harness, teamId: string, points: number): void {
+  const t = h.state.teams[teamId];
+  t.r1Points += points;
+  recomputeScore(t);
 }

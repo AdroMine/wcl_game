@@ -396,6 +396,18 @@ export class Swarm {
     if (await settled(Math.min(timeoutMs, 12_000))) return true;
     this.log('some bots have no team yet: admin auto-group');
     await this.admin('ADMIN_AUTO_GROUP');
+    if (await settled(Math.min(8000, Math.max(5000, timeoutMs - (Date.now() - t0))))) return true;
+    // Auto-group leaves a single straggler for the host to place: move each one into a crew with room (< 6).
+    const loners = this.bots.filter(b => !b.view?.me?.joinedTeam);
+    const crews = new Map<string, number>();
+    for (const b of this.bots) if (b.view?.team) crews.set(b.view.team.id, b.view.team.members.length);
+    for (const b of loners) {
+      const room = [...crews.entries()].sort((x, y) => x[1] - y[1]).find(([, n]) => n < 6);
+      if (!room) break;
+      this.log(`placing straggler ${b.cfg.name} by hand`);
+      await this.admin('ADMIN_MOVE_PLAYER', { playerId: b.id, teamId: room[0] });
+      crews.set(room[0], room[1] + 1);
+    }
     return settled(Math.max(5000, timeoutMs - (Date.now() - t0)));
   }
 

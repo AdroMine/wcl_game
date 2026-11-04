@@ -17,6 +17,7 @@ import type {
   SdAction,
   SuddenDeath,
   Vessel,
+  WaveVoteLog,
   WaveOutcome,
   WaveReport,
 } from './types.ts';
@@ -253,7 +254,7 @@ export function r3ShouldFinish(d: GameState): boolean {
 
 export function startRound3(d: GameState, now: number, ev: GameEvent[]): void {
   computeAllMoral(d);
-  const r3: R3State = { teams: {}, votes: {}, leash: {}, reports: [], escapeOrder: [], sd: null, sdHistory: [] };
+  const r3: R3State = { teams: {}, votes: {}, leash: {}, reports: [], voteLog: [], escapeOrder: [], sd: null, sdHistory: [] };
   for (const tid of d.teamOrder) {
     const team = d.teams[tid];
     const moral = d.r2.moral[tid];
@@ -305,6 +306,7 @@ export function resolveWave(d: GameState, ev: GameEvent[]): void {
       leashTarget: valid ? target : null,
     };
   });
+  logWaveVotes(d, r3, wave, active, inputs);
   const result = evaluateWave(inputs, wave, r3.escapeOrder.length);
   for (const tid of active) {
     const o = result.report.outcomes[tid];
@@ -320,6 +322,29 @@ export function resolveWave(d: GameState, ev: GameEvent[]): void {
   for (const h of result.leashConsumedBy) r3.teams[h].leashUsed = true;
   r3.reports.push(result.report);
   ev.push({ type: 'R3_WAVE_RESOLVED', wave, escaped: result.escapedInOrder });
+}
+
+const VESSEL_CHAR: Record<Vessel, string> = { ROWBOAT: 'R', SAILBOAT: 'S', GHOST_SHIP: 'G' };
+
+/** Keep each active crew's individual votes before r3.votes is reset (append-only; changes no outcome). */
+function logWaveVotes(d: GameState, r3: R3State, wave: number, active: string[], inputs: WaveTeamInput[]): void {
+  const log = (r3.voteLog ||= []);
+  for (let i = 0; i < active.length; i++) {
+    const tid = active[i];
+    const members = d.teams[tid].playerIds;
+    const votes = r3.votes[tid] || {};
+    const entry: WaveVoteLog = { wave, teamId: tid, votes: members.map(pid => (votes[pid] ? VESSEL_CHAR[votes[pid]] : '-')).join('') };
+    if (rosterOf(log, tid).join('|') !== members.join('|')) entry.members = members.slice();
+    const target = inputs[i].leashTarget;
+    if (target) entry.leash = target;
+    log.push(entry);
+  }
+}
+
+/** The member list a crew's vote log is currently aligned to (the last entry that carried one). */
+function rosterOf(log: WaveVoteLog[], teamId: string): string[] {
+  for (let k = log.length - 1; k >= 0; k--) if (log[k].teamId === teamId && log[k].members) return log[k].members as string[];
+  return [];
 }
 
 export function startNextWave(d: GameState, now: number, ev: GameEvent[]): void {

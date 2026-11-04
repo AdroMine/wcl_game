@@ -9,6 +9,16 @@ export const SCENARIOS = ['join-storm', 'round-start', 'phase-change', 'r2-vote-
 export type ScenarioName = (typeof SCENARIOS)[number];
 
 const MAX_APPLY_P99_MS = 50;
+/**
+ * A hosted server on a shared CPU (e.g. Render free, 0.1 CPU) is paused by its host for 100-200 ms at a time;
+ * that shows up as apply time although the engine itself takes ~1 ms. Remote targets get a bar that still
+ * catches a real slowdown, and the local bar stays a regression guard.
+ */
+const MAX_APPLY_P99_REMOTE_MS = 250;
+function applyLimitMs(sw: Swarm): number {
+  const host = new URL(sw.target).hostname;
+  return host === '127.0.0.1' || host === 'localhost' || host === '[::1]' ? MAX_APPLY_P99_MS : MAX_APPLY_P99_REMOTE_MS;
+}
 const MAX_VIEW_BYTES = 4096;
 const FORBIDDEN_ERRORS = ['INVALID_PAYLOAD', 'UNKNOWN_COMMAND', 'FORBIDDEN', 'BAD_REQUEST', 'UNAUTHORIZED', 'UNKNOWN_PLAYER', 'PAYLOAD_TOO_LARGE'];
 
@@ -36,7 +46,7 @@ class Report {
 
 function commonChecks(r: Report, sw: Swarm, s: SampleSummary, opts: { applyLimit?: boolean } = {}): void {
   const c = sw.counters;
-  if (opts.applyLimit !== false) r.check(`server p99 apply time < ${MAX_APPLY_P99_MS} ms`, s.maxP99ApplyMs < MAX_APPLY_P99_MS, `${fmt(s.maxP99ApplyMs, 2)} ms (max single apply ${fmt(s.maxApplyMs, 2)} ms)`);
+  if (opts.applyLimit !== false) r.check(`server p99 apply time < ${applyLimitMs(sw)} ms${applyLimitMs(sw) === MAX_APPLY_P99_MS ? '' : ' (remote host)'}`, s.maxP99ApplyMs < applyLimitMs(sw), `${fmt(s.maxP99ApplyMs, 2)} ms (max single apply ${fmt(s.maxApplyMs, 2)} ms)`);
   r.check(`every view <= ${MAX_VIEW_BYTES} bytes`, s.maxViewBytes <= MAX_VIEW_BYTES && c.maxEventBytes <= MAX_VIEW_BYTES, `server max ${s.maxViewBytes}, largest event seen by a bot ${c.maxEventBytes}`);
   const bad = Object.entries(c.errors).filter(([k]) => FORBIDDEN_ERRORS.includes(k));
   r.check('no protocol-level errors from well-behaved bots', bad.length === 0, bad.length ? JSON.stringify(bad) : 'none');
@@ -185,7 +195,7 @@ async function roundStart(sw: Swarm): Promise<ScenarioResult> {
   r.num('burstToViewP50ms', lat.p50);
   r.num('burstToViewP99ms', lat.p99);
   const s = sampler.stop();
-  r.check(`server p99 apply time < ${MAX_APPLY_P99_MS} ms during the burst`, h1.p99ApplyMs < MAX_APPLY_P99_MS, `${h1.p99ApplyMs} ms (max ${h1.maxApplyMs} ms)`);
+  r.check(`server p99 apply time < ${applyLimitMs(sw)} ms during the burst`, h1.p99ApplyMs < applyLimitMs(sw), `${h1.p99ApplyMs} ms (max ${h1.maxApplyMs} ms)`);
   commonChecks(r, sw, s, { applyLimit: false });
   return r.done();
 }
@@ -326,7 +336,7 @@ async function r2VoteBurst(sw: Swarm): Promise<ScenarioResult> {
   });
   r.check('rival crews see mirrored results after the clash', rivalOk, `${a.matches.length} matches`);
   commonChecks(r, sw, sampler.stop());
-  r.check(`server p99 apply time < ${MAX_APPLY_P99_MS} ms during the burst`, h1.p99ApplyMs < MAX_APPLY_P99_MS, `${h1.p99ApplyMs} ms (max ${h1.maxApplyMs} ms)`);
+  r.check(`server p99 apply time < ${applyLimitMs(sw)} ms during the burst`, h1.p99ApplyMs < applyLimitMs(sw), `${h1.p99ApplyMs} ms (max ${h1.maxApplyMs} ms)`);
   return r.done();
 }
 

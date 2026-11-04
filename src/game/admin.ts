@@ -321,3 +321,35 @@ export function computeServerLight(i: LightInput): ServerLight {
   if (i.healthFails >= 2) return { level: 'ok', label: `OK (health check failing: ${i.healthReason ?? 'failed'})` };
   return { level: 'ok', label: 'OK' };
 }
+
+/**
+ * Download the game data (admin only). The token is sent in the Authorization header, the response is read into a
+ * Blob and saved through a temporary link, so the token never appears in a URL or in the browser history.
+ */
+export async function downloadExport(kind: 'json' | 'csv'): Promise<{ ok: boolean; filename?: string; error?: string }> {
+  let res: Response;
+  try {
+    res = await fetch(apiUrl(`/api/admin/export.${kind}`), { headers: authHeaders(), cache: 'no-store' });
+  } catch {
+    return { ok: false, error: 'No connection. Try again.' };
+  }
+  if (res.status === 401 || res.status === 503) return { ok: false, error: 'The admin token was refused.' };
+  if (!res.ok) return { ok: false, error: `The server answered ${res.status}.` };
+  let blob: Blob;
+  try {
+    blob = await res.blob();
+  } catch {
+    return { ok: false, error: 'The download was interrupted. Try again.' };
+  }
+  const named = /filename="?([^";]+)"?/i.exec(res.headers.get('Content-Disposition') ?? '')?.[1];
+  const filename = named ?? `underworld-export.${kind}`;
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 30_000);
+  return { ok: true, filename };
+}

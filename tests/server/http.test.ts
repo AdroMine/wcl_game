@@ -85,7 +85,7 @@ test('payload over 8 KB is rejected with 413 PAYLOAD_TOO_LARGE', async () => {
 });
 
 test('admin endpoints require the bearer token', async () => {
-  for (const [method, path] of [['GET', '/api/admin/view'], ['GET', '/api/admin/backup'], ['POST', '/api/admin/command'], ['POST', '/api/admin/restore'], ['POST', '/api/admin/resync']] as const) {
+  for (const [method, path] of [['GET', '/api/admin/view'], ['GET', '/api/admin/backup'], ['GET', '/api/admin/export.json'], ['GET', '/api/admin/export.csv'], ['POST', '/api/admin/command'], ['POST', '/api/admin/restore'], ['POST', '/api/admin/resync']] as const) {
     const none = await fetch(`${srv.url}${path}`, { method, body: method === 'POST' ? '{}' : undefined });
     assert.equal(none.status, 401, `${path} without token`);
     const wrong = await fetch(`${srv.url}${path}`, { method, headers: { Authorization: 'Bearer nope' }, body: method === 'POST' ? '{}' : undefined });

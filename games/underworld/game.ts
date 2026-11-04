@@ -10,6 +10,8 @@ import type { RoleId } from '../../server/engine/types.ts';
 import * as tablet from './rounds/tablet/content.ts';
 import * as mist from './rounds/mist/content.ts';
 import * as styx from './rounds/styx/content.ts';
+import { buildRecap } from './recap.ts';
+import { buildGameCsv, buildGameExport } from './export.ts';
 
 export const TITLE = 'The Underworld';
 export const FINISHED_TITLE = 'Underworld';
@@ -57,6 +59,10 @@ export const GAME = {
   lobbyInstruction,
   finishedInstruction,
   rounds: [tablet, mist, styx],
+  // End-of-game extras (pure functions of the final state): the public recap, and the admin's data export.
+  recap: buildRecap,
+  exportJson: buildGameExport,
+  exportCsv: buildGameCsv,
   // Round-specific extras the (still Underworld-shaped) meta needs; the generic round interface is step 2.
   tablet,
   mist,

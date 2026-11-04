@@ -3,6 +3,8 @@ import React, { useState } from 'react';
 import { Users } from 'lucide-react';
 import type { AdminMatch, AdminTeam, AdminViewData } from '../../game/admin';
 import { phaseBase, stepLabel } from './AdminHeader';
+import { ExportCard } from './ExportCard';
+import { FrontPageCard } from './FrontPageCard';
 import { BOX, BTN, BTN_PRIMARY, BTN_RED, CARD, CrewName, H, INPUT, MUTED, MoralBadge, RankBadge, TARGET_DISTANCE, TeamSelect, medal, solveClock, standings } from './kit';
 import type { Run } from './kit';
 
@@ -422,6 +424,12 @@ const FinalStandings: React.FC<{ view: AdminViewData }> = ({ view }) => {
   return (
     <div className={BOX} data-testid="card-final">
       <div className={H}>{view.phase.name === 'FINISHED' ? 'Final standings' : 'Round 3 results'}</div>
+      <div className={CARD}>
+        <FrontPageCard finished={view.phase.name === 'FINISHED'} />
+      </div>
+      <div className={CARD}>
+        <ExportCard />
+      </div>
       {escaped.length > 0 && (
         <div className="text-sm space-y-1">
           <div className="text-xs font-mono text-[#8e95a5]">Escape order</div>

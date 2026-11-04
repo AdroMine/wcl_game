@@ -9,6 +9,8 @@ import type { Command, ErrorCode, GameState } from '../../server/engine/index.ts
 import { createInitialState } from '../../server/engine/index.ts';
 import { calculateRound1Score } from '../../server/engine/round1.ts';
 import { calculateClashPoints } from '../../server/engine/round2.ts';
+import { calculateVoteUnanimity, resolveTeamVesselChoice } from '../../server/engine/round3.ts';
+import { decodeVoteLog } from '../../games/underworld/analysis.ts';
 import { briefingSeconds } from '../../server/content.ts';
 
 export interface SimOptions {
@@ -635,6 +637,14 @@ function checkInvariants(s: GameState, firstVote: Map<string, string>, failures:
     }
   }
 
+  // wrong-guess record: consistent, bounded, inside the round
+  for (const tid of s.teamOrder) {
+    const w = s.teams[tid].r1?.wrong;
+    if (!w) continue;
+    if (w.log.length > w.count || w.log.length > 20) fail(`wrong guess log of ${tid}: ${w.log.length} entries for count ${w.count}`);
+    for (const [sec, g] of w.log) if (sec < 0 || sec > 300 || g.length > 24) fail(`wrong guess entry of ${tid}: ${sec} ${g}`);
+  }
+
   // moral statuses recomputed from clash records
   for (const m of Object.values(s.r2.matches)) {
     for (const [tid, side] of [[m.teamA, 'A'], [m.teamB, 'B']] as const) {
@@ -690,6 +700,24 @@ function checkInvariants(s: GameState, firstVote: Map<string, string>, failures:
       const ghosts = Object.values(rep.outcomes).filter(o => o.vessel === 'GHOST_SHIP').length;
       if (rep.ghostCollided !== ghosts >= 2) fail('ghost collision flag');
     }
+    // the recorded per-wave votes re-derive every wave outcome (vessel and unanimity) and exist once per active crew
+    const seenVotes = new Set<string>();
+    for (const e of decodeVoteLog(s)) {
+      const k = `${e.wave}:${e.teamId}`;
+      if (seenVotes.has(k)) fail(`duplicate vote log entry ${k}`);
+      seenVotes.add(k);
+      const o = r3.reports[e.wave - 1]?.outcomes[e.teamId];
+      if (!o) {
+        fail(`vote log entry without an outcome ${k}`);
+        continue;
+      }
+      const votes: Record<string, 'ROWBOAT' | 'SAILBOAT' | 'GHOST_SHIP'> = {};
+      for (const v of e.votes) if (v.vessel) votes[v.playerId] = v.vessel;
+      const ids = e.votes.map(v => v.playerId);
+      if (resolveTeamVesselChoice(votes, ids) !== o.vessel) fail(`vote log vessel mismatch ${k}`);
+      if (calculateVoteUnanimity(votes, ids, o.vessel) !== o.unanimity) fail(`vote log unanimity mismatch ${k}`);
+    }
+    for (const rep of r3.reports) for (const tid of Object.keys(rep.outcomes)) if (!seenVotes.has(`${rep.wave}:${tid}`)) fail(`no vote log entry for wave ${rep.wave} crew ${tid}`);
     if (s.phase === 'FINISHED' && order.length < 3 && Object.values(r3.teams).some(t => !t.escaped) && s.phaseLog.every(e => e.wave < 30)) {
       fail('round 3 ended early without the admin');
     }

@@ -9,7 +9,7 @@ import { assignSlots, generateHintText, hintTextFor } from './r1slots.ts';
 import type { PlayerSlotInfo } from './r1slots.ts';
 import { rngPick } from './rng.ts';
 import type { GameEvent, GameState, Handler, Team } from './types.ts';
-import { NOOP, fail } from './types.ts';
+import { NOOP, fail, failCommit } from './types.ts';
 
 // ---- ported pure functions (src/lib/round1Engine.ts) ------------------------
 
@@ -93,6 +93,7 @@ export function initRound1(d: GameState): void {
       points: 0,
       solvedBy: null,
       markedByAdmin: false,
+      wrong: { count: 0, log: [] },
     };
     t.r1Points = 0;
     recomputeScore(t);
@@ -121,6 +122,24 @@ export function parseTabletCodeword(codeword: string): { line1: string; line2: s
 
 export function closeRound1(d: GameState): void {
   d.r1.closed = true;
+}
+
+/** Most wrong guesses whose text is kept per crew (the count keeps going). */
+const MAX_WRONG_LOG = 20;
+/** An identical guess repeated within this many seconds of the previous one is a retry, not a new attempt. */
+const WRONG_REPEAT_SECONDS = 10;
+
+/** Records a wrong guess for the export (admin-only) and answers WRONG_ANSWER; the state change is kept. */
+function recordWrongGuess(d: GameState, t: Team, answer: string, now: number) {
+  const r1 = t.r1!;
+  const w = r1.wrong ?? (r1.wrong = { count: 0, log: [] });
+  const sec = r1ElapsedSeconds(d, now);
+  const text = answer.replace(/\s+/g, ' ').trim().slice(0, 24);
+  const last = w.log[w.log.length - 1];
+  if (last && w.log.length < MAX_WRONG_LOG && normalizeAnswer(last[1]) === normalizeAnswer(text) && sec - last[0] < WRONG_REPEAT_SECONDS) return fail('WRONG_ANSWER');
+  w.count += 1;
+  if (w.log.length < MAX_WRONG_LOG) w.log.push([sec, text]);
+  return failCommit('WRONG_ANSWER');
 }
 
 function awardSolve(d: GameState, t: Team, now: number, by: string | null, ev: GameEvent[]): void {
@@ -155,7 +174,7 @@ const submit: Handler = (d, c, now, ev) => {
   if (d.pausedAt != null) return fail('PAUSED');
   if (d.endsAt != null && now >= d.endsAt) return fail('ROUND_CLOSED');
   if (!t.r1) return fail('NOT_PLAYING');
-  if (normalizeAnswer(answer) !== normalizeAnswer(t.r1.codeword)) return fail('WRONG_ANSWER');
+  if (normalizeAnswer(answer) !== normalizeAnswer(t.r1.codeword)) return recordWrongGuess(d, t, answer, now);
   awardSolve(d, t, now, (c.actor as { playerId: string }).playerId, ev);
   return undefined;
 };

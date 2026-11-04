@@ -126,6 +126,13 @@ export interface R1TeamState {
   solvedBy: string | null;
   /** Legacy, always false (the admin can no longer mark Round 1 solved). Kept so old snapshots restore. */
   markedByAdmin: boolean;
+  /**
+   * Wrong codeword guesses (admin-only record for the end-of-game export). `count` is every recorded wrong guess
+   * (an identical repeat within 10 s of the last one is not recorded again, so a retry cannot inflate it); `log` keeps
+   * the first 20 as [seconds since the Round 1 clock started, guess clipped to 24 characters].
+   * Old snapshots lack it: normalizeRestoredState fills { count: 0, log: [] }.
+   */
+  wrong: { count: number; log: [number, string][] };
 }
 
 export interface Team {
@@ -228,6 +235,21 @@ export interface SuddenDeath {
   text: string | null;
 }
 
+/**
+ * What one active crew voted in one wave, kept when the wave resolves (r3.votes itself is reset each wave).
+ * `votes` has one character per entry of the crew's member list: R rowboat, S sailboat, G ghost ship, - no vote.
+ * `members` (player ids, same order) is written only when the roster differs from the crew's previous entry
+ * (always on its first), so a stable crew costs about 30 bytes per wave. `leash` is the target crew of the
+ * Stygian Leash armed that wave. Append-only; old snapshots lack r3.voteLog and restore as [].
+ */
+export interface WaveVoteLog {
+  wave: number;
+  teamId: string;
+  votes: string;
+  members?: string[];
+  leash?: string;
+}
+
 export interface R3State {
   teams: Record<string, R3Team>;
   /** Votes of the current wave: teamId -> playerId -> vessel. Reset at the start of each wave. */
@@ -235,6 +257,8 @@ export interface R3State {
   /** Armed Stygian Leash of the current wave: holder teamId -> target teamId. */
   leash: Record<string, string>;
   reports: WaveReport[];
+  /** Per-wave, per-crew record of the individual vessel votes (see WaveVoteLog). */
+  voteLog: WaveVoteLog[];
   escapeOrder: string[];
   sd: SuddenDeath | null;
   sdHistory: SuddenDeath[];
@@ -292,10 +316,15 @@ export interface GameState {
 
 // ---- handler plumbing -------------------------------------------------------
 
-export type HandlerResult = { error: ErrorCode } | { noop: true } | undefined;
+/** `commit: true` keeps the handler's changes although the command is answered with an error (used to record a wrong guess). */
+export type HandlerResult = { error: ErrorCode; commit?: true } | { noop: true } | undefined;
 export type Handler = (d: GameState, c: Command, now: number, ev: GameEvent[]) => HandlerResult;
 
 export function fail(error: ErrorCode): { error: ErrorCode } {
   return { error };
+}
+/** Like fail(), but the state changes the handler made are kept (the version moves, the error is still returned). */
+export function failCommit(error: ErrorCode): { error: ErrorCode; commit: true } {
+  return { error, commit: true };
 }
 export const NOOP: { noop: true } = { noop: true };

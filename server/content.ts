@@ -10,6 +10,11 @@ import type { Meta, PhaseName } from '../shared/protocol.ts';
 import { GAME } from '../games/underworld/game.ts';
 
 export const ROUND_TITLES = GAME.roundTitles;
+
+/** The active game's end-of-game documents (pure functions of a GameState): the public recap and the admin's exports. */
+export const buildRecap = GAME.recap;
+export const buildExportJson = GAME.exportJson;
+export const buildExportCsv = GAME.exportCsv;
 const BRIEFINGS = GAME.rounds.map(r => r.briefing);
 
 /**

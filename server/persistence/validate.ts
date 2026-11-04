@@ -56,6 +56,7 @@ export function gameStateProblem(v: unknown): string | null {
     if (t.r1 !== null) {
       const r = t.r1;
       if (!isObj(r) || !isStr(r.codeword) || !isObj(r.slots) || !Array.isArray(r.hintsTaken) || !isObj(r.hintTexts)) return `team ${id}.r1 malformed`;
+      if (r.wrong !== undefined && (!isObj(r.wrong) || !isNum(r.wrong.count) || !Array.isArray(r.wrong.log))) return `team ${id}.r1.wrong malformed`;
     }
   }
   if (!isObj(v.r1)) return 'r1 malformed';
@@ -70,6 +71,7 @@ export function gameStateProblem(v: unknown): string | null {
   const r3 = v.r3;
   if (r3 !== null) {
     if (!isObj(r3) || !isObj(r3.teams) || !isObj(r3.votes) || !isObj(r3.leash) || !Array.isArray(r3.reports) || !Array.isArray(r3.escapeOrder)) return 'r3 malformed';
+    if (r3.voteLog !== undefined && !Array.isArray(r3.voteLog)) return 'r3.voteLog malformed';
     for (const [id, t] of Object.entries(r3.teams)) if (!isObj(t) || !isNum(t.distance) || typeof t.escaped !== 'boolean') return `r3 team ${id} malformed`;
     for (const rep of r3.reports) if (!isObj(rep) || !isObj(rep.outcomes) || !Array.isArray(rep.leashEvents)) return 'r3 report malformed';
   }

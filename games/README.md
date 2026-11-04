@@ -8,6 +8,11 @@ A **disk** is one game. Each folder under `games/` holds everything that is spec
 games/
   underworld/
     game.ts                 game-level: title, round titles, roles, crew emblems, lobby and finish lines
+    analysis.ts             shared pure helpers for export and recap (clash outcomes, decoded Round 3 votes, final ranking)
+    export.ts               end-of-game data export: buildGameExport (JSON) and buildGameCsv, called by GET /api/admin/export.json and .csv
+    recap.ts                "Underworld Wrapped": buildRecap(state), crew-level recap data served by GET /api/recap once FINISHED
+    recapContent.ts         editable words of the recap: title, award names and blurbs, the front page text (FRONT_PAGE), the "Christmas game is coming" teaser
+    recap/ui/               React for the recap, one lazy chunk loaded only at FINISHED: FrontPage ("The Underworld Times" card), WrappedCards (the phone recap: front page, crew cards, award cards), AwardCard, FrontPagePanel (admin and /front-page), WrappedPreview (test hooks), useRecap
     rounds/
       tablet/   Round 1: The Shattered Tablet
         content.ts          story, rules, goal, codewords, hint cost and timing, projector lines
@@ -20,7 +25,7 @@ games/
         ui/
 ```
 
-- `game.ts` and every `content.ts` run on the Node server. They may not import React, and they use only erasable TypeScript with relative imports that end in `.ts`.
+- `game.ts`, every `content.ts`, `analysis.ts`, `export.ts`, `recap.ts` and `recapContent.ts` run on the Node server. They may not import React, and they use only erasable TypeScript with relative imports that end in `.ts`.
 - Everything under `ui/` is React for the Vite web build. It follows the web app's import style and may import from `src/` and `shared/`.
 - Nothing in `games/` may mention Supabase (`npm run check:web` scans it).
 
@@ -33,6 +38,10 @@ Open the round's `content.ts`. The comment at the top says what each field is.
 - Numbers (scoring, hint costs, race distances) are rules: do not change them without the organizer (`docs/GAME_MASTER_RULES_AND_DESIGN.md`).
 
 Restart the server after an edit (and rebuild the web app if you changed something in `ui/`).
+
+## Recap and export live in the disk
+
+`recap.ts` and `export.ts` are pure functions of the final `GameState` (no clock, no randomness, no I/O). `game.ts` lists them (`GAME.recap`, `GAME.exportJson`, `GAME.exportCsv`), `server/content.ts` hands them to `server/transport/http.ts`, and the generic endpoints know nothing about the Underworld. They import only types from the engine (the engine imports this disk, so a value import back would be a cycle). The engine records what they need in the state: `teams[id].r1.wrong` and `r3.voteLog` (see docs/PROTOCOL.md). To change a recap sentence, award or the teaser, edit `recapContent.ts` (words) or `recap.ts` (how the numbers and awards are computed); restart the server. A different game brings its own `recap.ts`, `export.ts` and `recap/ui`.
 
 ## What is still shared (step 1 only moved content)
 

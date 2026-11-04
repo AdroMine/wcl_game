@@ -69,7 +69,13 @@ export function reduce(state: GameState, command: Command, ctx: Ctx): ReduceResu
   const d = cloneState(state);
   const events: GameEvent[] = [];
   const res = entry.fn(d, command, ctx.now, events);
-  if (res && 'error' in res) return recordOnly(state, command.commandId, res.error);
+  if (res && 'error' in res) {
+    if (!res.commit) return recordOnly(state, command.commandId, res.error);
+    // The command is refused but its bookkeeping (a recorded wrong guess) is kept.
+    d.version += 1;
+    d.applied = ringWith(state.applied, command.commandId);
+    return { state: d, events, error: res.error };
+  }
   if (res && 'noop' in res) return recordOnly(state, command.commandId);
   d.version += 1;
   d.applied = ringWith(state.applied, command.commandId);

@@ -10,7 +10,9 @@ import { LeaderboardDrawer } from './components/LeaderboardDrawer';
 
 const AdminControlPanel = React.lazy(() => import('./components/AdminControlPanel').then(m => ({ default: m.AdminControlPanel })));
 const ScreenView = React.lazy(() => import('./components/ScreenView').then(m => ({ default: m.ScreenView })));
-const SoloTester = React.lazy(() => import('./components/SoloTester').then(m => ({ default: m.SoloTester })));
+const WrappedPreview = React.lazy(() => import('../games/underworld/recap/ui/WrappedPreview').then(m => ({ default: m.WrappedPreview })));
+const FrontPagePreview = React.lazy(() => import('../games/underworld/recap/ui/WrappedPreview').then(m => ({ default: m.FrontPagePreview })));
+const SoloTester = React.lazy(() => import('./components/SoloTester').then(m => ({ default: m.SoloTester })));
 
 /** A known device waits here for the server. It never sees the Join screen. */
 const Waiting: React.FC<{ known: boolean }> = ({ known }) => {
@@ -105,6 +107,20 @@ export function App() {
     return (
       <React.Suspense fallback={<Loading what="projector view" />}>
         <ScreenView />
+      </React.Suspense>
+    );
+  }
+  if (path === '/wrapped-preview') {
+    return (
+      <React.Suspense fallback={<Loading what="recap preview" />}>
+        <WrappedPreview />
+      </React.Suspense>
+    );
+  }
+  if (path === '/front-page') {
+    return (
+      <React.Suspense fallback={<Loading what="front page" />}>
+        <FrontPagePreview />
       </React.Suspense>
     );
   }

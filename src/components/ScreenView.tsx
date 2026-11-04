@@ -87,15 +87,8 @@ export const ScreenView: React.FC = () => {
   if (p.name === 'R2_CLASH') subtitle = `Clash ${p.clash} of 3 • ${stepName}`;
   if (p.name === 'R3_ACTIVE') subtitle = `Wave ${p.wave} • ${stepName}`;
 
-  return (
-    <div className="min-h-screen bg-[#08090c] text-[#f4f0e8] underworld-bg-mesh p-8 flex flex-col gap-6" data-testid="screen-root">
-      {down && (
-        <div data-testid="screen-reconnecting" className="fixed top-3 right-3 bg-amber-900 text-amber-100 px-4 py-2 rounded-lg text-xl font-semibold z-50">
-          Reconnecting…
-        </div>
-      )}
-      {data.notice && <div className="bg-[#c4a45a] text-[#08090c] text-4xl font-black text-center py-4 rounded-2xl">{data.notice}</div>}
-
+  const main = (
+    <>
       <div className="grid grid-cols-12 gap-8 flex-1">
         <div className="col-span-7 flex flex-col justify-between gap-6">
           <div className="space-y-4">
@@ -181,6 +174,19 @@ export const ScreenView: React.FC = () => {
           </div>
         </div>
       </div>
+    </>
+  );
+
+  return (
+    <div className="min-h-screen bg-[#08090c] text-[#f4f0e8] underworld-bg-mesh p-8 flex flex-col gap-6" data-testid="screen-root">
+      {down && (
+        <div data-testid="screen-reconnecting" className="fixed top-3 right-3 bg-amber-900 text-amber-100 px-4 py-2 rounded-lg text-xl font-semibold z-50">
+          Reconnecting…
+        </div>
+      )}
+      {data.notice && <div className="bg-[#c4a45a] text-[#08090c] text-4xl font-black text-center py-4 rounded-2xl">{data.notice}</div>}
+
+      {main}
     </div>
   );
 };

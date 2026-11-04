@@ -9,6 +9,9 @@ import { OdysseyEscapeRoyaleRound } from '../../games/underworld/rounds/styx/ui/
 import { BoardList } from './LeaderboardDrawer';
 import { CARD, Countdown, LABEL } from './ui';
 
+// The recap (front page, crew cards, awards) is a separate chunk, fetched only when the game is FINISHED.
+const WrappedCards = React.lazy(() => import('../../games/underworld/recap/ui/WrappedCards').then(m => ({ default: m.WrappedCards })));
+
 function roundOf(name: PhaseName): 1 | 2 | 3 | 0 {
   if (name.startsWith('R1')) return 1;
   if (name.startsWith('R2')) return 2;
@@ -52,7 +55,12 @@ export const RoundContainer: React.FC = () => {
     ) : round === 3 ? (
       <OdysseyEscapeRoyaleRound />
     ) : (
-      <FinishedCard />
+      <>
+        <FinishedCard />
+        <React.Suspense fallback={<p className="text-sm text-center text-[#a9b4c7]">Printing tonight’s front page…</p>}>
+          <WrappedCards />
+        </React.Suspense>
+      </>
     );
 
   return (

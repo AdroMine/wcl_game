@@ -38,9 +38,12 @@ phone bundle; the host types it into the panel.
 | `GET /api/team-preview?code&playerId&token` | player | lobby preview of a team by emoji code |
 | `GET /screen-view` (alias `/api/screen`) | none | public projector view (JSON, ETag) |
 | `GET /api/screen/stream` | none | the projector view as SSE |
+| `GET /api/recap` | none | "Underworld Wrapped": crew-level recap, `404` until the game is `FINISHED` |
 | `POST /api/admin/command` | admin | any `ADMIN_*` engine command |
 | `GET /api/admin/view` | admin | full snapshot for the control panel (ETag / 304) |
 | `GET /api/admin/backup` | admin | download the game state |
+| `GET /api/admin/export.json` | admin | game data for analysis (see Game-data export) |
+| `GET /api/admin/export.csv` | admin | game data, one row per vote or action |
 | `POST /api/admin/restore` | admin | upload a backup; the game comes back PAUSED |
 | `POST /api/admin/resync` | admin | tell every client to reload |
 | `POST /api/admin/notice` | admin | show (or clear) a one-line banner on every phone |
@@ -235,6 +238,28 @@ interface ScreenView { sid; v; serverNow; phase; title: string; instruction: str
 
 Public, no private data. Poll it (ETag / 304) or stream it from `GET /api/screen/stream` (same SSE rules, no
 credentials). `fleet` lists every crew in Round 3. `joinUrl` is `PUBLIC_URL` for the QR code. `lobby.crewSize` (LOBBY phase only) is the admin's current crew size N.
+
+## Recap: `GET /api/recap`
+
+The end-of-game recap does **not** travel in the 4 KB per-phone view. It is one public JSON document (the type is `RecapData` in `games/underworld/recap.ts`), built by a pure function of the final state.
+
+- **Availability:** `404 { ok:false, error:"BAD_REQUEST" }` with `Cache-Control: no-store` until `phase.name === "FINISHED"` (not at `R3_RESULTS`: the host may still run Sudden Death there, which can reorder the podium). After a reset it is `404` again.
+- **Content:** `format: 2` adds `front`, everything "The Underworld Times" front page prints (masthead, kicker, headline, dek, `medals` with escape wave and Sudden Death flag, `round2` clash tile counts, `round3` Ghost Ship and Sailboat counts, the closing `quote`, the `next` teaser line; words come from `FRONT_PAGE` in `games/underworld/recapContent.ts`). Clients ignore a document without `front`. The rest: crew names and emblems (already public on the projector) and crew-level statistics only: betrayal river, dilemma outcomes, moral legacy counts, fleet per wave, ghost-ship attempts, race replay (metres and rank per wave, leash events), tablet times, awards, headline sentences, the teaser text (`games/underworld/recapContent.ts`). No player name or id, no individual vote, no codeword, no token. Typically 15 to 25 KB for 40 crews (about 5 KB gzipped).
+- **Caching:** built once per state version on the server. `ETag` is `"r<version>-<hash>"`; `If-None-Match` answers `304`. `Cache-Control: public, max-age=20`, `Vary: Accept-Encoding, Origin`, gzip when the client accepts it. Clients add `?v=<view.v>` (ignored by the server) so a CDN such as Cloudflare treats each game version as its own URL. It counts against the per-IP bucket like any API call (about 600 requests per second, burst 1500), so 200 phones behind one IP are fine; the server does one build and one gzip, then answers from memory.
+- **Client rules:** fetch once when the phase becomes `FINISHED` (phones wait a random 0 to 3 s first), again when `sid` or `v` changes (a resync or restore; a `304` is cheap), retry with jittered backoff on failure, keep the last copy in `localStorage`, and clear it on a `404`.
+
+## Game-data export (admin)
+
+`GET /api/admin/export.json` and `GET /api/admin/export.csv` need `Authorization: Bearer <ADMIN_TOKEN>` exactly like `/api/admin/backup` (a token in the URL is not accepted) and answer `Content-Disposition: attachment` and `Cache-Control: no-store`. They work in any phase; before the end they hold what has happened so far. Neither contains token hashes or the admin token. They are pure functions of the state in `games/underworld/export.ts`.
+
+- **JSON** (`format: 1`): `game_meta`, `timeline` (phase log), `crews` (members with names and roles, score, Round 1 result with `wrongGuesses {count, log:[{atSecond, guess}]}`, Round 2 rival and moral legacy, Round 3 end state), `round1`, `round2.clashes` (both crews' stance, points, outcome and every member's vote or `null`) and `round2.byes`, `round3.waves` (per wave: capacity, capsize and collision flags, leash events, and per crew vessel, unanimity, metres, crash, leash target and every member's vote), `suddenDeath`, `standings`, `podium`. Games recorded before the vote log existed give `votes: null` for Round 3.
+- **CSV** (UTF-8 with a byte-order mark, CRLF): columns `round,unit,crew_id,crew,player_id,player,role,action,choice,outcome,points,metres,at_second,detail`; `round` is 1, 2, 3 or SD, `unit` the clash or wave. One row per action: `SOLVE`, `HINT`, `WRONG_GUESS` (Round 1), `VOTE` (Rounds 2, 3 and SD; `ABSTAIN` when a member did not vote), `BYE`, `LEASH_ARMED`, `LEASH_RESULT`. Text that starts with `= + - @` is prefixed with an apostrophe so a spreadsheet cannot run it.
+
+### State fields behind the export (append-only, plain JSON)
+
+- `teams[id].r1.wrong: { count, log: [[secondsSinceRound1Clock, guessClippedTo24Chars], …] }`: every wrong codeword guess (admin-only). An identical guess repeated within 10 s of the previous one is a retry and is not counted again; `log` keeps the first 20. A wrong guess is the one refused command that still commits state (`failCommit` in `server/engine/types.ts`): the command answers `WRONG_ANSWER` as before, the version moves by one.
+- `r3.voteLog: { wave, teamId, votes, members?, leash? }[]`: written when a wave resolves (before `r3.votes` is reset), one entry per active crew. `votes` is one character per member (`R S G` or `-` for no vote) aligned to `members`, which is written only on a crew's first entry and whenever its roster changes. It changes no outcome. About 30 bytes per crew per wave plus one roster per crew: roughly 16 to 20 KB for 40 crews and 8 waves.
+- Old snapshots lack both: `normalizeRestoredState` fills `{count:0, log:[]}` and `voteLog: []`; the validator accepts snapshots without them.
 
 ## Admin
 

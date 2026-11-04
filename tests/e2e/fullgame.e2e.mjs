@@ -627,6 +627,72 @@ try {
   await shot(admin, 'admin-07-finished');
   ok((await admin.getByTestId('admin-status').innerText()).toLowerCase().includes('phones connected'), 'admin: status strip shows live health data');
 
+
+  // ---- Underworld Times front page + Wrapped (recap on phones and in the admin panel) and the game-data export
+  step('Underworld Times: public recap, phone front page and awards, admin front page, no recap on /screen');
+  const recapRes = await fetch(BASE + '/api/recap');
+  const recap = await recapRes.json();
+  ok(recapRes.status === 200 && !!recapRes.headers.get('etag') && /public/.test(recapRes.headers.get('cache-control') ?? ''), 'recap: GET /api/recap is public with an ETag once FINISHED');
+  ok(recap.crews.length === 2 && recap.headlines.length >= 2, 'recap: 2 crews and computed headlines (' + recap.headlines.length + ')');
+  ok(!!recap.front && /escapes first as/.test(recap.front.headline), 'recap: the front page headline is computed');
+  ok(!JSON.stringify(recap).includes('tokenHash'), 'recap: crew-level data only');
+  ok((await fetch(BASE + '/api/recap', { headers: { 'If-None-Match': recapRes.headers.get('etag') } })).status === 304, 'recap: a repeat request with the ETag answers 304');
+
+  // projector: the standings stay, with no recap slideshow
+  await sleep(1500);
+  ok((await screen.getByTestId('recap-root').count()) === 0 && (await screen.getByTestId('front-page').count()) === 0, 'screen: no recap on the projector');
+  await shot(screen, '40-screen-finished-standings');
+
+  // phones: the front page first, then the crew cards and the award cards (no toggle, no charts)
+  const wp = phones[0].page;
+  await waitShown(wp, 'front-page', 25000);
+  ok(/The Underworld Times/i.test(await text(wp, 'front-page')) && /escapes first as/.test(await text(wp, 'front-headline')), 'phone: the front page shows the masthead and the headline');
+  ok((await wp.getByTestId('front-medal').count()) >= 1, 'phone: the front page lists the medals');
+  ok(/screenshot this/i.test(await text(wp, 'front-page-section')), 'phone: the screenshot hint is shown');
+  await waitFor(async () => (await wp.getByTestId('wrapped-card').count()) >= 4, 'wrapped cards', 15000);
+  const cardIds = await wp.getByTestId('wrapped-card').evaluateAll(els => els.map(e => e.getAttribute('data-card')));
+  ok(['rank', 'betrayal', 'boats', 'tablet'].every(x => cardIds.includes(x)), 'phone: cards ' + cardIds.join(', '));
+  ok(/underworld wrapped/i.test(await wp.getByTestId('wrapped-card').first().innerText()), 'phone: every crew card carries the game name');
+  ok(/🚣|⛵|⚡/u.test(await text(wp, 'wrapped-boats')), 'phone: "Your boats" shows boat emojis');
+  ok(/betray|truce/i.test(await wp.locator('[data-card="betrayal"]').innerText()), 'phone: betrayal card');
+  ok((await wp.getByTestId('wrapped-room-toggle').count()) === 0 && (await wp.locator('[data-testid="wrapped"] svg').count()) === 0, 'phone: no highlights toggle and no charts');
+  ok((await wp.getByTestId('recap-award').count()) >= 1, 'phone: the award cards are shown directly (' + (await wp.getByTestId('recap-award').count()) + ')');
+  await wp.getByTestId('front-page').screenshot({ path: join(SHOTS, '42-phone-front-page.png') });
+  for (const id of cardIds) await wp.locator('[data-card="' + id + '"]').screenshot({ path: join(SHOTS, '42-phone-card-' + id + '.png') });
+  await wp.evaluate(() => window.scrollTo(0, 0));
+  await wp.screenshot({ path: join(SHOTS, '44-phone-wrapped-top.png') });
+  ok(await wp.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1), 'phone: the recap has no horizontal scroll');
+  await phones[5].page.getByTestId('front-page').waitFor({ timeout: 25000 });
+  ok(true, 'phone of the other crew shows the front page too');
+  await waitFor(async () => (await phones[5].page.locator('[data-card="rank"]').count()) > 0, 'other crew rank card', 10000);
+  await phones[5].page.locator('[data-card="rank"]').screenshot({ path: join(SHOTS, '45-phone-card-rank-other-crew.png') });
+
+  // admin: the Front page section opens the same card
+  await admin.getByTestId('tab-live').click();
+  await admin.getByTestId('admin-front-page-open').click();
+  await admin.getByTestId('front-page').waitFor({ timeout: 20000 });
+  ok(/The Underworld Times/i.test(await text(admin, 'front-page')), 'admin: the Front page section opens the front page');
+  await shot(admin, 'admin-08-front-page');
+
+  step('Game-data export');
+  const ej = await fetch(BASE + '/api/admin/export.json', { headers: A });
+  const exportDoc = await ej.json();
+  ok(ej.status === 200 && /attachment/.test(ej.headers.get('content-disposition') ?? ''), 'export.json: downloads as an attachment with the admin token');
+  ok(exportDoc.crews.length === 2 && exportDoc.round1.length === 2 && exportDoc.round2.clashes.length >= 3 && exportDoc.round3.waves.length >= 1, 'export.json: crews, round 1, round 2 clashes and round 3 waves are present');
+  ok(exportDoc.round3.waves[0].crews.every(c => Array.isArray(c.votes) && c.votes.length > 0), 'export.json: every wave has per-player vessel votes');
+  ok(!JSON.stringify(exportDoc).includes('tokenHash') && !JSON.stringify(exportDoc).includes(ADMIN_TOKEN), 'export.json: no token hashes and no admin token');
+  ok((await fetch(BASE + '/api/admin/export.json')).status === 401, 'export.json: refused without the token');
+  const ec = await (await fetch(BASE + '/api/admin/export.csv', { headers: A })).text();
+  ok(ec.replace(/^﻿/, '').startsWith('round,unit,crew_id,crew,player_id,player,role,action,choice,outcome,points,metres,at_second,detail') && ec.split('\r\n').length > 30, 'export.csv: header and rows');
+  // the admin panel's download buttons
+  await admin.getByTestId('admin-details-toggle').click();
+  const [dl] = await Promise.all([admin.waitForEvent('download', { timeout: 15000 }), admin.getByTestId('admin-export-json').first().click()]);
+  ok(/underworld-export-v\d+\.json/.test(dl.suggestedFilename()), 'admin: the JSON download button saves ' + dl.suggestedFilename());
+  const [dl2] = await Promise.all([admin.waitForEvent('download', { timeout: 15000 }), admin.getByTestId('admin-export-csv').first().click()]);
+  ok(/\.csv$/.test(dl2.suggestedFilename()), 'admin: the CSV download button saves ' + dl2.suggestedFilename());
+  await shot(admin, 'admin-08-finished-export');
+  await admin.getByTestId('admin-details-toggle').click();
+
   // ---- backup, reset, restore
   step('Backup, reset (typed confirmation) and restore');
   // The admin UI has no backup/restore buttons any more; the HTTP endpoints are the operator's tool (docs/RUNBOOK.md).

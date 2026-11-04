@@ -1,11 +1,12 @@
 // HTTP transport on node:http. Routes are documented in docs/PROTOCOL.md.
-import { randomBytes, randomUUID } from 'node:crypto';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { createServer } from 'node:http';
+import { gzipSync } from 'node:zlib';
 import type { IncomingMessage, Server, ServerResponse } from 'node:http';
 import { checkPlayer, hashToken } from '../auth.ts';
 import type { AdminAuth } from '../auth.ts';
 import type { ServerConfig } from '../config.ts';
-import { buildMeta } from '../content.ts';
+import { buildExportCsv, buildExportJson, buildMeta, buildRecap } from '../content.ts';
 import { COMMAND_TYPES, previewTeamByEmoji, ROLES } from '../engine/index.ts';
 import type { Command, GameState } from '../engine/index.ts';
 import type { Persistence } from '../persistence/index.ts';
@@ -266,6 +267,29 @@ export function createHttpServer(ctx: HttpContext): Server {
     send(req, res, 200, s.json, 'application/json; charset=utf-8', common);
   }
 
+  // The recap is built once per state version and served to every phone and the projector (ETag + gzip).
+  let recapCache: { version: number; json: string; gz: Buffer; etag: string } | null = null;
+
+  function handleRecap(req: IncomingMessage, res: ServerResponse): void {
+    if (!ipOk(req, res)) return;
+    const st = runtime.state;
+    if (st.phase !== 'FINISHED') return sendError(req, res, 404, 'BAD_REQUEST', 'the recap is ready when the game is finished');
+    if (!recapCache || recapCache.version !== st.version) {
+      const json = JSON.stringify(buildRecap(st));
+      recapCache = { version: st.version, json, gz: gzipSync(json), etag: `"r${st.version}-${createHash('sha1').update(json).digest('base64url').slice(0, 10)}"` };
+    }
+    const c = recapCache;
+    // Cacheable by the browser and by a CDN; the client adds ?v=<state version> so each game version is its own URL.
+    const common = { ETag: c.etag, 'Cache-Control': 'public, max-age=20', Vary: 'Accept-Encoding, Origin' };
+    if (req.headers['if-none-match'] === c.etag) {
+      res.writeHead(304, { ...common, ...corsHeaders(req), Vary: 'Accept-Encoding, Origin' });
+      res.end();
+      return;
+    }
+    const acceptsGzip = /\bgzip\b/.test(String(req.headers['accept-encoding'] ?? ''));
+    send(req, res, 200, acceptsGzip ? c.gz : c.json, 'application/json; charset=utf-8', { ...common, ...(acceptsGzip ? { 'Content-Encoding': 'gzip' } : {}) });
+  }
+
   function handleTeamPreview(req: IncomingMessage, res: ServerResponse, url: URL): void {
     if (!ipOk(req, res)) return;
     const { playerId, tokenHash } = playerCreds(url);
@@ -323,6 +347,15 @@ export function createHttpServer(ctx: HttpContext): Server {
     const st = runtime.state;
     const body = `{"format":1,"savedAt":${Date.now()},"version":${st.version},"state":${JSON.stringify(st)}}`;
     send(req, res, 200, body, 'application/json; charset=utf-8', { 'Content-Disposition': `attachment; filename="underworld-v${st.version}.json"` });
+  }
+
+  /** Game-data export (admin only): everything recorded about the game, as one JSON document or one CSV row per vote or action. */
+  function handleAdminExport(req: IncomingMessage, res: ServerResponse, kind: 'json' | 'csv'): void {
+    const st = runtime.state;
+    const name = `underworld-export-v${st.version}.${kind}`;
+    const headers = { 'Content-Disposition': `attachment; filename="${name}"` };
+    if (kind === 'json') send(req, res, 200, JSON.stringify(buildExportJson(st, Date.now()), null, 1), 'application/json; charset=utf-8', headers);
+    else send(req, res, 200, buildExportCsv(st), 'text/csv; charset=utf-8', headers);
   }
 
   async function handleAdminRestore(req: IncomingMessage, res: ServerResponse): Promise<void> {
@@ -384,6 +417,7 @@ export function createHttpServer(ctx: HttpContext): Server {
       return send(req, res, 200, metaJson, 'application/json; charset=utf-8', { 'Cache-Control': 'public, max-age=300' });
     }
     if (path === '/api/command' && method === 'POST') return handlePlayerCommand(req, res);
+    if (path === '/api/recap' && (method === 'GET' || method === 'HEAD')) return handleRecap(req, res);
     if (path === '/api/stream' && method === 'GET') return handleStream(req, res, url, false);
     if (path === '/api/view' && method === 'GET') return handleView(req, res, url);
     if (path === '/api/team-preview' && method === 'GET') return handleTeamPreview(req, res, url);
@@ -396,6 +430,8 @@ export function createHttpServer(ctx: HttpContext): Server {
       if (path === '/api/admin/command' && method === 'POST') return handleAdminCommand(req, res);
       if (path === '/api/admin/view' && method === 'GET') return handleAdminView(req, res);
       if (path === '/api/admin/backup' && method === 'GET') return handleAdminBackup(req, res);
+      if (path === '/api/admin/export.json' && method === 'GET') return handleAdminExport(req, res, 'json');
+      if (path === '/api/admin/export.csv' && method === 'GET') return handleAdminExport(req, res, 'csv');
       if (path === '/api/admin/restore' && method === 'POST') return handleAdminRestore(req, res);
       if (path === '/api/admin/resync' && method === 'POST') {
         const n = hub.resync();

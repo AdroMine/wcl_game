@@ -39,5 +39,14 @@ export function normalizeRestoredState(state: GameState): GameState {
   if (typeof cfg.crewSize !== 'number') out = { ...out, config: { ...out.config, crewSize: DEFAULT_DURATIONS.crewSize } };
   // Snapshots written before the Round 2 bye rule have no r2.bye.
   if (!(out.r2 as Partial<GameState['r2']>).bye) out = { ...out, r2: { ...out.r2, bye: {} } };
+  // Snapshots written before the game-data export have no wrong-guess record and no per-wave vote log.
+  if (Object.values(out.teams).some(t => t.r1 && !(t.r1 as Partial<NonNullable<typeof t.r1>>).wrong)) {
+    const teams = { ...out.teams };
+    for (const [id, t] of Object.entries(teams)) {
+      if (t.r1 && !(t.r1 as Partial<NonNullable<typeof t.r1>>).wrong) teams[id] = { ...t, r1: { ...t.r1, wrong: { count: 0, log: [] } } };
+    }
+    out = { ...out, teams };
+  }
+  if (out.r3 && !Array.isArray((out.r3 as Partial<NonNullable<GameState['r3']>>).voteLog)) out = { ...out, r3: { ...out.r3, voteLog: [] } };
   return out;
 }

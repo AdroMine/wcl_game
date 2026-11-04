@@ -5,6 +5,7 @@ import { Pause, Play, QrCode, RefreshCw, RotateCcw, Shield, SkipForward, Trophy,
 import type { AdminViewData, Health, ServerLight } from '../../game/admin';
 import { formatClock } from '../../game/clock';
 import { BOX, BTN, BTN_PRIMARY, BTN_RED, mss } from './kit';
+import { ExportCard } from './ExportCard';
 import type { Ask, Run } from './kit';
 
 const PHASE_LABEL: Record<string, string> = {
@@ -195,6 +196,9 @@ export const AdminHeader: React.FC<Props> = ({ view, health, light, leftMs, busy
           <Stat label="State version" value={view ? String(view.v) : '-'} />
           <Stat label="Open streams" value={health ? String(health.clients) : '-'} />
           <Stat label="Players / crews" value={view ? `${view.counts.players} / ${view.counts.teams}` : '-'} />
+          <div className="col-span-2 sm:col-span-4 border-t border-[#2a2e3d] pt-3">
+            <ExportCard />
+          </div>
         </div>
       )}
 

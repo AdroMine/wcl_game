@@ -54,16 +54,19 @@ To upgrade, change `plan: free` to `plan: starter` in `render.yaml`, or change i
 
 ### 2d. Load test the deployed server (decides free vs paid)
 
+Put the token in the `ADMIN_TOKEN` environment variable first. Never pass it as `--admin-token`: npm prints the whole command line, token included.
+
 ```bash
-npm run swarm -- --target https://<your-app>.onrender.com --admin-token <ADMIN_TOKEN> --scenario join-storm
-npm run swarm -- --target https://<your-app>.onrender.com --admin-token <ADMIN_TOKEN> --scenario full-game --fast
-npm run swarm -- --target https://<your-app>.onrender.com --admin-token <ADMIN_TOKEN> --scenario r2-vote-burst
-npm run swarm -- --target https://<your-app>.onrender.com --admin-token <ADMIN_TOKEN> --scenario bad-wifi
+export ADMIN_TOKEN="$(cat ~/.underworld-admin-token)"   # PowerShell: $env:ADMIN_TOKEN = (Get-Content -Raw ~/.underworld-admin-token).Trim()
+npm run swarm -- --target https://<your-app>.onrender.com --scenario join-storm
+npm run swarm -- --target https://<your-app>.onrender.com --scenario full-game --fast
+npm run swarm -- --target https://<your-app>.onrender.com --scenario r2-vote-burst
+npm run swarm -- --target https://<your-app>.onrender.com --scenario bad-wifi
 ```
 
 - Each scenario prints PASS or FAIL and server metrics.
 - `bad-wifi` plays a whole game the way a pub would: about 15% of phones lose signal for 5 to 60 s (some across a phase change), 5% refresh the page, a few leave for good (including a whole crew in Round 2 and one in Round 3), some crews skip a vote, the host removes a player in Rounds 2 and 3 and a few players join late. It checks that every phone catches up within 10 s of getting signal back (prints p50/p95/max), that refreshed phones keep their seat, that every clash and wave still ends on its deadline with the default result (Truce, Rowboat) for crews that did not vote, and that the game reaches the podium. It never restarts the server; `--seed <n>` repeats the same chaos plan.
-- If p99 apply time or event-loop lag fails on the free plan, switch to Starter and rerun.
+- p99 apply time must stay under 250 ms against a hosted server (50 ms locally). On the free plan (0.1 CPU) Render pauses the process for 100-200 ms at a time, which players do not notice but which can fail this bar; Starter or above should pass it comfortably.
 - The swarm resets and drives the game, so **never run it during a real game**. Reset the game from `/admin` afterwards.
 - One full 200-bot game uses about 40 MB of Render bandwidth. The free workspace includes 5 GB a month.
 
@@ -83,6 +86,12 @@ npm run swarm -- --target https://<your-app>.onrender.com --admin-token <ADMIN_T
 4. **Next**: Round 2 pairing. Each crew types its rival's 2-digit code. The clash clock starts for everyone at once when all crews are paired. Otherwise, use **Force-start clashes**; unpaired crews get the mutual-Truce points for every clash (75, 150, 225) automatically and count as Honourable (+75 m in Round 3).
 5. Round 2 starts with a briefing (about 26 s, no votes), then runs on its own: 3 clashes × Huddle 50 s / Dialogue 40 s / Vote 25 s / Reveal 40 s. Announce each step from the projector; every crew is on the same step.
 6. **Next**: Round 2 results, then **Next** to start Round 3 (a briefing of about 28 s plays before wave 1). Waves repeat until 3 crews escape. Use **End Round 3** if needed and **Trigger Sudden Death** (Live game tab, Round 3) for a standoff. The standoff lasts 40 s; then every phone shows a 12 s reveal (each crew's maneuver, then the winner on the what-beats-what triangle) before the game returns to where it was. **Skip** during the standoff jumps to the reveal; **Skip** again ends the reveal.
+
+**At the end of the night (the front page, Underworld Wrapped and the game data):**
+1. **Next** from Round 3 results presses **Finish game**. The projector (`/screen`) keeps showing the final standings and podium; it no longer shows a recap slideshow.
+2. **Screenshot the front page** and post it (WhatsApp, the group chat). Every phone shows "The Underworld Times" at the top of the recap, under the final rank, with the hint "Screenshot this and share it": the medals (Gold, Silver, Bronze with the wave or Sudden Death), the Round 2 clash tiles, the Round 3 river tiles and the most treacherous crew. The host can open the same card in `/admin` (Live game tab, **Final standings** card, **Front page**, **Open the front page**); it is only available after **Finish game** and says so before. Below the front page each phone shows its own crew's cards (rank and awards, how often you betrayed, your boats and rank journey, your tablet time), then the award cards and the teaser. The words of the front page (title, kicker, headline phrases, dek, "NEXT EDITION" line) are in `games/underworld/recapContent.ts`. Phones fetch the recap once from `GET /api/recap` (it answers 404 until the game is Finished); a phone with bad signal shows a placeholder, retries by itself (with a Try again button) and keeps a copy once it has it. The recap code is a separate chunk that only loads at Finished. For a design check without a player session use `/front-page` and `/wrapped-preview?crew=N` once the game is Finished.
+3. **Download the game data** before you press **Reset game**: in `/admin`, the **Final standings** card (Round 3 results and Finished) and **Server details** have **JSON** and **CSV** buttons. JSON is for analysis (crews and members, Round 1 results with wrong guesses, every Round 2 clash with each member's vote, every Round 3 wave with each member's vessel vote, Sudden Death, the phase timeline, the final standings). CSV has one row per vote or action for a spreadsheet. Both are admin-only downloads, work in any phase (partial data before the end), contain no token hashes, and the token is sent in the request header, not the address. From a terminal: `curl -H "Authorization: Bearer $ADMIN_TOKEN" https://<your-host>/api/admin/export.json -o game.json` (or `export.csv`). Keep the file: it holds player names.
+4. The recap is rebuilt from the game state, so it comes back after a server restart or a restored backup. **Reset game** removes it (phones and the projector return to the lobby).
 
 **When something goes wrong:**
 

@@ -106,3 +106,29 @@ body.low-data-mode .font-mythic {
     radial-gradient(circle at 10% 80%, rgba(56, 189, 248, 0.04) 0%, transparent 40%),
     radial-gradient(circle at 90% 70%, rgba(192, 132, 252, 0.04) 0%, transparent 40%);
 }
+
+/* Underworld Wrapped (games/underworld/recap/ui): entrance animations for the recap slides and cards */
+@keyframes wrRise {
+  from { opacity: 0; transform: translateY(18px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes wrFade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes wrPop {
+  0% { opacity: 0; transform: scale(0.2); }
+  70% { transform: scale(1.15); }
+  100% { opacity: 1; transform: scale(1); }
+}
+@keyframes wrGrow {
+  from { opacity: 0; transform: scaleX(0.1); }
+  to { opacity: 1; transform: none; }
+}
+.wr-rise { animation: wrRise 0.7s ease-out both; }
+.wr-fade { animation: wrFade 1s ease-out both; }
+.wr-pop { animation: wrPop 0.5s ease-out both; transform-box: fill-box; transform-origin: center; }
+.wr-grow { animation: wrGrow 0.8s ease-out both; transform-box: fill-box; transform-origin: left center; }
+@media (prefers-reduced-motion: reduce) {
+  .wr-rise, .wr-fade, .wr-pop, .wr-grow { animation: none; }
+}

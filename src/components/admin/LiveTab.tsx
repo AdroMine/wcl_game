@@ -207,13 +207,17 @@ const PairingCard: React.FC<Props> = ({ view, run, busy }) => {
         </div>
       )}
       <div className="space-y-1.5">
-        <div className="text-xs font-mono text-[#8e95a5]">Unpaired crews ({unpaired.length})</div>
+        <div className="text-xs font-mono text-[#8e95a5]">Unpaired crews ({unpaired.length}) · Truce points every clash + Honourable</div>
         <div className="flex flex-wrap gap-1.5">
           {unpaired.map(id => {
             const t = teams.get(id);
             return (
               <span key={id} className="px-2 py-1 rounded border border-amber-500/40 text-amber-200 text-xs break-words max-w-full">
                 {t?.name ?? id} {t ? `[${t.battleCode}]` : ''}
+                {(() => {
+                  const b = view.byePoints?.[id] ?? [];
+                  return b.length > 0 ? <span className="ml-1 font-mono text-emerald-300">bye: +{b.reduce((a, n) => a + n, 0)}</span> : null;
+                })()}
               </span>
             );
           })}

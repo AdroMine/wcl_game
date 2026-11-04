@@ -561,7 +561,8 @@ function checkInvariants(s: GameState, firstVote: Map<string, string>, failures:
   }
   const sdEntries = s.phaseLog.filter(e => e.step === 'SUDDEN_DEATH').length;
   for (const [k, n] of seen) {
-    const allowed = k.endsWith('/REVEAL') ? 1 + sdEntries : 1;
+    // A standoff is two SUDDEN_DEATH entries: the vote, then the reveal.
+    const allowed = k.endsWith('/REVEAL') ? 1 + sdEntries : k.endsWith('/SUDDEN_DEATH') ? 2 : 1;
     if (n > allowed) fail(`step entered ${n} times: ${k}`);
   }
   const r2Steps = s.phaseLog.filter(e => e.phase === 'R2_CLASH').length;
@@ -588,6 +589,7 @@ function checkInvariants(s: GameState, firstVote: Map<string, string>, failures:
   let r2Total = 0;
   let matchTotal = 0;
   for (const m of Object.values(s.r2.matches)) for (const c of m.clashes) matchTotal += c.ptsA + c.ptsB;
+  for (const arr of Object.values(s.r2.bye)) for (const n of arr) matchTotal += n;
   for (const tid of s.teamOrder) {
     const t = s.teams[tid];
     r2Total += t.r2Points;
@@ -613,6 +615,7 @@ function checkInvariants(s: GameState, firstVote: Map<string, string>, failures:
         if (Object.keys(bucket).length > t.playerIds.length + 10) fail('more votes than players');
       }
     }
+    for (const n of s.r2.bye[tid] ?? []) sum += n;
     if (sum !== t.r2Points) fail(`R2 points ${tid}: team ${t.r2Points} vs matches ${sum}`);
   }
   if (r2Total !== matchTotal) fail(`R2 total ${r2Total} vs matches ${matchTotal}`);

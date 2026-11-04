@@ -1,13 +1,9 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { BookOpen, CheckCircle2, Clock, Compass, Key, MessageSquare, Shield, Sparkles, Users, Vote, X } from 'lucide-react';
 import type { Briefing } from '../../shared/protocol.ts';
+import { briefingSchedule } from '../../shared/briefing.ts';
 import { useGame } from '../game/useGame';
 import { useTick } from '../game/useNow';
-
-/** Pacing of the server-timed BRIEFING step (the server sizes the step from the same numbers). */
-export const SENTENCE_MS = 2800;
-export const STORY_PAUSE_MS = 3000;
-export const RULE_MS = 2000;
 
 const RULE_ICONS = [Users, Key, Shield, Compass, MessageSquare, Vote, Sparkles];
 
@@ -30,8 +26,10 @@ export const RoundBriefingModal: React.FC<Props> = ({ briefing, mode, startedAt,
 
   const nSent = briefing.sentences.length;
   const nRules = briefing.rules.length;
-  const rulesStart = nSent * SENTENCE_MS + STORY_PAUSE_MS;
-  const allShownAt = rulesStart + (nRules + 1) * RULE_MS;
+  // Same schedule the server used to size the step (shared/briefing.ts).
+  const sched = useMemo(() => briefingSchedule(briefing), [briefing]);
+  const rulesStart = sched.ruleAt[0];
+  const allShownAt = sched.allShownAt;
 
   // serverNow() is frozen while the game is paused, so the animation freezes with it.
   const now = serverNow();
@@ -41,9 +39,9 @@ export const RoundBriefingModal: React.FC<Props> = ({ briefing, mode, startedAt,
 
   const showStory = auto ? elapsed < rulesStart : manualTab === 'story';
   const showRules = auto ? elapsed >= rulesStart : manualTab === 'rules';
-  const revealedIndex = auto ? Math.min(nSent - 1, Math.floor(elapsed / SENTENCE_MS)) : nSent - 1;
-  const storyDone = auto && elapsed >= nSent * SENTENCE_MS;
-  const revealedRuleCount = auto ? Math.min(nRules + 1, Math.floor((elapsed - rulesStart) / RULE_MS) + 1) : nRules + 1;
+  const revealedIndex = auto ? Math.max(0, sched.sentenceAt.filter(at => elapsed >= at).length - 1) : nSent - 1;
+  const storyDone = auto && elapsed >= sched.storyEndsAt;
+  const revealedRuleCount = auto ? sched.ruleAt.filter(at => elapsed >= at).length : nRules + 1;
   const everythingShown = auto && elapsed >= allShownAt;
 
   useEffect(() => {
@@ -115,6 +113,15 @@ export const RoundBriefingModal: React.FC<Props> = ({ briefing, mode, startedAt,
                 <span>The Underworld Chronicles</span>
               </div>
 
+              {!auto ? (
+                <div data-testid="briefing-story-full" className="w-full px-4 py-4 space-y-3 rounded-2xl bg-[#0c0e14]/60 border border-[#2a2e3d]/60">
+                  {briefing.sentences.map((sentence, idx) => (
+                    <p key={idx} className="text-base font-serif text-[#f4f0e8] leading-relaxed">
+                      {sentence}
+                    </p>
+                  ))}
+                </div>
+              ) : (
               <div
                 className="w-full h-[280px] overflow-y-auto px-4 py-20 space-y-6 text-center scroll-smooth relative rounded-2xl bg-[#0c0e14]/60 border border-[#2a2e3d]/60"
                 style={{
@@ -143,6 +150,7 @@ export const RoundBriefingModal: React.FC<Props> = ({ briefing, mode, startedAt,
                   );
                 })}
               </div>
+              )}
 
               {auto && storyDone && <div className="pt-1 text-center text-xs font-mono text-[#a9b4c7] animate-pulse">Rules appearing shortly...</div>}
             </div>

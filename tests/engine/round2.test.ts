@@ -5,7 +5,8 @@ import type { Harness } from './helpers.ts';
 import { calculateClashPoints, calculateTeamStance, computeMoral, newClash } from '../../server/engine/round2.ts';
 import { R2_SCORING } from '../../server/engine/config.ts';
 import { briefingSeconds } from '../../server/content.ts';
-import { playerPrivate, round2MatchView } from '../../server/engine/index.ts';
+import { gameStateProblem } from '../../server/persistence/validate.ts';
+import { normalizeRestoredState, playerPrivate, round2MatchView } from '../../server/engine/index.ts';
 import type { Clash } from '../../server/engine/index.ts';
 
 // ---- golden values ported from tests/test_round2.ts ----------------------------------------
@@ -142,8 +143,66 @@ test('pairing: admin force start leaves unpaired teams out, admin can pair/unpai
   assert.equal(h.state.phase, 'R2_CLASH');
   playRound2(h, () => 'TRUCE');
   assert.equal(h.state.phase, 'R2_RESULTS');
-  assert.equal(h.state.teams[sitter].r2Points, 0);
-  assert.equal(h.state.r2.moral[sitter], undefined);
+  assert.equal(h.state.teams[sitter].r2Points, 450); // bye: Truce points for every clash
+  assert.equal(h.state.r2.moral[sitter].status, 'HONOURABLE'); // recompense for the round it could not play
+});
+
+// ---- bye crews (organizer ruling, Nov 3 2026) -----------------------------------------------
+
+test('bye: an odd crew left over receives both_truce for clashes 1..3 as each resolves', () => {
+  const { h, t } = r2([5, 5, 5]);
+  pairByCode(h, t[0], t[1]);
+  const bye = t[2];
+  h.ok(h.admin('ADMIN_R2_FORCE_START'));
+  const seen: number[] = [];
+  while (h.state.phase === 'R2_CLASH') {
+    if (h.state.step === 'VOTE') {
+      teamVotesR2(h, t[0], 'TRUCE');
+      teamVotesR2(h, t[1], 'TRUCE');
+      assert.equal(h.state.teams[bye].r2Points, seen.reduce((a, n) => a + n, 0), 'not yet credited during the vote');
+    }
+    h.nextDeadline();
+    const got = h.state.r2.bye[bye] ?? [];
+    if (got.length > seen.length) seen.push(got[got.length - 1]);
+  }
+  assert.deepEqual(h.state.r2.bye[bye], [R2_SCORING['1'].both_truce, R2_SCORING['2'].both_truce, R2_SCORING['3'].both_truce]);
+  assert.equal(h.state.teams[bye].r2Points, 450);
+  assert.equal(h.state.teams[bye].score, h.state.teams[bye].r1Points + 450 + h.state.teams[bye].adminAdjust);
+  assert.equal(h.state.r2.moral[bye].status, 'HONOURABLE');
+  assert.equal(h.state.r2.moral[bye].nemesisTeamId, null);
+  assert.equal(h.state.r2.bye[t[0]], undefined, 'paired crews get no bye');
+  assert.equal(h.state.teams[t[0]].r2Points, 450);
+  const v = round2MatchView(h.state, bye)!;
+  assert.equal(v.paired, false);
+  assert.deepEqual(v.bye, [75, 150, 225]);
+});
+
+test('bye: force-start with three unpaired crews credits each of them', () => {
+  const { h, t } = r2([5, 5, 5]);
+  h.ok(h.admin('ADMIN_R2_FORCE_START'));
+  playRound2(h, () => null);
+  assert.equal(h.state.phase, 'R2_RESULTS');
+  for (const tid of t) {
+    assert.deepEqual(h.state.r2.bye[tid], [75, 150, 225]);
+    assert.equal(h.state.teams[tid].r2Points, 450);
+    assert.equal(h.state.r2.moral[tid].status, 'HONOURABLE');
+  }
+});
+
+test('bye: state survives a JSON round trip and an old snapshot without r2.bye restores', () => {
+  const { h, t } = r2([5, 5, 5]);
+  pairByCode(h, t[0], t[1]);
+  playRound2(h, () => 'TRUCE');
+  const copy = JSON.parse(JSON.stringify(h.state));
+  assert.deepEqual(copy, h.state);
+  const old = JSON.parse(JSON.stringify(h.state));
+  delete old.r2.bye;
+  const restored = normalizeRestoredState(old);
+  assert.deepEqual(restored.r2.bye, {});
+  assert.equal(normalizeRestoredState(restored), restored, 'idempotent');
+  assert.deepEqual(round2MatchView(restored, t[2])!.bye, []);
+  assert.equal(gameStateProblem(old), null, 'old snapshot still validates');
+  assert.equal(gameStateProblem(copy), null);
 });
 
 test('timeline: 3 clashes x HUDDLE 50, PARLEY 40, VOTE 25, DEBRIEF 40 on one global clock', () => {

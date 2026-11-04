@@ -2,10 +2,10 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Clock, Crown, Delete, Handshake, Lock, MessageSquare, Shield, Skull, Swords, Users, Vote, Check } from 'lucide-react';
 import confetti from 'canvas-confetti';
-import type { MoralStatus, Stance } from '../../../shared/protocol.ts';
-import { useGame } from '../../game/useGame';
-import { usePendingVote, VoteFeedback } from '../../game/usePendingVote';
-import { BTN_GOLD, CARD, Countdown, ErrorNote, LABEL, pts } from '../ui';
+import type { MoralStatus, Stance } from '../../../../../shared/protocol.ts';
+import { useGame } from '../../../../../src/game/useGame';
+import { usePendingVote, VoteFeedback } from '../../../../../src/game/usePendingVote';
+import { BTN_GOLD, CARD, Countdown, ErrorNote, LABEL, pts } from '../../../../../src/components/ui';
 
 // ------------------------------------------------------------------ pairing
 const PairingStep: React.FC = () => {
@@ -201,11 +201,13 @@ const ClashStep: React.FC = () => {
   }, [step]);
 
   if (!phase || !r2) return null;
+  const byeTotal = (r2.bye ?? []).reduce((a, n) => a + n, 0);
   if (!r2.paired || !r2.rival) {
     return (
       <div className={`${CARD} text-center space-y-1`}>
-        <h3 className="text-lg font-serif font-black text-[#f4f0e8]">Your crew is sitting out Round 2</h3>
-        <p className="text-sm text-[#a9b4c7]">You were not paired with a rival crew. Watch the screen for Round 3.</p>
+        <h3 data-testid="r2-bye" className="text-lg font-serif font-black text-[#f4f0e8]">No rival crew left for you</h3>
+        <p className="text-sm text-[#a9b4c7]">Your crew gets the Truce points for every clash and counts as Honourable: +75 m head start in Round 3.</p>
+        {byeTotal > 0 && <p className="text-sm font-mono font-bold text-emerald-400">{pts(byeTotal)} pts so far</p>}
       </div>
     );
   }
@@ -545,7 +547,8 @@ const MORAL_STYLE: Record<string, { box: string; chip: string; text: string; ico
 const Results: React.FC = () => {
   const { view, meta } = useGame();
   const r2 = view?.r2;
-  const total = r2 ? r2.clashes.reduce((a, c) => a + c.myPts, 0) : 0;
+  const byeTotal = (r2?.bye ?? []).reduce((a, n) => a + n, 0);
+  const total = r2 ? r2.clashes.reduce((a, c) => a + c.myPts, 0) + byeTotal : 0;
   const played = !!r2?.paired && r2.clashes.length > 0;
 
   // Confetti once when the results appear.
@@ -580,7 +583,7 @@ const Results: React.FC = () => {
         <div className={`${CARD} text-center space-y-2`}>
           <span className={LABEL}>Round 2 complete</span>
           <h3 data-testid="r2-moral" className="text-2xl font-serif font-black text-[#e5cb87]">
-            {r2.paired ? 'No moral status' : 'No clash played'}
+            {r2.paired ? 'No moral status' : 'Truce points awarded'}
           </h3>
         </div>
       )}

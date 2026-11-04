@@ -5,11 +5,12 @@ Read this first, then CLAUDE.md, docs/RULE_DECISIONS.md, docs/PROTOCOL.md and do
 ## Where things are
 - Branch `rebuild` holds all the new work; `main` and the tag `halloween-prod` are the Halloween code, untouched.
 - Phase 0 audit: docs/AUDIT.md (decision: option B). Rulings: docs/RULE_DECISIONS.md (overrides the rules doc).
+- Games ("disks"): games/<game>/ holds everything specific to one game: games/underworld/game.ts (title, roles, emblems, lobby/finish lines) and games/underworld/rounds/{tablet,mist,styx}/ with content.ts (story, rules, scoring numbers, projector lines) and ui/ (the React screen of that round). Edit text there; see games/README.md. server/content.ts only assembles it into /api/meta, and server/engine/config.ts re-exports the constants for the engine.
 - Engine: server/engine (pure reducer, all three rounds, admin). Server: server/ (node:http, SSE, per-team views, snapshots to file or Supabase). Protocol: shared/protocol.ts + docs/PROTOCOL.md. Web app: src/ rewired to src/game/useGame.tsx; old Supabase client removed. Load test: tools/swarm. Browser test: tests/e2e/fullgame.e2e.mjs.
 
 ## Verified (in a Linux sandbox without npm access)
 - `npm test`: 203 tests pass. `npm run sim`: 200-player game, all invariants hold. `npm run typecheck:server` passes.
-- Swarm, 200 bots, local: all 8 plan scenarios pass (join storm, round start, phase change, R2 vote burst, chaos restart, duplicates and slow readers, full game, 24-min soak). Max view 3-4 KB; about 40 MB of traffic per full game.
+- Swarm, 200 bots, local: all 8 plan scenarios pass (join storm, round start, phase change, R2 vote burst, chaos restart, duplicates and slow readers, full game, 24-min soak). A ninth, `bad-wifi` (a full game with flaky signal, refreshes, leavers, silent and non-voting crews, host removals and late joiners), is in tools/swarm/badwifi.ts. Max view 3-4 KB; about 40 MB of traffic per full game.
 - Playwright full game with 11 phones + admin + /screen against an esbuild bundle (icons, confetti and QR were stubbed; Tailwind 4 used instead of 3).
 
 ## Verified on the organizer's Windows machine (Nov 1, Node 24.18)

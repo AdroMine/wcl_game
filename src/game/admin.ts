@@ -140,6 +140,8 @@ export interface AdminViewData {
   teams: AdminTeam[];
   matches: AdminMatch[];
   unpairedTeamIds: string[];
+  /** Truce points per resolved clash for crews that had no rival. */
+  byePoints?: Record<string, number[]>;
   moral: Record<string, AdminMoral>;
   r3: AdminR3 | null;
 }

@@ -33,8 +33,8 @@ const startR2: Handler = (d, _c, now, ev) => {
 
 const forceStartClashes: Handler = (d, _c, now, ev) => {
   if (d.phase !== 'R2_PAIRING') return fail('WRONG_PHASE');
-  // Unpaired teams sit out Round 2 (pending confirmation in RULE_DECISIONS).
-  // RULE-QUESTION: forcing the start with zero pairings is allowed (nobody scores in Round 2).
+  // Unpaired teams get the mutual-Truce points per clash (r2.bye, RULE_DECISIONS Nov 3).
+  // RULE-QUESTION: forcing the start with zero pairings is allowed (unpaired crews all get the bye points).
   startClashes(d, now, ev);
   return undefined;
 };

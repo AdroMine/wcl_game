@@ -2,9 +2,9 @@
 import React, { useEffect, useRef, useState } from 'react';
 import confetti from 'canvas-confetti';
 import { AlertCircle, CheckCircle2, Maximize2, Minimize2, RotateCw, Sparkles } from 'lucide-react';
-import { useGame } from '../../game/useGame';
-import { getSliceViewBox, getTabletTextMetrics, TABLET_CONFIG } from '../../lib/tabletEngine';
-import { BTN_GOLD, CARD, LABEL, useRoles } from '../ui';
+import { useGame } from '../../../../../src/game/useGame';
+import { getSliceViewBox, getTabletTextMetrics, TABLET_CONFIG } from './tabletEngine';
+import { BTN_GOLD, CARD, LABEL, useRoles } from '../../../../../src/components/ui';
 
 type Rotation = 0 | 90 | 180 | 270;
 

@@ -2,9 +2,10 @@
 import { Swarm, SpawnedServer, FAST_DURATIONS, NORMAL_DURATIONS } from './context.ts';
 import type { AdminViewData, Check, SampleSummary, ScenarioResult } from './context.ts';
 import { fmt, mb, sleep, summarize } from './stats.ts';
+import { Chaos, CATCH_UP_LIMIT_MS } from './badwifi.ts';
 import type { View } from '../../shared/protocol.ts';
 
-export const SCENARIOS = ['join-storm', 'round-start', 'phase-change', 'r2-vote-burst', 'chaos-restart', 'duplicates-slow-readers', 'soak', 'full-game'] as const;
+export const SCENARIOS = ['join-storm', 'round-start', 'phase-change', 'r2-vote-burst', 'chaos-restart', 'duplicates-slow-readers', 'soak', 'full-game', 'bad-wifi'] as const;
 export type ScenarioName = (typeof SCENARIOS)[number];
 
 const MAX_APPLY_P99_MS = 50;
@@ -479,8 +480,16 @@ export interface GameRun {
   serverBytesOut: number;
 }
 
-async function playFullGame(sw: Swarm, r: Report, label: string): Promise<GameRun | null> {
-  const fast = sw.opts.fast || label === 'full-game';
+/** Points where a scenario can join in while playFullGame drives the game. */
+interface GameHooks {
+  /** Crews are formed, the game has not started. */
+  afterSetup?: () => Promise<void>;
+  /** Round 3 is over, Sudden Death is next. */
+  beforeSuddenDeath?: () => Promise<void>;
+}
+
+async function playFullGame(sw: Swarm, r: Report, label: string, hooks: GameHooks = {}): Promise<GameRun | null> {
+  const fast = sw.opts.fast || label === 'full-game' || label === 'bad-wifi';
   const dur = fast ? FAST_DURATIONS : NORMAL_DURATIONS;
   sw.world.flags = { lobby: true, r1: true, r2pair: true, r2vote: true, r3: true, sd: true };
   sw.world.boldness = fast ? 0.8 : 0.55;
@@ -490,6 +499,7 @@ async function playFullGame(sw: Swarm, r: Report, label: string): Promise<GameRu
   const { joined, teamed } = await sw.setup({ joinSpreadMs: fast ? 8000 : Math.min(60_000, sw.opts.joinSeconds * 1000), durations: dur });
   r.check('all bots joined and teamed', joined === sw.bots.length && teamed, `${joined} joined, teamed ${teamed}`);
   if (!teamed) return null;
+  await hooks.afterSetup?.();
   const sampler = sw.sampler();
   sampler.start(fast ? 1000 : 2000);
   await sw.resetMetrics();
@@ -541,6 +551,7 @@ async function playFullGame(sw: Swarm, r: Report, label: string): Promise<GameRu
     await sleep(500);
   }
   r.check('Round 3 ended with escapes', true, `${waves} waves`);
+  await hooks.beforeSuddenDeath?.();
   await sleep(1500);
   // Sudden Death between the top two (host decision), played by those crews' bots
   const a3 = await sw.adminView();
@@ -563,7 +574,7 @@ async function playFullGame(sw: Swarm, r: Report, label: string): Promise<GameRu
   async function finish(ok: boolean, reason?: string): Promise<GameRun> {
     const s = sampler.stop();
     const h1 = await sw.health();
-    const views = sw.bots.map(b => b.view).filter((v): v is View => !!v);
+    const views = sw.liveBots().map(b => b.view).filter((v): v is View => !!v);
     const podium = views.find(v => v.r3?.podium)?.r3?.podium ?? [];
     if (ok) {
       r.check('podium has Gold, Silver and Bronze', podium.length === 3, podium.join(' | '));
@@ -612,6 +623,31 @@ async function fullGame(sw: Swarm): Promise<ScenarioResult> {
   return r.done();
 }
 
+/**
+ * A whole game over bad pub wifi: phones lose signal at random, refresh, leave for good (alone and as whole crews),
+ * crews skip votes, the host removes players and new players join mid-game. See badwifi.ts.
+ */
+async function badWifi(sw: Swarm): Promise<ScenarioResult> {
+  const r = new Report('bad-wifi');
+  const chaos = new Chaos(sw);
+  let run: GameRun | null = null;
+  try {
+    run = await playFullGame(sw, r, 'bad-wifi', { afterSetup: () => chaos.begin(), beforeSuddenDeath: () => chaos.quiesce() });
+    if (!run) return r.done();
+    r.check('game reached the podium', run.ok, run.reason ?? '');
+    await chaos.finish(run.ok);
+  } finally {
+    chaos.stop();
+  }
+  r.checks.push(...chaos.checks);
+  Object.assign(r.numbers, chaos.numbers);
+  r.notes.push(...chaos.notes);
+  r.num('catchUpLimitMs', CATCH_UP_LIMIT_MS);
+  commonChecks(r, sw, run.sampler);
+  bandwidth(r, sw, run, run.wallSec, false);
+  return r.done();
+}
+
 async function soak(sw: Swarm): Promise<ScenarioResult> {
   const r = new Report('soak');
   const run = await playFullGame(sw, r, 'soak');
@@ -655,6 +691,8 @@ export async function runScenario(name: ScenarioName, opts: Swarm['opts'], share
         return await soak(sw);
       case 'full-game':
         return await fullGame(sw);
+      case 'bad-wifi':
+        return await badWifi(sw);
     }
   } catch (e) {
     const r = new Report(name);

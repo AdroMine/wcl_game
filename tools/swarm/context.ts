@@ -87,11 +87,17 @@ export interface AdminViewData {
   v: number;
   phase: { name: string; step: string | null; clash: number; wave: number; endsAt: number | null; paused: boolean; phaseSeq: number };
   counts: { players: number; teams: number; connected: number };
-  players: { id: string; name: string; teamId: string | null; connected: boolean }[];
+  players: { id: string; name: string; teamId: string | null; connected: boolean; canLogin?: boolean }[];
   teams: AdminTeam[];
-  matches: { id: string; teamA: string; teamB: string; clashes: { clash: number; resolved: boolean; stanceA: string | null; stanceB: string | null; votedA: number; votedB: number }[] }[];
+  matches: { id: string; teamA: string; teamB: string; cancelled?: boolean; clashes: { clash: number; resolved: boolean; stanceA: string | null; stanceB: string | null; votedA: number; votedB: number }[] }[];
   unpairedTeamIds: string[];
-  r3: { escapeOrder: string[]; waves: number; teams: Record<string, { distance: number; escaped: boolean; escapeRank: number | null; leashHolder: boolean }> } | null;
+  r3: {
+    escapeOrder: string[];
+    waves: number;
+    teams: Record<string, { distance: number; escaped: boolean; escapeRank: number | null; leashHolder: boolean }>;
+    votedThisWave?: Record<string, number>;
+    lastReport?: { wave: number; activeCrews: number; outcomes: Record<string, { vessel: string; unanimity: number; gained: number; escaped: boolean }> } | null;
+  } | null;
 }
 
 export const FAST_DURATIONS = { r1Seconds: 30, r2: { HUDDLE: 6, PARLEY: 5, VOTE: 10, DEBRIEF: 5 }, r3: { BLUFF: 6, VOTE: 10, REVEAL: 5 }, sdSeconds: 10 };
@@ -327,22 +333,32 @@ export class Swarm {
 
   makeBots(n: number, tweak: { dupRate?: number; abortRate?: number } = {}): Bot[] {
     const rng = mulberry(this.opts.seed);
-    this.bots = Array.from({ length: n }, (_, i) => {
-      const tok = Array.from({ length: 24 }, () => 'abcdefghijklmnopqrstuvwxyz0123456789'[Math.floor(rng() * 36)]).join('');
-      return new Bot({
-        target: this.target,
-        index: i,
-        id: `bot-${this.runTag}-${String(i).padStart(3, '0')}`,
-        token: `${tok}${this.runTag}`,
-        name: `Bot ${String(i).padStart(3, '0')}`,
-        dupRate: tweak.dupRate ?? this.opts.dupRate,
-        abortRate: tweak.abortRate ?? this.opts.abortRate,
-        seed: this.opts.seed * 1000 + i,
-        counters: this.counters,
-        onView: brain(this.world),
-      });
-    });
+    this.bots = Array.from({ length: n }, (_, i) => this.newBot(i, rng, tweak));
     return this.bots;
+  }
+
+  private newBot(i: number, rng: () => number, tweak: { dupRate?: number; abortRate?: number } = {}, label = 'Bot'): Bot {
+    const tok = Array.from({ length: 24 }, () => 'abcdefghijklmnopqrstuvwxyz0123456789'[Math.floor(rng() * 36)]).join('');
+    return new Bot({
+      target: this.target,
+      index: i,
+      id: `bot-${this.runTag}-${String(i).padStart(3, '0')}`,
+      token: `${tok}${this.runTag}`,
+      name: `${label} ${String(i).padStart(3, '0')}`,
+      dupRate: tweak.dupRate ?? this.opts.dupRate,
+      abortRate: tweak.abortRate ?? this.opts.abortRate,
+      seed: this.opts.seed * 1000 + i,
+      counters: this.counters,
+      onView: brain(this.world),
+    });
+  }
+
+  /** A phone that turns up after the game started (not started yet: call start() on it). */
+  addBot(label = 'Late'): Bot {
+    const i = this.bots.length;
+    const b = this.newBot(i, mulberry(this.opts.seed * 31 + i), {}, label);
+    this.bots.push(b);
+    return b;
   }
 
   startBots(): void {
@@ -353,7 +369,12 @@ export class Swarm {
     for (const b of this.bots) b.stop();
   }
 
-  async waitAll(pred: (v: View, b: Bot) => boolean, timeoutMs: number, bots: Bot[] = this.bots): Promise<(number | null)[]> {
+  /** Bots that still take part: not gone silent for good and not removed by the host (bad-wifi). */
+  liveBots(): Bot[] {
+    return this.bots.filter(b => !b.excluded);
+  }
+
+  async waitAll(pred: (v: View, b: Bot) => boolean, timeoutMs: number, bots: Bot[] = this.liveBots()): Promise<(number | null)[]> {
     return Promise.all(bots.map(b => b.waitFor(v => pred(v, b), timeoutMs)));
   }
 

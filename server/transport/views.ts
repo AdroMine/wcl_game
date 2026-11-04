@@ -136,7 +136,7 @@ export class ViewBuilder {
       endsAt: state.endsAt,
       paused: info.paused,
     };
-    if (state.step === 'BRIEFING') phase.startedAt = state.phaseStartedAt;
+    if (state.step === 'BRIEFING' || state.step === 'SUDDEN_DEATH') phase.startedAt = state.phaseStartedAt;
     if (state.pausedAt != null) {
       phase.pausedAt = state.pausedAt;
       phase.pausedRemainingMs = state.endsAt == null ? 0 : Math.max(0, state.endsAt - state.pausedAt);
@@ -224,6 +224,7 @@ export class ViewBuilder {
           r2.votedBy = m.voting.votedBy;
         }
         if (m.moral) r2.moral = m.moral.status;
+        if (!m.paired && m.bye) r2.bye = m.bye;
         part.r2 = r2;
       }
     }
@@ -285,9 +286,14 @@ export class ViewBuilder {
           mine: teamId === sd.teamA || teamId === sd.teamB,
           resolved: sd.resolved,
         };
+        if (teamId === sd.teamA) out.side = 'A';
+        else if (teamId === sd.teamB) out.side = 'B';
         if (sd.voting) out.votedCount = sd.voting.votedCount;
         if (sd.resolved) {
           out.winner = sd.winnerTeamId ? (state.teams[sd.winnerTeamId]?.name ?? null) : null;
+          out.winnerSide = sd.winnerTeamId == null ? null : sd.winnerTeamId === sd.teamA ? 'A' : 'B';
+          if (sd.stanceA) out.pickA = sd.stanceA;
+          if (sd.stanceB) out.pickB = sd.stanceB;
           out.text = sd.text;
         }
         r3.sd = out;

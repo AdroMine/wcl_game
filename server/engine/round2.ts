@@ -109,7 +109,7 @@ export function allTeamsPaired(d: GameState): boolean {
 }
 
 export function initRound2Pairing(d: GameState): void {
-  d.r2 = { matches: {}, matchOfTeam: {}, moral: {} };
+  d.r2 = { matches: {}, matchOfTeam: {}, moral: {}, bye: {} };
 }
 
 /**
@@ -226,6 +226,18 @@ export function resolveClash(d: GameState, ev: GameEvent[]): void {
     recomputeScore(tb);
     ev.push({ type: 'R2_CLASH_RESOLVED', matchId: m.id, clash: clash.clash });
   }
+  // Crews with no rival get the mutual-Truce points for this clash, once per clash (and Honourable in computeAllMoral).
+  const tier = R2_SCORING[String(d.clash)] || R2_SCORING['1'];
+  for (const tid of d.teamOrder) {
+    const t = d.teams[tid];
+    if (!t || d.r2.matchOfTeam[tid]) continue;
+    const got = d.r2.bye[tid] ?? (d.r2.bye[tid] = []);
+    if (got.length >= d.clash) continue;
+    got.push(tier.both_truce);
+    t.r2Points += tier.both_truce;
+    recomputeScore(t);
+    ev.push({ type: 'R2_BYE_SCORED', teamId: tid, clash: d.clash, pts: tier.both_truce });
+  }
 }
 
 export function computeAllMoral(d: GameState): void {
@@ -233,6 +245,12 @@ export function computeAllMoral(d: GameState): void {
   for (const m of Object.values(d.r2.matches)) {
     if (d.teams[m.teamA]) d.r2.moral[m.teamA] = computeMoral(m.clashes, 'A', m.teamB);
     if (d.teams[m.teamB]) d.r2.moral[m.teamB] = computeMoral(m.clashes, 'B', m.teamA);
+  }
+  // Organizer ruling (Nov 3 2026): a crew left without a rival counts as Honourable (+75 m in Round 3)
+  // as recompense for the round it could not play. It has no rival, so no nemesis and no leash.
+  for (const [tid, got] of Object.entries(d.r2.bye)) {
+    if (!d.teams[tid] || d.r2.matchOfTeam[tid] || got.length === 0) continue;
+    d.r2.moral[tid] = { status: 'HONOURABLE', rivalTeamId: null, nemesisTeamId: null, mutualTruce: got.length, myAmbush: 0, rivalAmbush: 0, mutualAmbush: 0 };
   }
 }
 

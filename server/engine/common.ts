@@ -100,6 +100,7 @@ export function removeTeam(d: GameState, teamId: string): void {
     }
   }
   delete d.r2.moral[teamId];
+  delete d.r2.bye[teamId];
 
   const r3 = d.r3;
   if (r3) {

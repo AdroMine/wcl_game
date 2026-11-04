@@ -33,13 +33,15 @@ export interface Counters {
   maxEventBytes: number;
   staleViewsIgnored: number;
   restartsSeen: number;
+  /** Commands given up after the whole retry budget (phone with no signal); the player taps again on reconnect. */
+  lostCmds: number;
 }
 
 export function newCounters(): Counters {
   return {
     sent: 0, ok: 0, errors: {}, http: {}, dupSent: 0, dupMismatch: 0, timeouts: 0, retries: 0, networkErrors: 0, rtts: [],
     bytesSse: 0, bytesPoll: 0, bytesCmd: 0, events: 0, resyncs: 0, reconnects: 0, sseConnects: 0, polls: 0, polls304: 0,
-    maxEventBytes: 0, staleViewsIgnored: 0, restartsSeen: 0,
+    maxEventBytes: 0, staleViewsIgnored: 0, restartsSeen: 0, lostCmds: 0,
   };
 }
 
@@ -89,6 +91,17 @@ export class Bot {
   resyncAt = 0;
   /** Free-form per-bot memory for the brain. */
   readonly memo: Record<string, unknown> = {};
+  /** bad-wifi: no signal. The stream is closed and every request fails like a dropped connection. */
+  offline = false;
+  /** bad-wifi: left the group (went silent for good or removed by the host); ignored by "everybody" checks. */
+  excluded = false;
+  /** bad-wifi: removed by the host. Sends nothing any more, keeps its stream open (the phone is still on). */
+  muted = false;
+  /** Bumped by refresh(): timers scheduled by the previous page load must not fire. */
+  epoch = 0;
+  /** Commands given up while offline since the last reconnect (cleared when the phone comes back). */
+  lostCmds = 0;
+  private wakeDelayMs = 0;
 
   constructor(cfg: BotConfig) {
     this.cfg = cfg;
@@ -126,6 +139,19 @@ export class Bot {
   private async connectLoop(): Promise<void> {
     let attempt = 0;
     while (!this.stopped) {
+      if (this.offline) {
+        // No signal: wait for it to come back, then reconnect after the chosen delay (the 'online' event or the backoff timer).
+        while (this.offline && !this.stopped) await sleep(100);
+        if (this.stopped) break;
+        await sleep(this.wakeDelayMs);
+        if (this.stopped || this.offline) continue;
+        attempt = 0;
+        if (this.lostCmds > 0) {
+          // The player tapped while there was no signal and got "not sent": they tap again now.
+          this.lostCmds = 0;
+          delete this.memo.acted;
+        }
+      }
       this.gotEventThisConn = false;
       const url = `${this.cfg.target}/api/stream?playerId=${this.id}&token=${this.cfg.token}`;
       this.c.sseConnects++;
@@ -165,6 +191,7 @@ export class Bot {
       const res = await conn.done;
       void lastBytes;
       if (this.stopped) break;
+      if (this.offline) continue;
       this.c.reconnects++;
       if (this.resyncFlag) {
         this.resyncFlag = false;
@@ -181,7 +208,44 @@ export class Bot {
     }
   }
 
+  // ---- bad-wifi helpers ---------------------------------------------------------
+
+  /** Lose the signal: close the stream, fail every request until comeOnline(). */
+  goOffline(): void {
+    if (this.stopped || this.offline) return;
+    this.offline = true;
+    this.conn?.close();
+  }
+
+  /** Signal is back; the stream reconnects after `wakeDelayMs` (0 to 400 ms with the 'online' event, 1 to 5 s via the backoff timer). */
+  comeOnline(wakeDelayMs: number): void {
+    this.wakeDelayMs = wakeDelayMs;
+    this.offline = false;
+  }
+
+  /** Page refresh: the old page is gone (no view, no memory, no timers); the new one reconnects with the same id and token. */
+  refresh(reloadMs: number): void {
+    if (this.stopped) return;
+    this.epoch++;
+    this.view = null;
+    this.viewRaw = '';
+    this.etag = null;
+    this.sid = null;
+    this.versionsSeen = [];
+    this.lostCmds = 0;
+    delete this.memo.acted;
+    this.goOffline();
+    setTimeout(() => this.comeOnline(0), reloadMs);
+  }
+
+  /** The player leaves for good: close the stream, never send again. */
+  goSilent(): void {
+    this.excluded = true;
+    this.stop();
+  }
+
   async pollOnce(): Promise<void> {
+    if (this.offline) return;
     try {
       this.c.polls++;
       const res = await fetch(`${this.cfg.target}/api/view?playerId=${this.id}&token=${this.cfg.token}`, {
@@ -253,11 +317,15 @@ export class Bot {
 
   /** Send a command. Network failures and timeouts are retried with the SAME commandId. */
   async cmd(type: string, payload: unknown = {}, opts: { commandId?: string; dups?: number; noAbort?: boolean } = {}): Promise<{ status: number; body: CommandResult } | null> {
+    if (this.muted) return null;
     const commandId = opts.commandId ?? this.nextCommandId();
     const body = JSON.stringify({ commandId, playerId: this.id, token: this.cfg.token, type, payload });
     this.c.sent++;
     let result: { status: number; body: CommandResult } | null = null;
-    for (let attempt = 0; attempt < 6 && !this.stopped; attempt++) {
+    // Like the web client: keep retrying with the same commandId; while there is no signal give up after 20 s in total.
+    const started = Date.now();
+    let sawOffline = false;
+    for (let attempt = 0; !this.stopped && (attempt < 6 || (sawOffline && Date.now() - started < 20_000)); attempt++) {
       if (attempt > 0) {
         this.c.retries++;
         await sleep(Math.min(4000, 250 * 2 ** attempt) * (0.5 + this.rng() * 0.5));
@@ -279,11 +347,18 @@ export class Bot {
         if (this.c.rtts.length < 100_000) this.c.rtts.push(performance.now() - t0);
         break;
       } catch (e) {
+        if (this.offline) sawOffline = true;
         if (e instanceof Error && (e.name === 'TimeoutError' || e.name === 'AbortError')) this.c.timeouts++;
         else this.c.networkErrors++;
       }
     }
-    if (!result) return null;
+    if (!result) {
+      if (sawOffline) {
+        this.lostCmds++;
+        this.c.lostCmds++;
+      }
+      return null;
+    }
     if (result.body.ok) this.c.ok++;
     else this.c.errors[result.body.error ?? 'UNKNOWN'] = (this.c.errors[result.body.error ?? 'UNKNOWN'] ?? 0) + 1;
     // Deliberate duplicates: the server must answer ok for a duplicate of an accepted command.
@@ -308,6 +383,7 @@ export class Bot {
   }
 
   private async post(body: string, abortAfterSend: boolean): Promise<Response> {
+    if (this.offline) throw new TypeError('fetch failed (simulated: no signal)');
     const ctl = new AbortController();
     const timer = setTimeout(() => ctl.abort(), abortAfterSend ? 1 + Math.floor(this.rng() * 3) : 8000);
     try {

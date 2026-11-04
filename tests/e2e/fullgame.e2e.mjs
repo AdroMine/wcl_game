@@ -488,7 +488,7 @@ try {
   ok(true, 'R3: phones show the briefing step first');
   await skipBriefing('R3_ACTIVE');
   await Promise.all([0, 5].map(i => waitShown(phones[i].page, 'r3-step')));
-  ok(/Sailboat holds \d+ crews? this wave/.test(await text(phones[0].page, 'sailboat-capacity')), 'R3: "Sailboat holds N crews this wave" shown');
+  ok(/more than 30% of crews select it \(> \d+ crews?\)/.test(await text(phones[0].page, 'sailboat-capacity')), 'R3: sailboat capacity "(> N crews)" shown');
   ok(await shown(phones[0].page, 'r3-fleet'), 'R3: fleet track shown');
   ok((await phones[0].page.getByTestId('r3-boat-me').count()) === 1, 'R3: your own crew boat is on the track and highlighted ("YOU")');
   const lanes = await phones[0].page.locator('[data-testid^="r3-boat"]').evaluateAll(els => els.map(e => e.getAttribute('data-lane')));
@@ -592,6 +592,28 @@ try {
   await shot(phones[0].page, '30-round3-podium');
   await waitShown(screen, 'screen-podium');
   await shot(screen, '31-screen-podium');
+
+  // Sudden Death from the results screen: both crews pick, then every phone gets the timed reveal.
+  ok((await adminHttp('ADMIN_TRIGGER_SUDDEN_DEATH', { teamA: idOf(codeA), teamB: idOf(codeB) })).ok === true, 'admin: Sudden Death triggered');
+  await Promise.all([0, 5].map(i => waitShown(phones[i].page, 'sd-triangle')));
+  ok(true, 'SD: both crews see the what-beats-what triangle');
+  await shot(phones[0].page, '31b-sd-vote');
+  await phones[0].page.getByTestId('sd-SHIELDS').click();
+  await phones[5].page.getByTestId('sd-RAM').click();
+  await sleep(1500);
+  ok((await adminHttp('ADMIN_SKIP_STEP', { phaseSeq: (await adminView()).phase.phaseSeq })).ok === true, 'admin: standoff skipped to the reveal');
+  await Promise.all([0, 5, 1].map(i => waitShown(phones[i].page, 'sd-reveal')));
+  ok(true, 'SD: the reveal shows on duelling and other phones');
+  await sleep(1200);
+  await shot(phones[0].page, '31c-sd-reveal-first');
+  await waitShown(phones[5].page, 'sd-winner', 10000);
+  ok(/YOUR CREW LOSES/.test(await text(phones[5].page, 'sd-winner')), 'SD: Ram loses to Shields: that crew is told it lost');
+  ok(/YOUR CREW WINS/.test(await text(phones[0].page, 'sd-winner')), 'SD: the Shields crew is told it won');
+  await shot(phones[5].page, '31d-sd-reveal-winner');
+  ok((await adminHttp('ADMIN_SKIP_STEP', { phaseSeq: (await adminView()).phase.phaseSeq })).ok === true, 'admin: reveal skipped');
+  await waitShown(phones[0].page, 'sd-summary');
+  ok(true, 'SD: the result stays on the podium screen');
+  await shot(phones[0].page, '31e-sd-summary');
   await adminNext(admin); // Finish
   await waitAdminPhase(admin, /FINISHED/);
   await waitShown(phones[0].page, 'final-rank');

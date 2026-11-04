@@ -51,6 +51,7 @@ export function buildAdminView(input: AdminViewInput): { stable: string; hash: s
     })),
     unpairedTeamIds: s.teamOrder.filter(id => !s.r2.matchOfTeam[id]),
     moral: s.r2.moral,
+    byePoints: s.r2.bye ?? {},
     r3: s.r3
       ? {
           teams: s.r3.teams,

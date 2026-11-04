@@ -58,9 +58,11 @@ To upgrade, change `plan: free` to `plan: starter` in `render.yaml`, or change i
 npm run swarm -- --target https://<your-app>.onrender.com --admin-token <ADMIN_TOKEN> --scenario join-storm
 npm run swarm -- --target https://<your-app>.onrender.com --admin-token <ADMIN_TOKEN> --scenario full-game --fast
 npm run swarm -- --target https://<your-app>.onrender.com --admin-token <ADMIN_TOKEN> --scenario r2-vote-burst
+npm run swarm -- --target https://<your-app>.onrender.com --admin-token <ADMIN_TOKEN> --scenario bad-wifi
 ```
 
 - Each scenario prints PASS or FAIL and server metrics.
+- `bad-wifi` plays a whole game the way a pub would: about 15% of phones lose signal for 5 to 60 s (some across a phase change), 5% refresh the page, a few leave for good (including a whole crew in Round 2 and one in Round 3), some crews skip a vote, the host removes a player in Rounds 2 and 3 and a few players join late. It checks that every phone catches up within 10 s of getting signal back (prints p50/p95/max), that refreshed phones keep their seat, that every clash and wave still ends on its deadline with the default result (Truce, Rowboat) for crews that did not vote, and that the game reaches the podium. It never restarts the server; `--seed <n>` repeats the same chaos plan.
 - If p99 apply time or event-loop lag fails on the free plan, switch to Starter and rerun.
 - The swarm resets and drives the game, so **never run it during a real game**. Reset the game from `/admin` afterwards.
 - One full 200-bot game uses about 40 MB of Render bandwidth. The free workspace includes 5 GB a month.
@@ -78,9 +80,9 @@ npm run swarm -- --target https://<your-app>.onrender.com --admin-token <ADMIN_T
 1. Lobby: players scan the QR code, enter a name, and create or join a crew by tapping the crew's 3 emojis. Set the **crew size** (3 to 6, default 5) in `/admin` before players form crews; it is the maximum crew size for players, and phones show it. **Auto-group** builds new crews of that size; a remainder of 2 or more forms one smaller crew (a crew of 2 is possible), and a single leftover player stays unassigned for you to place with Move player (you can put anyone into any crew that has fewer than 6 members; no crew can exceed 6). Auto-group never adds players to existing crews. Crew size can only be changed in the lobby.
 2. **Start Round 1.** A short briefing (about 26 s, the story plays on every phone) comes first; the 5:00 clock starts when it ends, and **Skip step** skips the briefing. At 5:00 the round closes and unsolved crews score 0. If you add, move or remove a player while Round 1 runs, that crew's tablet pieces are recomputed so each member still holds one piece.
 3. **Next**: Round 1 results.
-4. **Next**: Round 2 pairing. Each crew types its rival's 2-digit code. The clash clock starts for everyone at once when all crews are paired. Otherwise, use **Force-start clashes**; unpaired crews sit out.
+4. **Next**: Round 2 pairing. Each crew types its rival's 2-digit code. The clash clock starts for everyone at once when all crews are paired. Otherwise, use **Force-start clashes**; unpaired crews get the mutual-Truce points for every clash (75, 150, 225) automatically and count as Honourable (+75 m in Round 3).
 5. Round 2 starts with a briefing (about 26 s, no votes), then runs on its own: 3 clashes × Huddle 50 s / Dialogue 40 s / Vote 25 s / Reveal 40 s. Announce each step from the projector; every crew is on the same step.
-6. **Next**: Round 2 results, then **Next** to start Round 3 (a briefing of about 28 s plays before wave 1). Waves repeat until 3 crews escape. Use **End Round 3** if needed and **Trigger Sudden Death** (Live game tab, Round 3) for a standoff.
+6. **Next**: Round 2 results, then **Next** to start Round 3 (a briefing of about 28 s plays before wave 1). Waves repeat until 3 crews escape. Use **End Round 3** if needed and **Trigger Sudden Death** (Live game tab, Round 3) for a standoff. The standoff lasts 40 s; then every phone shows a 12 s reveal (each crew's maneuver, then the winner on the what-beats-what triangle) before the game returns to where it was. **Skip** during the standoff jumps to the reveal; **Skip** again ends the reveal.
 
 **When something goes wrong:**
 

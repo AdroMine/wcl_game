@@ -378,7 +378,7 @@ export interface PhaseView {
   /** Absolute server time (ms since epoch) at which the step ends; null if untimed. */
   endsAt: number | null;
   paused: boolean;
-  /** Only during the BRIEFING step: absolute server time (ms) at which the briefing started (it ends at `endsAt`). */
+  /** Only during BRIEFING and SUDDEN_DEATH: absolute server time (ms) at which the step started (it ends at `endsAt`). */
   startedAt?: number;
   /** Only while paused: the clock is frozen at this server time. */
   pausedAt?: number;
@@ -437,6 +437,8 @@ export interface R2View {
   votedBy?: boolean[];
   teamSize: number;
   moral?: MoralStatus;
+  /** Crews with no rival (paired === false): Truce points received per resolved clash, in clash order. */
+  bye?: number[];
 }
 
 export interface R3View {
@@ -472,7 +474,24 @@ export interface R3View {
     /** Every leash event of that wave that involves this crew (as holder or target). */
     leashes?: { kind: string; delta: number; otherName: string; role: 'holder' | 'target' }[];
   };
-  sd?: { teamA: string; teamB: string; mine: boolean; votedCount?: number; resolved: boolean; winner?: string | null; text?: string | null };
+  /**
+   * Sudden Death standoff. Once resolved, the step stays SUDDEN_DEATH for a short reveal (phase.startedAt
+   * marks its start): pickA / pickB are each crew's maneuver, winnerSide is 'A', 'B' or null (podium unchanged).
+   * side is this crew's side when it is in the duel.
+   */
+  sd?: {
+    teamA: string;
+    teamB: string;
+    mine: boolean;
+    side?: 'A' | 'B';
+    votedCount?: number;
+    resolved: boolean;
+    winner?: string | null;
+    winnerSide?: 'A' | 'B' | null;
+    pickA?: SdAction;
+    pickB?: SdAction;
+    text?: string | null;
+  };
   podium?: string[];
 }
 
@@ -524,7 +543,7 @@ export interface BriefingRule {
   desc: string;
 }
 export interface Briefing {
-  /** Server-timed length of the round's BRIEFING step: ceil(sentences * 2.8 + 3 + (rules + 1) * 2 + 3). Filled in by GET /api/meta. */
+  /** Server-timed length of the round's BRIEFING step, from briefingSchedule() in shared/briefing.ts. Filled in by GET /api/meta. */
   briefingSeconds?: number;
   stageNumber: number;
   title: string;

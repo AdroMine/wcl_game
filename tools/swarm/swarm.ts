@@ -20,7 +20,9 @@ function usage(): never {
   --spawn-server         start the server as a child process on a free port (needed for chaos-restart)
   --bots <n>             number of bots (default 200)
   --scenario <name|all>  ${SCENARIOS.join(' | ')}  (default all)
-  --fast                 short phase durations (full-game always uses them); soak uses normal pace without it
+  --fast                 short phase durations (full-game and bad-wifi always use them); soak uses normal pace without it
+  --scenario bad-wifi    a whole game with pub behaviour: ~15% of phones losing signal for 5-60 s, page refreshes, leavers, silent crews,
+                         crews that skip votes, the host removing players, late joiners. Safe against a remote server (never restarts it).
   --join-seconds <n>     spread of the join storm (default 60)
   --dup-rate <0..1>      chance a command is sent again with the same commandId (default 0.1)
   --abort-rate <0..1>    chance a request is abandoned right after sending (lost response) (default 0.02)

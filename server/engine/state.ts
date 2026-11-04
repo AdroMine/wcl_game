@@ -23,7 +23,7 @@ export function createInitialState(opts: { seed: number }): GameState {
     teams: {},
     teamOrder: [],
     r1: { startedAt: null, closed: false },
-    r2: { matches: {}, matchOfTeam: {}, moral: {} },
+    r2: { matches: {}, matchOfTeam: {}, moral: {}, bye: {} },
     r3: null,
     applied: [],
   };
@@ -34,7 +34,10 @@ export function createInitialState(opts: { seed: number }): GameState {
  * Returns the same object when nothing is missing. Pure.
  */
 export function normalizeRestoredState(state: GameState): GameState {
-  const cfg = state.config as Partial<GameState['config']>;
-  if (typeof cfg.crewSize === 'number') return state;
-  return { ...state, config: { ...state.config, crewSize: DEFAULT_DURATIONS.crewSize } };
+  let out = state;
+  const cfg = out.config as Partial<GameState['config']>;
+  if (typeof cfg.crewSize !== 'number') out = { ...out, config: { ...out.config, crewSize: DEFAULT_DURATIONS.crewSize } };
+  // Snapshots written before the Round 2 bye rule have no r2.bye.
+  if (!(out.r2 as Partial<GameState['r2']>).bye) out = { ...out, r2: { ...out.r2, bye: {} } };
+  return out;
 }

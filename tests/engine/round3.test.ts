@@ -14,7 +14,11 @@ import {
 } from '../../server/engine/round3.ts';
 import type { WaveTeamInput } from '../../server/engine/round3.ts';
 import type { Vessel } from '../../server/engine/index.ts';
-import { briefingSeconds } from '../../server/content.ts';
+import { briefingSeconds, buildMeta } from '../../server/content.ts';
+import { SD_REVEAL_SECONDS } from '../../server/engine/config.ts';
+import { ViewBuilder } from '../../server/transport/views.ts';
+import type { View } from '../../shared/protocol.ts';
+import { briefingSchedule } from '../../shared/briefing.ts';
 import { phaseInfo, playerPrivate, podium, round3FleetRows, round3SailboatCapacity, round3TeamView, round3WaveReport } from '../../server/engine/index.ts';
 
 // ---- golden values ported from tests/test_round3.ts ----------------------------------------
@@ -445,6 +449,11 @@ test('sudden death: admin only, between two escaped crews, 40 s, decides podium 
   for (const p of h.state.teams[first].playerIds) h.ok(h.as(p, 'SD_VOTE', { action: 'SAILS' }));
   for (const p of h.state.teams[third].playerIds) h.ok(h.as(p, 'SD_VOTE', { action: 'RAM' }));
   assert.equal(h.as(h.state.teams[t[4]].playerIds[0], 'SD_VOTE', { action: 'RAM' }), 'NOT_IN_DUEL');
+  h.nextDeadline(); // time up: resolved, then a short reveal on every phone
+  assert.equal(h.state.step, 'SUDDEN_DEATH');
+  assert.equal(h.state.r3!.sd!.resolved, true);
+  assert.equal(h.state.endsAt, h.now + SD_REVEAL_SECONDS * 1000);
+  assert.equal(h.as(h.state.teams[first].playerIds[1], 'SD_VOTE', { action: 'RAM' }), 'NO_STANDOFF');
   h.nextDeadline();
   assert.equal(h.state.step, 'REVEAL'); // returned to where it was
   assert.ok(h.state.endsAt! - h.now >= Math.min(remaining, 5000));
@@ -478,10 +487,36 @@ test('sudden death: may also be run from the results screen; pause shifts it', (
   h.tick(300);
   h.ok(h.admin('ADMIN_RESUME'));
   assert.equal(h.state.endsAt, ends + 300_000);
-  h.ok(h.admin('ADMIN_SKIP_STEP'));
+  h.ok(h.admin('ADMIN_SKIP_STEP')); // skip the standoff: resolved, reveal starts
+  assert.equal(h.state.step, 'SUDDEN_DEATH');
+  assert.equal(h.state.r3!.sd!.resolved, true);
+  h.ok(h.admin('ADMIN_SKIP_STEP')); // skip the reveal
   assert.equal(h.state.step, null);
   assert.equal(h.state.phase, 'R3_RESULTS');
   assert.equal(phaseInfo(h.state, h.now).remainingMs, null);
+});
+
+test('sudden death reveal: every phone gets both picks, the winner side and the reveal start time', () => {
+  const { h } = sdGame(64);
+  const [a, b] = h.state.r3!.escapeOrder;
+  h.ok(h.admin('ADMIN_TRIGGER_SUDDEN_DEATH', { teamA: a, teamB: b }));
+  for (const p of h.state.teams[a].playerIds) h.ok(h.as(p, 'SD_VOTE', { action: 'SHIELDS' }));
+  for (const p of h.state.teams[b].playerIds) h.ok(h.as(p, 'SD_VOTE', { action: 'RAM' }));
+  const view = (pid: string) => JSON.parse(new ViewBuilder({ sid: 's' }).forPlayer(h.state, pid, h.state.players[pid].tokenHash, h.now).json) as View;
+  const before = view(h.state.teams[a].playerIds[0]).r3!.sd!;
+  assert.equal(before.pickA, undefined, 'picks stay secret until resolved');
+  assert.equal(before.side, 'A');
+  h.nextDeadline();
+  const startedAt = h.state.phaseStartedAt;
+  for (const [tid, side] of [[a, 'A'], [b, 'B'], [h.state.teamOrder.find(id => id !== a && id !== b)!, undefined]] as const) {
+    const v = view(h.state.teams[tid].playerIds[0]);
+    assert.equal(v.phase.step, 'SUDDEN_DEATH');
+    assert.equal(v.phase.startedAt, startedAt);
+    assert.equal(v.r3!.sd!.side, side);
+    assert.equal(v.r3!.sd!.pickA, 'SHIELDS');
+    assert.equal(v.r3!.sd!.pickB, 'RAM');
+    assert.equal(v.r3!.sd!.winnerSide, 'A');
+  }
 });
 
 // ---- briefing step and extra view data ------------------------------------------------------
@@ -522,8 +557,14 @@ test('briefing: admin skip step skips the Round 3 briefing', () => {
 });
 
 test('briefing: the briefing durations follow the story and rules', () => {
-  // ceil(sentences * 2.8 + 3 + (rules + 1) * 2 + 3): R1 5/2, R2 4/3, R3 5/3
-  assert.deepEqual([1, 2, 3].map(r => briefingSeconds(r as 1 | 2 | 3)), [26, 26, 28]);
+  const meta = buildMeta();
+  for (const r of [1, 2, 3] as const) assert.equal(briefingSeconds(r), Math.ceil(briefingSchedule(meta.rounds[r - 1]).totalMs / 1000));
+  // Reading time grows with word count; a 2 s pause separates the story from the first rule box.
+  const short = briefingSchedule({ sentences: ['One two.'], rules: [{ title: 'A', desc: 'b' }], objective: 'c' });
+  const long = briefingSchedule({ sentences: ['One two three four five six seven eight nine ten eleven twelve.'], rules: [{ title: 'A', desc: 'b c d e f g h i j k l m' }], objective: 'c' });
+  assert.ok(long.totalMs > short.totalMs);
+  assert.equal(short.ruleAt[0] - short.storyEndsAt, 2000);
+  assert.equal(short.ruleAt.length, 2); // one rule plus the objective
 });
 
 test('view data: honourable flag, all-crews vessel report and every leash event of my crew', () => {

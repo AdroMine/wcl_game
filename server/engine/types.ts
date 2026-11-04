@@ -282,6 +282,8 @@ export interface GameState {
     matches: Record<string, Match>;
     matchOfTeam: Record<string, string>;
     moral: Record<string, Moral>;
+    /** Crews with no rival when the clashes ran: Truce points credited per resolved clash (index = clash - 1). Points only, no moral status. */
+    bye: Record<string, number[]>;
   };
   r3: R3State | null;
   /** Bounded ring of applied commandIds (oldest first). */

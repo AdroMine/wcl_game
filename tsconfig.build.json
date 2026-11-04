@@ -16,6 +16,6 @@
     "sourceMap": false,
     "types": ["node"]
   },
-  "include": ["server/**/*.ts", "shared/**/*.ts"],
-  "exclude": ["server/stateStore.ts"]
+  "include": ["server/**/*.ts", "shared/**/*.ts", "games/**/*.ts"],
+  "exclude": ["server/stateStore.ts", "games/**/ui/**"]
 }

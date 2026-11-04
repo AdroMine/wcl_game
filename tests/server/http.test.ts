@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { ADMIN_TOKEN, Player, admin, adminGet, cid, startServer } from './harness.ts';
 import type { TestServer } from './harness.ts';
 import type { CommandResult, Meta, View } from '../../shared/protocol.ts';
+import { briefingSchedule } from '../../shared/briefing.ts';
 
 let srv: TestServer;
 before(async () => {
@@ -219,8 +220,8 @@ test('/api/meta is static and cacheable; views do not repeat it', async () => {
   assert.equal(meta.roles.length, 5);
   assert.ok(meta.rounds.length === 3 && meta.rounds[0].sentences.length > 0);
   assert.ok(meta.emojiPool.length === 5);
-  // briefing length per round: ceil(sentences * 2.8 + 3 + (rules + 1) * 2 + 3)
-  for (const r of meta.rounds) assert.equal(r.briefingSeconds, Math.ceil(r.sentences.length * 2.8 + 3 + (r.rules.length + 1) * 2 + 3));
+  // briefing length per round comes from the shared reading schedule
+  for (const r of meta.rounds) assert.equal(r.briefingSeconds, Math.ceil(briefingSchedule(r).totalMs / 1000));
   // Round 2 stakes per clash
   assert.deepEqual(meta.r2Stakes, [
     { clash: 1, bothTruce: 75, ambushWin: 150, truceLoss: 0, bothAmbush: 15 },

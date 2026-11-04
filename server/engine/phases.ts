@@ -1,7 +1,7 @@
 // The global phase machine. The server owns the clock: every team is in the same phase at the
 // same second. Timed steps advance via SYS_ADVANCE (see due.ts); phases without a timer
 // (LOBBY, R1_RESULTS, R2_PAIRING, R2_RESULTS, R3_RESULTS) are left by admin commands.
-import { R2_CLASHES, MIN_DEADLINE_MS } from './config.ts';
+import { R2_CLASHES, MIN_DEADLINE_MS, SD_REVEAL_SECONDS } from './config.ts';
 import { setStep } from './clock.ts';
 import { closeRound1, startRound1Clock } from './round1.ts';
 import { beginNextClash, computeAllMoral, resolveClash } from './round2.ts';
@@ -25,6 +25,20 @@ function exitSuddenDeath(d: GameState, now: number, ev: GameEvent[]): void {
     { durationMs: rt.remainingMs == null ? null : Math.max(rt.remainingMs, MIN_DEADLINE_MS), clash: rt.clash, wave: rt.wave },
     ev,
   );
+}
+
+/**
+ * The Sudden Death clock ran out (or the host skipped): resolve the standoff and keep the
+ * SUDDEN_DEATH step open for SD_REVEAL_SECONDS so every phone can show both picks and the winner.
+ * When the reveal ends (or is skipped), leave Sudden Death.
+ */
+function suddenDeathTimeUp(d: GameState, now: number, ev: GameEvent[]): void {
+  if (d.r3?.sd && !d.r3.sd.resolved) {
+    resolveSd(d, ev);
+    setStep(d, now, d.phase, 'SUDDEN_DEATH', { durationMs: SD_REVEAL_SECONDS * 1000, clash: d.clash, wave: d.wave }, ev);
+    return;
+  }
+  exitSuddenDeath(d, now, ev);
 }
 
 /** Move the current timed step to the next one. Caller has checked the deadline (or admin skip). */
@@ -85,14 +99,14 @@ export function advance(d: GameState, now: number, ev: GameEvent[]): HandlerResu
           else startNextWave(d, now, ev);
           return undefined;
         case 'SUDDEN_DEATH':
-          exitSuddenDeath(d, now, ev);
+          suddenDeathTimeUp(d, now, ev);
           return undefined;
         default:
           return fail('NOT_TIMED');
       }
     case 'R3_RESULTS':
       if (d.step === 'SUDDEN_DEATH') {
-        exitSuddenDeath(d, now, ev);
+        suddenDeathTimeUp(d, now, ev);
         return undefined;
       }
       return fail('NOT_TIMED');

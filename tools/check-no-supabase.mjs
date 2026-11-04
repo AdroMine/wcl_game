@@ -1,12 +1,12 @@
 // CI guard: the web app and the shared protocol must never touch Supabase.
-// Fails when any file under src/ or shared/ imports or even mentions "supabase" (case-insensitive).
+// Fails when any file under src/, shared/ or games/ imports or even mentions "supabase" (case-insensitive).
 // Plain Node, no dependencies: run with `npm run check:web`.
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
-const DIRS = ['src', 'shared'];
+const DIRS = ['src', 'shared', 'games'];
 const EXT = /\.(ts|tsx|js|jsx|mjs|cjs|json|css|html)$/i;
 const offenders = [];
 
@@ -35,8 +35,8 @@ for (const d of DIRS) {
 }
 
 if (offenders.length) {
-  console.error('check:web FAILED: Supabase must not appear in src/ or shared/:');
+  console.error('check:web FAILED: Supabase must not appear in src/, shared/ or games/:');
   for (const o of offenders) console.error('  ' + o);
   process.exit(1);
 }
-console.log('check:web OK: no Supabase references in src/ or shared/');
+console.log('check:web OK: no Supabase references in src/, shared/ or games/');

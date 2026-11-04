@@ -38,7 +38,7 @@ export function stepLabel(step: string | null): string {
 const NEXT: Record<string, { type: string; label: string; body: string }> = {
   LOBBY: { type: 'ADMIN_START_GAME', label: 'Start Round 1', body: 'Round 1 starts with a short briefing on every phone. Unassigned players sit it out.' },
   R1_RESULTS: { type: 'ADMIN_START_R2', label: 'Start Round 2 pairing', body: 'Crews will be asked to type their rival crew code.' },
-  R2_PAIRING: { type: 'ADMIN_R2_FORCE_START', label: 'Force-start clashes', body: 'Starts the clashes now. Crews that are still unpaired sit out Round 2 with 0 points.' },
+  R2_PAIRING: { type: 'ADMIN_R2_FORCE_START', label: 'Force-start clashes', body: 'Starts the clashes now. Crews that are still unpaired get the Truce points for every clash and count as Honourable.' },
   R2_RESULTS: { type: 'ADMIN_START_R3', label: 'Start Round 3', body: 'Round 3 starts with a short briefing on every phone.' },
   R3_ACTIVE: { type: 'ADMIN_END_R3', label: 'End Round 3', body: 'Ends the voyage now. Crews that have not escaped stay where they are.' },
   R3_RESULTS: { type: 'ADMIN_FINISH', label: 'Finish game', body: 'Shows the final standings on every screen.' },
@@ -204,7 +204,11 @@ export const AdminHeader: React.FC<Props> = ({ view, health, light, leftMs, busy
           {timed && (
             <div data-testid="admin-adjust" className="grid grid-cols-5 gap-1.5">
               {ADJUST.map(a => (
-                <button key={a.seconds} disabled={busy} className={`${BTN} !px-1 text-xs`} onClick={() => void run(a.label, 'ADMIN_ADJUST_DEADLINE', { seconds: a.seconds })}>
+                <button
+                  key={a.seconds}
+                  disabled={busy}
+                  className={`${BTN} !px-1 text-xs ${a.seconds < 0 ? '!border-red-500/70 !bg-red-950/60 !text-red-200' : '!border-emerald-500/70 !bg-emerald-950/60 !text-emerald-200'}`}
+                  onClick={() => void run(a.label, 'ADMIN_ADJUST_DEADLINE', { seconds: a.seconds })}>
                   {a.label}
                 </button>
               ))}

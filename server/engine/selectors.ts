@@ -229,6 +229,8 @@ export interface Round2MatchView {
    */
   voting: { votedCount: number; teamSize: number; votedBy: boolean[] } | null;
   moral: { status: MoralStatus; rivalTeamId: string | null; nemesisTeamId: string | null } | null;
+  /** Unpaired crews only: Truce points awarded per resolved clash (index = clash - 1). */
+  bye: number[] | null;
 }
 
 export function round2MatchView(state: GameState, teamId: string, _playerId?: string): Round2MatchView | null {
@@ -237,7 +239,7 @@ export function round2MatchView(state: GameState, teamId: string, _playerId?: st
   const mid = state.r2.matchOfTeam[teamId];
   const m = mid ? state.r2.matches[mid] : undefined;
   if (!m) {
-    return { paired: false, rivalTeamId: null, rivalName: null, cancelled: false, history: [], voting: null, moral: null };
+    return { paired: false, rivalTeamId: null, rivalName: null, cancelled: false, history: [], voting: null, moral: null, bye: state.r2.bye?.[teamId] ?? [] };
   }
   const isA = m.teamA === teamId;
   const rivalId = isA ? m.teamB : m.teamA;
@@ -274,6 +276,7 @@ export function round2MatchView(state: GameState, teamId: string, _playerId?: st
     history,
     voting,
     moral: showMoral && moral ? { status: moral.status, rivalTeamId: moral.rivalTeamId, nemesisTeamId: moral.nemesisTeamId } : null,
+    bye: null,
   };
 }
 

@@ -19,6 +19,8 @@ export interface World {
   /** Called by the brain when it needs fresh admin knowledge (codewords, pairings). */
   refresh?: () => Promise<void>;
   log?: (m: string) => void;
+  /** bad-wifi: a crew that deliberately does not vote in this step. */
+  abstain?: (bot: Bot, v: View) => boolean;
 }
 
 export function newWorld(teamSize = 5): World {
@@ -54,8 +56,9 @@ function remainingMs(bot: Bot, v: View): number {
 
 function later(bot: Bot, v: View, ms: number, fn: () => Promise<unknown> | void): void {
   const key = stepKey(v);
+  const epoch = bot.epoch;
   setTimeout(() => {
-    if (bot.stopped || !bot.view || stepKey(bot.view) !== key || bot.view.phase.paused) return;
+    if (bot.stopped || bot.epoch !== epoch || !bot.view || stepKey(bot.view) !== key || bot.view.phase.paused) return;
     void fn();
   }, ms);
 }
@@ -111,12 +114,7 @@ export function brain(world: World): (bot: Bot, v: View) => void {
         });
       }
       if (!acted(bot, `wrong:${team.id}`) && bot.rng() < 0.2) later(bot, v, 1000 + bot.rng() * 8000, () => bot.cmd('R1_SUBMIT', { answer: 'not the codeword' }));
-      const nowServer = Date.now() + bot.clockOffset;
-      for (const h of v.r1.hints) {
-        if (!h.taken && nowServer >= h.unlocksAt + 500 && !acted(bot, `hint${h.index}`) && bot.rng() < 0.1) {
-          void bot.cmd('R1_HINT', { hint: h.index });
-        }
-      }
+      // The phone UI no longer offers hints: bots never take them.
       return;
     }
 
@@ -129,7 +127,7 @@ export function brain(world: World): (bot: Bot, v: View) => void {
       });
       return;
     }
-    if (world.flags.r2vote && name === 'R2_CLASH' && v.phase.step === 'VOTE' && v.r2?.paired && !me.myVote && !v.phase.paused && !acted(bot, `${stepKey(v)}@${v.sid}`)) {
+    if (world.flags.r2vote && name === 'R2_CLASH' && v.phase.step === 'VOTE' && v.r2?.paired && !me.myVote && !v.phase.paused && !world.abstain?.(bot, v) && !acted(bot, `${stepKey(v)}@${v.sid}`)) {
       const personality = [0.05, 0.3, 0.6, 0.95][hash(team.id) % 4];
       const vote = bot.rng() < personality ? 'AMBUSH' : 'TRUCE';
       later(bot, v, bot.rng() * Math.max(500, remainingMs(bot, v) * 0.6), async () => {
@@ -140,7 +138,7 @@ export function brain(world: World): (bot: Bot, v: View) => void {
     }
 
     // ---- round 3 -----------------------------------------------------------
-    if (world.flags.r3 && name === 'R3_ACTIVE' && v.phase.step === 'VOTE' && v.r3 && !v.r3.escaped && !v.phase.paused && !acted(bot, `${stepKey(v)}@${v.sid}`)) {
+    if (world.flags.r3 && name === 'R3_ACTIVE' && v.phase.step === 'VOTE' && v.r3 && !v.r3.escaped && !v.phase.paused && !world.abstain?.(bot, v) && !acted(bot, `${stepKey(v)}@${v.sid}`)) {
       const bold = hash(team.id + v.phase.wave) % 100 < world.boldness * 100;
       const x = bot.rng();
       const vessel = bold ? (x < 0.45 ? 'SAILBOAT' : x < 0.6 ? 'GHOST_SHIP' : 'ROWBOAT') : x < 0.8 ? 'ROWBOAT' : 'SAILBOAT';
@@ -150,7 +148,7 @@ export function brain(world: World): (bot: Bot, v: View) => void {
       });
       return;
     }
-    if (world.flags.sd && v.phase.step === 'SUDDEN_DEATH' && v.r3?.sd?.mine && !v.r3.sd.resolved && !me.myVote && !v.phase.paused && !acted(bot, `${stepKey(v)}@${v.sid}`)) {
+    if (world.flags.sd && v.phase.step === 'SUDDEN_DEATH' && v.r3?.sd?.mine && !v.r3.sd.resolved && !me.myVote && !v.phase.paused && !world.abstain?.(bot, v) && !acted(bot, `${stepKey(v)}@${v.sid}`)) {
       const action = (['SHIELDS', 'RAM', 'SAILS'] as const)[Math.floor(bot.rng() * 3)];
       later(bot, v, bot.rng() * 4000, () => bot.cmd('SD_VOTE', { action }));
     }

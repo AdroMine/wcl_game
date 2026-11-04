@@ -61,6 +61,7 @@ export function gameStateProblem(v: unknown): string | null {
   if (!isObj(v.r1)) return 'r1 malformed';
   const r2 = v.r2;
   if (!isObj(r2) || !isObj(r2.matches) || !isObj(r2.matchOfTeam) || !isObj(r2.moral)) return 'r2 malformed';
+  if (r2.bye !== undefined && !isObj(r2.bye)) return 'r2.bye malformed';
   for (const [id, m] of Object.entries(r2.matches)) {
     if (!isObj(m) || m.id !== id || !isStr(m.teamA) || !isStr(m.teamB) || !Array.isArray(m.clashes)) return `match ${id} malformed`;
     if (!Object.hasOwn(teams, m.teamA as string) && !m.cancelled) return `match ${id} points at a missing team`;

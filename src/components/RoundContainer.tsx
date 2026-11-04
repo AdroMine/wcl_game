@@ -3,9 +3,9 @@ import { BookOpen, Trophy } from 'lucide-react';
 import type { PhaseName } from '../../shared/protocol.ts';
 import { useGame } from '../game/useGame';
 import { RoundBriefingModal } from './RoundBriefingModal';
-import { AsciiSplitterRound } from './rounds/AsciiSplitterRound';
-import { ShadesInTheMistRound } from './rounds/ShadesInTheMistRound';
-import { OdysseyEscapeRoyaleRound } from './rounds/OdysseyEscapeRoyaleRound';
+import { AsciiSplitterRound } from '../../games/underworld/rounds/tablet/ui/AsciiSplitterRound';
+import { ShadesInTheMistRound } from '../../games/underworld/rounds/mist/ui/ShadesInTheMistRound';
+import { OdysseyEscapeRoyaleRound } from '../../games/underworld/rounds/styx/ui/OdysseyEscapeRoyaleRound';
 import { BoardList } from './LeaderboardDrawer';
 import { CARD, Countdown, LABEL } from './ui';
 

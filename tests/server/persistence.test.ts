@@ -399,8 +399,10 @@ test('runtime persistence listener: snapshot content equals the live state', asy
     const p = new Persistence(loadConfig({ SNAPSHOT_DIR: dir }), { intervalMs: 20 });
     p.start(rt);
     rt.apply({ commandId: 'x1', type: 'ADMIN_ADD_PLAYER', actor: { kind: 'admin' }, payload: { name: 'Added Offline' } });
-    await sleep(120);
-    const snap = await new FileSnapshotStore(dir).loadLatest();
+    // Wait for the snapshot of this version rather than a fixed sleep: CI runners can be slower than the 20 ms interval.
+    const store = new FileSnapshotStore(dir);
+    let snap = await store.loadLatest();
+    for (const end = Date.now() + 5000; snap?.state.version !== rt.state.version && Date.now() < end; snap = await store.loadLatest()) await sleep(20);
     assert.deepEqual(snap?.state, JSON.parse(JSON.stringify(rt.state)));
     await p.stop();
   } finally {

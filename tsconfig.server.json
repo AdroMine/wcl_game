@@ -15,5 +15,5 @@
     "types": ["node"]
   },
   "include": ["server/**/*.ts", "shared/**/*.ts", "games/**/*.ts", "tools/**/*.ts", "tests/engine/**/*.ts", "tests/sim/**/*.ts", "tests/server/**/*.ts"],
-  "exclude": ["server/stateStore.ts", "games/**/ui/**"]
+  "exclude": ["server/stateStore.ts", "games/**/ui/**", "games/**/art.ts"]
 }

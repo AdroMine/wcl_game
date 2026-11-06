@@ -206,7 +206,7 @@ async function phaseChange(sw: Swarm): Promise<ScenarioResult> {
   await sw.measureClockOffset();
   const sampler = sw.sampler();
   sampler.start(500);
-  await sw.admin('ADMIN_SET_DURATIONS', { r1Seconds: 12, r2: { HUDDLE: 8, PARLEY: 6, VOTE: 8, DEBRIEF: 5 } });
+  await sw.admin('ADMIN_SET_DURATIONS', { r1Seconds: 12, r2: { VOTE: 8, DEBRIEF: 10 } });
   await sw.admin('ADMIN_START_GAME');
   await sw.waitAll(v => v.phase.name === 'R1_ACTIVE', 5000);
   await skipBriefing(sw);
@@ -250,7 +250,7 @@ async function phaseChange(sw: Swarm): Promise<ScenarioResult> {
   if ((await sw.adminView()).phase.name === 'R2_PAIRING') {
     await step('force the first clash to start', () => sw.admin('ADMIN_R2_FORCE_START'), v => v.phase.name === 'R2_CLASH');
   }
-  await step('skip huddle', () => sw.admin('ADMIN_SKIP_STEP'), v => v.phase.step === 'PARLEY');
+  await step('skip the clash vote', () => sw.admin('ADMIN_SKIP_STEP'), v => v.phase.step === 'DEBRIEF');
   await step('pause', () => sw.admin('ADMIN_PAUSE'), v => v.phase.paused);
   await step('resume', () => sw.admin('ADMIN_RESUME'), v => !v.phase.paused);
   // force resync: every bot must receive the resync event, reconnect and show a fresh view
@@ -276,7 +276,7 @@ async function phaseChange(sw: Swarm): Promise<ScenarioResult> {
 async function r2VoteBurst(sw: Swarm): Promise<ScenarioResult> {
   const r = new Report('r2-vote-burst');
   if (!(await lobbyReady(sw, r))) return r.done();
-  await sw.admin('ADMIN_SET_DURATIONS', { r2: { HUDDLE: 6, PARLEY: 5, VOTE: 25, DEBRIEF: 8 } });
+  await sw.admin('ADMIN_SET_DURATIONS', { r2: { VOTE: 25, DEBRIEF: 8 } });
   await toR2Clash(sw);
   await sw.skipUntilStep('VOTE');
   const sampler = sw.sampler();
@@ -355,7 +355,7 @@ async function chaosRestart(sw: Swarm): Promise<ScenarioResult> {
   sw.world.flags = { lobby: true, r1: false, r2pair: false, r2vote: true, r3: false, sd: false };
   const { joined, teamed } = await sw.setup({ joinSpreadMs: 8000 });
   r.check('all bots joined and teamed', joined === sw.bots.length && teamed, `${joined} joined, teamed ${teamed}`);
-  await sw.admin('ADMIN_SET_DURATIONS', { r2: { HUDDLE: 6, PARLEY: 5, VOTE: 30, DEBRIEF: 8 } });
+  await sw.admin('ADMIN_SET_DURATIONS', { r2: { VOTE: 30, DEBRIEF: 8 } });
   await toR2Clash(sw);
   await sw.skipUntilStep('VOTE');
   await sleep(4000); // votes are flowing
@@ -432,7 +432,7 @@ async function duplicatesSlowReaders(sw: Swarm): Promise<ScenarioResult> {
   let checked = 0;
   const seenStep = new Set<string>();
   const t0 = Date.now();
-  const timeoutMs = 3 * (FAST_DURATIONS.r2.HUDDLE + FAST_DURATIONS.r2.PARLEY + FAST_DURATIONS.r2.VOTE + FAST_DURATIONS.r2.DEBRIEF) * 1000 + 40_000;
+  const timeoutMs = 3 * (FAST_DURATIONS.r2.VOTE + FAST_DURATIONS.r2.DEBRIEF) * 1000 + 40_000;
   while (Date.now() - t0 < timeoutMs) {
     const a = await sw.adminView();
     if (a.phase.name === 'R2_RESULTS') break;
@@ -534,21 +534,21 @@ async function playFullGame(sw: Swarm, r: Report, label: string, hooks: GameHook
 
   await sw.admin('ADMIN_START_R2');
   await sw.refreshWorld();
-  await sleep(Math.min(20_000, dur.r2.HUDDLE * 1000 + 6000));
+  await sleep(Math.min(20_000, dur.r2.VOTE * 100 + 6000));
   await sw.admin('ADMIN_R2_AUTO_PAIR'); // the host pairs any crew that could not find its rival
   if ((await sw.adminView()).phase.name === 'R2_PAIRING') {
     r.notes.push('an odd number of crews: the host started the clashes with one crew unpaired');
     await sw.admin('ADMIN_R2_FORCE_START');
   }
   await skipBriefing(sw);
-  const r2Len = 3 * (dur.r2.HUDDLE + dur.r2.PARLEY + dur.r2.VOTE + dur.r2.DEBRIEF) * 1000;
+  const r2Len = 3 * (dur.r2.VOTE + dur.r2.DEBRIEF) * 1000;
   if (!(await must('Round 2 ran through three clashes', sw.waitPhase('R2_RESULTS', null, phaseTimeout(r2Len))))) return finish(false, 'R2');
   await sleep(pause);
 
   await sw.admin('ADMIN_START_R3');
   await skipBriefing(sw);
   const r3Start = Date.now();
-  const waveLen = (dur.r3.BLUFF + dur.r3.VOTE + dur.r3.REVEAL) * 1000;
+  const waveLen = (dur.r3.VOTE + dur.r3.REVEAL) * 1000;
   for (;;) {
     const a = await sw.adminView();
     waves = a.r3?.waves ?? 0;

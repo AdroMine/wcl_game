@@ -5,6 +5,7 @@
 import { R2_CLASHES, R2_SCORING } from './config.ts';
 import type { Round2ScoringTier } from './config.ts';
 import { asObj, recomputeScore, reqString } from './common.ts';
+import { normalizeEmojiCode } from './teamCodes.ts';
 import { rngShuffle } from './rng.ts';
 import { nextId } from './ids.ts';
 import { setStep } from './clock.ts';
@@ -114,7 +115,7 @@ export function initRound2Pairing(d: GameState): void {
 
 /**
  * Start Round 2's global clash clock for every pairing. Clash 1 opens with the BRIEFING step (the
- * story plays, no votes); its HUDDLE starts when the briefing ends (phases.ts).
+ * story plays, no votes); its first VOTE starts when the briefing ends (phases.ts).
  */
 export function startClashes(d: GameState, now: number, ev: GameEvent[]): void {
   for (const m of Object.values(d.r2.matches)) {
@@ -167,11 +168,12 @@ const pair: Handler = (d, c, now, ev) => {
   if (d.pausedAt != null) return fail('PAUSED');
   const p = d.players[(c.actor as { playerId: string }).playerId];
   if (!p.teamId) return fail('NOT_IN_TEAM');
-  const code = reqString(asObj(c.payload), 'code', 8)?.trim();
-  if (!code || !/^\d{2}$/.test(code)) return fail('INVALID_CODE');
+  const raw = reqString(asObj(c.payload), 'code', 32)?.trim();
+  const code = raw ? normalizeEmojiCode(raw) : '';
+  if (!code) return fail('INVALID_CODE');
   const mine = d.teams[p.teamId];
-  if (mine.battleCode === code) return fail('OWN_CODE');
-  const rival = d.teamOrder.map(id => d.teams[id]).find(t => t.battleCode === code);
+  if (normalizeEmojiCode(mine.emojiCode) === code) return fail('OWN_CODE');
+  const rival = d.teamOrder.map(id => d.teams[id]).find(t => normalizeEmojiCode(t.emojiCode) === code);
   if (!rival) return fail('UNKNOWN_CODE');
   const mm = d.r2.matchOfTeam[mine.id];
   const rm = d.r2.matchOfTeam[rival.id];

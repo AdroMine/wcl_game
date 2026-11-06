@@ -16,17 +16,16 @@ export const briefing: Briefing = {
   title: 'Shades in the Mist',
   subtitle: 'The 3-Clash Social Dilemma',
   sentences: [
-    'You flee through the door into a vast, misty hall.',
-    'Another door swings open: another crew of shades emerges from the shadows.',
-    'Are they friends or foes?',
-    'You must decide before you can move forward.',
+    'Beyond the door, another crew steps out of the mist.',
+    'Friends, or foes?',
   ],
   rules: [
-    { title: '1. Private Huddle (50s)', desc: "Discuss and decide within your team: Truce or Ambush." },
-    { title: '2. The Dialogue (40s)', desc: 'Talk with your rivals. Bluffing is 100% permitted!' },
-    { title: '3. Secret Blind Vote (25s)', desc: 'Vote on phone. Majority decides; Tie = Truce.' },
+    { title: '1. Find a rival crew', desc: "Pair up by typing their 3-emoji code.", icon: 'users' },
+    { title: '2. Talk (60s)', desc: 'Plot with your crew, bargain with theirs.', icon: 'talk' },
+    { title: '3. Vote any time', desc: 'Truce or Ambush, on your phone.', icon: 'vote' },
+    { title: '4. Every choice pays differently', desc: 'Both Truce: both score.\nAmbush a Truce: double for you, nothing for them.\nBoth Ambush: crumbs.', icon: 'coins' },
   ],
-  objective: '3 Clashes with escalating stakes (up to +900 PTS). See points for each decisions on next screen',
+  objective: 'Three clashes, rising stakes. Exact points show on the next screen.',
 };
 
 export const R2_CLASHES = 3;
@@ -42,8 +41,11 @@ export const R2_SCORING: Record<string, Round2ScoringTier> = {
   '3': { both_truce: 225, ambush_win: 450, truce_loss: 0, both_ambush: 45 },
 };
 
-/** Default seconds of each step of a clash. */
-export const R2_DURATIONS = { HUDDLE: 50, PARLEY: 40, VOTE: 25, DEBRIEF: 40 };
+/**
+ * Default seconds of each step of a clash. VOTE: crews talk AND vote, voting open the whole time; DEBRIEF: the reveal.
+ * (Organizer ruling, Nov 4 2026: HUDDLE and PARLEY are no longer used.)
+ */
+export const R2_DURATIONS = { VOTE: 60, DEBRIEF: 15 };
 
 export const stances: { id: Stance; name: string }[] = [
   { id: 'TRUCE', name: 'Truce' },
@@ -52,7 +54,7 @@ export const stances: { id: Stance; name: string }[] = [
 
 export const moralStatuses: { id: MoralStatus; name: string; note: string }[] = [
   { id: 'HONOURABLE', name: 'Honourable', note: 'Truce in all three clashes: +75m head start.' },
-  { id: 'BETRAYED', name: 'Betrayed', note: 'Ambushed more than you ambushed: you hold the Stygian Leash.' },
+  { id: 'BETRAYED', name: 'Betrayed', note: 'Ambushed more than you ambushed: you may take Revenge in Round 3.' },
   { id: 'AGGRESSOR', name: 'Aggressor', note: 'You ambushed more than you were ambushed.' },
   { id: 'BLOOD_FEUD', name: 'Blood Feud', note: 'Everything else.' },
   { id: 'NONE', name: 'Unmatched', note: 'No resolved clashes.' },
@@ -63,10 +65,8 @@ export const briefingInstructions: Record<string, string> = { 'R2_CLASH/BRIEFING
 
 /** Projector lines keyed by phase (or phase/step). */
 export const instructions: Record<string, string> = {
-  R2_PAIRING: 'Round 2: find your rival crew. One of you types their 2-digit battle code to link the crews.',
-  'R2_CLASH/HUDDLE': 'Huddle with your own crew. Whisper: Truce or Ambush?',
-  'R2_CLASH/PARLEY': 'Face your rival crew and talk. Bluffing is allowed.',
-  'R2_CLASH/VOTE': 'Vote now on your phone. The majority of your crew decides. A tie is a Truce.',
+  R2_PAIRING: "Round 2: find your rival crew. One of you types their crew's emoji code to link the crews.",
+  'R2_CLASH/VOTE': 'Talk with your crew and your rival, then vote on your phone. Majority decides; a tie is a Truce.',
   'R2_CLASH/DEBRIEF': 'The clash is scored. See what your rival chose.',
   R2_RESULTS: 'Round 2 is over. Moral legacies are decided: Honourable, Betrayed, Aggressor or Blood Feud.',
 };

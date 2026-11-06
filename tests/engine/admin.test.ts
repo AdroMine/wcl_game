@@ -65,14 +65,14 @@ test('skip: advances exactly once; duplicate and stale skips are no-ops', () => 
   toR2Pairing(h);
   h.ok(h.admin('ADMIN_R2_FORCE_START'));
   skipBriefing(h);
-  assert.equal(h.state.step, 'HUDDLE');
+  assert.equal(h.state.step, 'VOTE');
   const seq = h.state.phaseSeq;
   h.ok(h.send('ADMIN_SKIP_STEP', { kind: 'admin' }, { phaseSeq: seq }, { id: 'skip-1' }));
-  assert.equal(h.state.step, 'PARLEY');
+  assert.equal(h.state.step, 'DEBRIEF');
   h.ok(h.send('ADMIN_SKIP_STEP', { kind: 'admin' }, { phaseSeq: seq }, { id: 'skip-1' })); // same commandId
-  assert.equal(h.state.step, 'PARLEY');
+  assert.equal(h.state.step, 'DEBRIEF');
   assert.equal(h.send('ADMIN_SKIP_STEP', { kind: 'admin' }, { phaseSeq: seq }, { id: 'skip-2' }), 'STALE');
-  assert.equal(h.state.step, 'PARLEY');
+  assert.equal(h.state.step, 'DEBRIEF');
 });
 
 test('adjust deadline: +/- seconds, never earlier than now + 5 s, not for untimed phases', () => {
@@ -153,9 +153,7 @@ test('delete team: members become unassigned; its match is cancelled and the riv
   pairByCode(h, t0, t1);
   pairByCode(h, t2, t3);
   h.nextDeadline(); // briefing
-  h.nextDeadline();
-  h.nextDeadline();
-  h.nextDeadline(); // clash 1 scored: all truce
+  h.nextDeadline(); // VOTE ends: clash 1 scored, all truce
   assert.equal(h.state.teams[t1].r2Points, 75);
   h.ok(h.admin('ADMIN_DELETE_TEAM', { teamId: t0 }));
   assert.equal(h.state.teams[t0], undefined);
@@ -176,8 +174,8 @@ test('set durations: applied to later steps; validated', () => {
   const h = harness();
   formTeams(h, [3, 3]);
   assert.equal(h.admin('ADMIN_SET_DURATIONS', { r1Seconds: 2 }), 'INVALID_DURATION');
-  assert.equal(h.admin('ADMIN_SET_DURATIONS', { r2: { HUDDLE: 'x' } }), 'INVALID_DURATION');
-  h.ok(h.admin('ADMIN_SET_DURATIONS', { r1Seconds: 120, r2: { HUDDLE: 10, PARLEY: 11, VOTE: 12, DEBRIEF: 13 }, r3: { BLUFF: 14, VOTE: 15, REVEAL: 16 }, sdSeconds: 17 }));
+  assert.equal(h.admin('ADMIN_SET_DURATIONS', { r2: { VOTE: 'x' } }), 'INVALID_DURATION');
+  h.ok(h.admin('ADMIN_SET_DURATIONS', { r1Seconds: 120, r2: { VOTE: 12, DEBRIEF: 13 }, r3: { VOTE: 15, REVEAL: 16 }, sdSeconds: 17 }));
   h.ok(h.admin('ADMIN_START_GAME'));
   assert.equal(h.state.step, 'BRIEFING');
   skipBriefing(h);
@@ -186,16 +184,20 @@ test('set durations: applied to later steps; validated', () => {
   h.ok(h.admin('ADMIN_START_R2'));
   h.ok(h.admin('ADMIN_R2_AUTO_PAIR'));
   skipBriefing(h);
-  assert.equal(h.state.endsAt, h.now + 10_000);
+  assert.equal(h.state.endsAt, h.now + 12_000);
   const secs: number[] = [];
   while (h.state.phase === 'R2_CLASH') {
     secs.push((h.state.endsAt! - h.now) / 1000);
     h.nextDeadline();
   }
-  assert.deepEqual(secs.slice(0, 4), [10, 11, 12, 13]);
+  assert.deepEqual(secs.slice(0, 4), [12, 13, 12, 13]);
   h.ok(h.admin('ADMIN_START_R3'));
   skipBriefing(h);
-  assert.equal(h.state.endsAt, h.now + 14_000);
+  assert.equal(h.state.endsAt, h.now + 15_000);
+  // the removed keys are not accepted any more
+  h.admin('ADMIN_SET_DURATIONS', { r2: { HUDDLE: 10 } }); // ignored
+  assert.deepEqual(Object.keys(h.state.config.r2), ['VOTE', 'DEBRIEF']);
+  assert.deepEqual(Object.keys(h.state.config.r3), ['VOTE', 'REVEAL']);
 });
 
 test('reset game returns to an empty lobby and keeps monotonic counters', () => {

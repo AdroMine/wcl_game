@@ -1,7 +1,7 @@
 // Structural validation of a GameState that came from outside (a snapshot file, Supabase, an admin
 // upload). It is deliberately strict about shape and cross references, because a malformed state
 // would otherwise crash the view builder in the middle of a game.
-import { PHASES, ROLE_IDS } from '../../shared/protocol.ts';
+import { PHASES } from '../../shared/protocol.ts';
 import type { GameState } from '../engine/index.ts';
 
 const STEPS = new Set([null, 'BRIEFING', 'HUDDLE', 'PARLEY', 'VOTE', 'DEBRIEF', 'BLUFF', 'REVEAL', 'SUDDEN_DEATH']);
@@ -29,8 +29,8 @@ export function gameStateProblem(v: unknown): string | null {
 
   const c = v.config;
   if (!isObj(c) || !isNum(c.r1Seconds) || !isNum(c.sdSeconds) || !isObj(c.r2) || !isObj(c.r3)) return 'config malformed';
-  for (const k of ['HUDDLE', 'PARLEY', 'VOTE', 'DEBRIEF']) if (!isNum((c.r2 as Record<string, unknown>)[k])) return `config.r2.${k} malformed`;
-  for (const k of ['BLUFF', 'VOTE', 'REVEAL']) if (!isNum((c.r3 as Record<string, unknown>)[k])) return `config.r3.${k} malformed`;
+  for (const k of ['VOTE', 'DEBRIEF']) if (!isNum((c.r2 as Record<string, unknown>)[k])) return `config.r2.${k} malformed`;
+  for (const k of ['VOTE', 'REVEAL']) if (!isNum((c.r3 as Record<string, unknown>)[k])) return `config.r3.${k} malformed`;
 
   const { players, teams } = v;
   if (!isObj(players) || !isObj(teams)) return 'players and teams must be objects';
@@ -40,7 +40,6 @@ export function gameStateProblem(v: unknown): string | null {
   if (v.teamOrder.length !== Object.keys(teams).length) return 'teamOrder does not match teams';
   for (const [id, p] of Object.entries(players)) {
     if (!isObj(p) || p.id !== id || !isStr(p.name) || !isStr(p.tokenHash) || !isNum(p.joinedSeq)) return `player ${id} malformed`;
-    if (!isStr(p.role) || !(ROLE_IDS as readonly string[]).includes(p.role)) return `player ${id} has an unknown role`;
     if (p.teamId !== null) {
       if (!isStr(p.teamId) || !Object.hasOwn(teams, p.teamId)) return `player ${id} points at a missing team`;
       const t = teams[p.teamId] as Record<string, unknown>;
@@ -48,7 +47,7 @@ export function gameStateProblem(v: unknown): string | null {
     }
   }
   for (const [id, t] of Object.entries(teams)) {
-    if (!isObj(t) || t.id !== id || !isStr(t.name) || !isStr(t.emojiCode) || !isStr(t.battleCode)) return `team ${id} malformed`;
+    if (!isObj(t) || t.id !== id || !isStr(t.name) || !isStr(t.emojiCode) || (t.battleCode !== undefined && !isStr(t.battleCode))) return `team ${id} malformed`;
     for (const k of ['r1Points', 'r2Points', 'adminAdjust', 'score'] as const) if (!isNum(t[k])) return `team ${id}.${k} malformed`;
     if (!Array.isArray(t.playerIds) || !t.playerIds.every(pid => isStr(pid) && Object.hasOwn(players, pid) && (players[pid] as Record<string, unknown>).teamId === id)) {
       return `team ${id} members malformed`;

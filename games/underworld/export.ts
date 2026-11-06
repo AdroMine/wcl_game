@@ -8,7 +8,6 @@ import { clashSides, decodeVoteLog, finalRanking, finishedAt, startedAt } from '
 export const EXPORT_FORMAT = 1;
 
 const nameOfPlayer = (s: GameState, id: string): string => s.players[id]?.name ?? '';
-const roleOfPlayer = (s: GameState, id: string): string => s.players[id]?.role ?? '';
 const crewName = (s: GameState, id: string | null): string => (id ? (s.teams[id]?.name ?? id) : '');
 
 /** The analysis-friendly document. `exportedAt` is passed in (the engine and these functions never read a clock). */
@@ -16,7 +15,7 @@ export function buildGameExport(s: GameState, exportedAt: number): Record<string
   const ranking = finalRanking(s);
   const rankOf = new Map(ranking.map(r => [r.teamId, r.rank] as const));
   const sides = clashSides(s);
-  const playersOf = (t: Team) => t.playerIds.map(id => ({ id, name: nameOfPlayer(s, id), role: roleOfPlayer(s, id) }));
+  const playersOf = (t: Team) => t.playerIds.map(id => ({ id, name: nameOfPlayer(s, id) }));
 
   const crews = s.teamOrder.map(id => {
     const t = s.teams[id];
@@ -26,7 +25,6 @@ export function buildGameExport(s: GameState, exportedAt: number): Record<string
       id,
       name: t.name,
       emojiCode: t.emojiCode,
-      battleCode: t.battleCode,
       rank: rankOf.get(id) ?? null,
       score: t.score,
       r1Points: t.r1Points,
@@ -170,7 +168,7 @@ export function buildGameExport(s: GameState, exportedAt: number): Record<string
 
 // ---- CSV ----------------------------------------------------------------------------------
 
-export const CSV_COLUMNS = ['round', 'unit', 'crew_id', 'crew', 'player_id', 'player', 'role', 'action', 'choice', 'outcome', 'points', 'metres', 'at_second', 'detail'] as const;
+export const CSV_COLUMNS = ['round', 'unit', 'crew_id', 'crew', 'player_id', 'player', 'action', 'choice', 'outcome', 'points', 'metres', 'at_second', 'detail'] as const;
 
 /** A text cell: quoted when needed, and a leading = + - @ is defused so a spreadsheet cannot run it as a formula. */
 function cell(v: string | number | null | undefined): string {
@@ -187,7 +185,7 @@ type Row = Partial<Record<(typeof CSV_COLUMNS)[number], string | number | null>>
 export function buildGameCsv(s: GameState): string {
   const rows: Row[] = [];
   const base = (teamId: string) => ({ crew_id: teamId, crew: crewName(s, teamId) });
-  const player = (id: string) => ({ player_id: id, player: nameOfPlayer(s, id), role: roleOfPlayer(s, id) });
+  const player = (id: string) => ({ player_id: id, player: nameOfPlayer(s, id) });
 
   // Round 1: one row per crew, one per hint, one per recorded wrong guess.
   for (const tid of s.teamOrder) {

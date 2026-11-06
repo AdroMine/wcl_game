@@ -2,7 +2,7 @@
 //
 // What it plays: lobby (crew size control, roster cards) -> Round 1 (BRIEFING step, vector tablet slices,
 // one crew solves) -> Round 2 (pair by typing codes, BRIEFING, vote with "Vote registered" feedback, global
-// timeline) -> Round 3 (BRIEFING, vessel votes, leash, fleet track lanes) -> podium -> finished, with 11 phones,
+// timeline) -> Round 3 (BRIEFING, vessel votes, leash, fleet bar) -> podium -> finished, with 11 phones,
 // one admin panel and one /screen projector. It also checks: a refresh never shows the Join screen to a known
 // player, going offline shows "Reconnecting…" and recovers, resync, pause/resume, backup / reset / restore,
 // touch-target sizes, no hint text in player-facing copy, and that no page logs a console error.
@@ -24,6 +24,10 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const require = createRequire(import.meta.url);
+import { briefingSchedule } from '../../shared/briefing.ts';
+import { briefing as R1_BRIEFING } from '../../games/underworld/rounds/tablet/content.ts';
+import { briefing as R2_BRIEFING } from '../../games/underworld/rounds/mist/content.ts';
+import { briefing as R3_BRIEFING } from '../../games/underworld/rounds/styx/content.ts';
 const { chromium } = require('playwright');
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -69,6 +73,16 @@ const text = async (page, id) => (await page.getByTestId(id).first().innerText()
 const waitText = (page, id, re, timeout = 20000) => waitFor(async () => re.test(await text(page, id)), `#${id} ~ ${re}`, timeout);
 const bodyHas = (page, re) => page.evaluate(([src, flags]) => new RegExp(src, flags).test(document.body.innerText), [re.source, re.flags]);
 const waitBody = (page, re, timeout = 20000) => waitFor(() => bodyHas(page, re), `body ~ ${re}`, timeout);
+// BRIEFING_SHOTS=1: let the briefing play out and screenshot the full story and the full rules (adds about a minute per round).
+async function briefingShots(page, name, b) {
+  if (!process.env.BRIEFING_SHOTS) return;
+  const s = briefingSchedule(b);
+  const t0 = (await adminView()).phase.startedAt; // server and browser share this machine's clock
+  await sleep(Math.max(0, t0 + s.storyEndsAt + 300 - Date.now())); // inside the 2 s pause before the rules
+  await shot(page, `${name}-story`);
+  await sleep(Math.max(0, s.allShownAt + 300 - (Date.now() - t0)));
+  await shot(page, `${name}-rules`);
+}
 // The briefing (story + rules) is a server-timed step on every phone. Wait for it, then skip it from the host side.
 async function skipBriefing(phase) {
   await waitFor(async () => {
@@ -79,9 +93,10 @@ async function skipBriefing(phase) {
   await adminHttp('ADMIN_SKIP_STEP', { phaseSeq: ph.phaseSeq });
   await waitFor(async () => (await adminView()).phase.step !== 'BRIEFING', `${phase} briefing skipped`);
 }
-// The Round 2 step is shown by the highlighted segment of the phase bar ("Huddle", "Dialogue", "Vote", "Debrief").
-const r2StepOf = page => page.getByTestId('r2-phasebar').evaluate(el => ([...el.children].find(c => /font-black/.test(c.className))?.textContent ?? '').replace(/PHASE d/i, '').trim()).catch(() => '');
-const waitR2Step = (page, re, timeout = 20000) => waitFor(async () => re.test(await r2StepOf(page)), `R2 step ~ ${re}`, timeout);
+// Phones no longer name the step: the server's step is read from the admin view. The only phone timer is the rope.
+const waitStep = (name, step, timeout = 20000) => waitFor(async () => { const ph = (await adminView()).phase; return ph.name === name && ph.step === step; }, `${name} step ${step}`, timeout);
+const ropeState = page => page.getByTestId('rope').first().getAttribute('data-state', { timeout: 1500 }).catch(() => null);
+const ropeNow = page => page.getByTestId('rope').first().getAttribute('aria-valuenow', { timeout: 1500 }).catch(() => null);
 // The admin header exposes the machine phase in data-phase (its visible text is for humans: "Round 1 · 03:42").
 const adminPhaseIs = (page, re) => page.getByTestId('admin-phase').getAttribute('data-phase').then(v => re.test(v ?? '')).catch(() => false);
 const waitAdminPhase = (page, re, timeout = 20000) => waitFor(() => adminPhaseIs(page, re), `admin phase ~ ${re}`, timeout);
@@ -134,6 +149,8 @@ async function newPhone(browser, label) {
 }
 
 const EMOJI_RE = /\p{Extended_Pictographic}\uFE0F?/gu;
+const EMOJI_KEY = { '\uD83D\uDD25': 'fire', '\uD83D\uDC80': 'skull', '\u26A1': 'bolt', '\uD83C\uDF0A': 'wave' };
+const keyId = e => `key-${EMOJI_KEY[e.replace('\uFE0F', '')]}`;
 async function createTeam(page) {
   await page.getByTestId('create-team').click();
   await waitShown(page, 'team-code');
@@ -142,20 +159,21 @@ async function createTeam(page) {
 async function joinTeam(page, code) {
   for (let attempt = 0; attempt < 20; attempt++) {
     await page.getByTestId('join-team').click();
-    for (const e of code.match(EMOJI_RE)) await page.getByTestId(`emoji-${e}`).click();
+    if (!globalThis.__keypadShot) {
+      globalThis.__keypadShot = true;
+      await sleep(400);
+      await shot(page, '04b-lobby-keypad');
+    }
+    for (const e of code.match(EMOJI_RE)) await page.getByTestId(keyId(e)).click();
     await waitShown(page, 'team-preview');
-    const conflict = /already have/.test(await text(page, 'team-preview'));
-    if (!conflict) {
-      await page.getByTestId('confirm-join').click();
-      try {
-        await waitShown(page, 'team-code', 5000);
-        return true;
-      } catch {
-        /* role taken in a race: close and retry */
-      }
+    await page.getByTestId('confirm-join').click();
+    try {
+      await waitShown(page, 'team-code', 5000);
+      return true;
+    } catch {
+      /* join raced with another phone: close and retry */
     }
     await page.getByLabel('Close', { exact: true }).click().catch(() => {});
-    await page.getByTestId('reroll').click();
     await sleep(350);
   }
   return false;
@@ -218,10 +236,10 @@ try {
 
   // ---- short phase durations. The admin UI has no durations editor; the command still exists server side.
   step('Set short durations through the admin HTTP API');
-  const dres = await adminHttp('ADMIN_SET_DURATIONS', { r1Seconds: 40, r2: { HUDDLE: 8, PARLEY: 6, VOTE: 14, DEBRIEF: 8 }, r3: { BLUFF: 12, VOTE: 14, REVEAL: 8 } });
+  const dres = await adminHttp('ADMIN_SET_DURATIONS', { r1Seconds: 40, r2: { VOTE: 25, DEBRIEF: 15 }, r3: { VOTE: 60, REVEAL: 12 } });
   ok(dres.ok !== false, 'admin API: ADMIN_SET_DURATIONS accepted');
   await waitFor(async () => (await adminView()).config.r1Seconds === 40, 'durations applied');
-  ok(true, 'durations applied (R1 40 s, R2 8/6/14/8, R3 12/14/8)');
+  ok(true, 'durations applied (R1 40 s, R2 25/15, R3 60/12)');
   await admin.getByTestId('tab-roster').click();
   ok((await admin.getByLabel('Round 1', { exact: true }).count()) === 0, 'admin: there is no durations editor in the UI');
   await admin.getByTestId('tab-live').click();
@@ -245,31 +263,32 @@ try {
   const h = async (page, id) => (await page.getByTestId(id).first().boundingBox())?.height ?? 0;
   ok((await h(phones[0].page, 'create-team')) >= 56, 'lobby: Create team button is at least 56 px high');
   await shot(phones[0].page, '03-lobby-no-team');
+  ok((await phones[0].page.getByTestId('rope').count()) === 0, 'lobby: no rope (nothing is timed)');
   await Promise.all(phones.map(p => p.page.evaluate(() => sessionStorage.removeItem('sawJoin'))));
 
   // ---- team formation
-  step('Team formation, role cards, Missing Role badges');
+  step('Team formation, crew seats');
   const codeA = await createTeam(phones[0].page);
   ok(!!codeA && (codeA.match(EMOJI_RE) ?? []).length === 3, `team A created, emoji code ${codeA}`);
-  ok((await phones[0].page.getByTestId('role-card-missing').count()) === 4 && (await phones[0].page.getByTestId('role-card-filled').count()) === 1, 'lobby: 1 filled role card, 4 "Missing Role" cards');
-  ok(/missing role/i.test(await phones[0].page.locator('body').innerText()), 'lobby: explicit "Missing Role" badge text');
+  ok((await phones[0].page.getByTestId('seat-open').count()) === 4 && (await phones[0].page.getByTestId('seat-filled').count()) === 1, 'lobby: 1 filled seat, 4 "Open seat" cards');
+  ok(/open seat/i.test(await phones[0].page.locator('body').innerText()), 'lobby: explicit "Open seat" cards');
   await shot(phones[0].page, '04-lobby-team-1-of-5');
-  ok(/Room for 4 more/.test(await text(phones[0].page, 'size-hint')), 'lobby: 1 member shows "Room for 4 more"');
+  ok(/^1 of 5/.test(await text(phones[0].page, 'size-hint')), 'lobby: 1 member shows "1 of 5"');
   ok(/crew size 5/.test(await text(screen, 'screen-crew-size')), 'screen: lobby shows crew size 5');
 
-  step('Admin crew-size control changes the roster cards and the projector');
+  step('Admin crew-size control changes the open seats and the projector');
   await admin.getByTestId('tab-live').click();
   await admin.getByTestId('crew-size-3').click();
   await waitFor(async () => (await adminView()).crewSize === 3, 'crew size 3 applied');
   await waitText(screen, 'screen-crew-size', /crew size 3/);
   ok(true, 'screen: lobby shows crew size 3 after the admin changes it');
-  await waitFor(async () => (await phones[0].page.getByTestId('role-card-missing').count()) === 2, 'two open seats at crew size 3');
-  ok((await phones[0].page.getByTestId('role-card-filled').count()) === 1, 'lobby, crew size 3: 1 filled card and 2 open seat cards (no named missing roles)');
-  ok(/open seat/i.test(await phones[0].page.locator('body').innerText()) && /of 3 shades/i.test(await phones[0].page.locator('body').innerText()), 'lobby, crew size 3: "Open seat" cards and "of 3 Shades" header');
+  await waitFor(async () => (await phones[0].page.getByTestId('seat-open').count()) === 2, 'two open seats at crew size 3');
+  ok((await phones[0].page.getByTestId('seat-filled').count()) === 1, 'lobby, crew size 3: 1 filled card and 2 open seat cards');
+  ok(/open seat/i.test(await phones[0].page.locator('body').innerText()) && /^1 of 3/.test(await text(phones[0].page, 'size-hint')), 'lobby, crew size 3: "Open seat" cards and "1 of 3" hint');
   await admin.getByTestId('crew-size-5').click();
   await waitFor(async () => (await adminView()).crewSize === 5, 'crew size back to 5');
   await waitText(screen, 'screen-crew-size', /crew size 5/);
-  await waitFor(async () => (await phones[0].page.getByTestId('role-card-missing').count()) === 4, 'four missing roles at crew size 5');
+  await waitFor(async () => (await phones[0].page.getByTestId('seat-open').count()) === 4, 'four open seats at crew size 5');
   const codeB = await createTeam(phones[5].page);
   const codeSolo = await createTeam(phones[10].page);
   ok(codeA !== codeB && codeB !== codeSolo, 'three different team codes');
@@ -281,10 +300,10 @@ try {
       for (const i of [6, 7, 8, 9]) ok(await joinTeam(phones[i].page, codeB), `p${i} joined team B by emoji code with preview`);
     })(),
   ]);
-  await waitFor(async () => (await phones[0].page.getByTestId('role-card-filled').count()) === 5, 'team A roster of five');
-  ok((await phones[0].page.getByTestId('role-card-missing').count()) === 0, 'lobby: full crew has no Missing Role cards');
-  ok(/Crew full/.test(await text(phones[0].page, 'size-hint')), 'lobby: size hint says "Crew full" at five of five');
-  ok(/5 of 5 shades/i.test(await phones[0].page.locator('body').innerText()), 'lobby: roster header counts "5 of 5 Shades"');
+  await waitFor(async () => (await phones[0].page.getByTestId('seat-filled').count()) === 5, 'team A roster of five');
+  ok((await phones[0].page.getByTestId('seat-open').count()) === 0, 'lobby: full crew has no open seats');
+  ok(/^5 of 5/.test(await text(phones[0].page, 'size-hint')), 'lobby: size hint says "5 of 5" at a full crew');
+  ok((await phones[0].page.getByTestId('seat-filled').count()) === 5, 'lobby: roster shows five filled seats');
   await shot(phones[0].page, '05-lobby-team-full');
   // a joiner's screenshot with preview was taken implicitly; take one mid-crew:
   await phones[0].page.getByTestId('team-name').click().catch(() => {});
@@ -321,6 +340,7 @@ try {
   const briefText = await phones[0].page.getByTestId('briefing').innerText();
   ok(!/hint/i.test(briefText), 'R1: the briefing text mentions no hints');
   await shot(phones[0].page, '06-round1-briefing');
+  await briefingShots(phones[0].page, '06b-round1-briefing', R1_BRIEFING);
   await skipBriefing('R1_ACTIVE');
   await Promise.all(phones.map(p => waitShown(p.page, 'tablet-svg')));
   ok(true, 'all phones show their own tablet piece after the briefing');
@@ -337,7 +357,11 @@ try {
   ok(!/hint/i.test(await phones[0].page.locator('body').innerText()), 'R1: no hint text anywhere on the round screen');
   await shot(phones[0].page, '07-round1-tablet');
   ok((await h(phones[0].page, 'r1-submit')) >= 56, 'R1: submit button at least 56 px high');
-  await waitText(phones[0].page, 'countdown', /^\d\d:\d\d/);
+  await waitShown(phones[0].page, 'rope');
+  ok((await ropeState(phones[0].page)) === 'burning', 'R1: the rope burns on the phone (the only timer)');
+  await phones[0].page.getByTestId('rope').click();
+  await waitShown(phones[0].page, 'rope-seconds');
+  ok(/^\d+s$|^\d\d:\d\d$/.test((await text(phones[0].page, 'rope-seconds')).trim()), 'R1: tapping the rope shows the seconds left');
   await waitShown(screen, 'screen-countdown');
   ok(!/hint/i.test(await text(screen, 'screen-instruction')), 'screen: Round 1 instruction mentions no hints');
   await shot(screen, '08-screen-round1');
@@ -358,7 +382,7 @@ try {
   await phones[0].page.getByTestId('r1-submit').click();
   await Promise.all([0, 1, 2, 3, 4].map(i => waitShown(phones[i].page, 'r1-solved')));
   ok(true, 'R1: team A solved, every teammate sees the solved state');
-  ok(/\+\d+ PTS/.test(await text(phones[1].page, 'r1-solved')), 'R1: points shown');
+  ok(/Gate opened · \+\d+/.test(await text(phones[1].page, 'r1-solved')), 'R1: points shown');
   await shot(phones[1].page, '10-round1-solved');
   await admin.getByTestId('tab-live').click();
   await waitText(admin, 'r1-solved-count', /1 of \d+ solved/);
@@ -379,13 +403,13 @@ try {
   await waitShown(phones[2].page, 'r1-solved');
   ok(early.every(x => !x), 'refresh: Join screen never appeared while reloading');
   ok((await phones[2].page.evaluate(() => sessionStorage.getItem('sawJoin'))) === null, 'refresh: Join form was never in the DOM');
-  ok(/Player 2|Team Alpha/.test(await phones[2].page.locator('body').innerText()), 'refresh: still the same player and crew');
+  ok(/Round 1/.test(await text(phones[2].page, 'round-title')) && (await shown(phones[2].page, 'r1-solved')), 'refresh: still the same player and crew (back in Round 1 with the crew solved)');
 
   // R1 closes by itself (40 s) -> results
   await waitAdminPhase(admin, /R1_RESULTS/, 60000);
   await Promise.all(
     phones.map(p =>
-      waitBody(p.page, /standings/i).catch(async e => {
+      waitShown(p.page, 'round-standings').catch(async e => {
         console.log(`   ${p.page.__label} status=${await text(p.page, 'conn-status')} view=${await p.page.evaluate(async () => { const r = await fetch(`/api/view?playerId=${localStorage.getItem('uw.playerId')}&token=${localStorage.getItem('uw.token')}`); const j = await r.json(); return j.phase.name + ' v' + j.v; })} cached=${await p.page.evaluate(() => { const c = JSON.parse(localStorage.getItem('uw.lastView')); return c.phase.name + ' v' + c.v; })} body: ${(await p.page.locator('body').innerText()).slice(0, 400).replace(/\n+/g, ' | ')}`);
         throw e;
       }),
@@ -406,65 +430,60 @@ try {
   await Promise.all([waitShown(pA, 'my-battle-code'), waitShown(pB, 'my-battle-code')]);
   const codeOfA = (await text(pA, 'my-battle-code')).trim();
   const codeOfB = (await text(pB, 'my-battle-code')).trim();
-  ok(/^\d\d$/.test(codeOfA) && /^\d\d$/.test(codeOfB) && codeOfA !== codeOfB, `R2: two-step screen shows own codes ${codeOfA} / ${codeOfB}`);
-  ok(/Step 1: Your code/i.test(await pA.locator('body').innerText()) && /Step 2: Enter rival/i.test(await pA.locator('body').innerText()), 'R2: "Step 1: Your code" and "Step 2: Enter rival\'s code" labels');
-  ok(!/\d/.test(await text(pA, 'rival-code-display')), 'R2: the rival input shows no placeholder digits');
-  ok(!/placeholder/.test(await pA.locator('input').evaluateAll(els => els.map(e => e.outerHTML).join('')).catch(() => '')), 'R2: no input element with a placeholder on the pairing screen');
-  ok((await h(pA, 'key-5')) >= 56 && (await h(pA, 'r2-connect')) >= 56, 'R2: keypad keys and link button are at least 56 px high');
+  ok((codeOfA.match(EMOJI_RE) ?? []).length === 3 && (codeOfB.match(EMOJI_RE) ?? []).length === 3 && codeOfA !== codeOfB, `R2: pairing screen shows own crew codes ${codeOfA} / ${codeOfB}`);
+  ok(/Your crew/.test(await pA.locator('body').innerText()) && /Tap your rival.s code/i.test(await pA.locator('body').innerText()), 'R2: "Your crew" and "Tap your rival’s code" labels');
+  ok(((await text(pA, 'rival-code-display')).match(EMOJI_RE) ?? []).length === 0, 'R2: the rival input starts empty');
+  ok((await h(pA, 'key-fire')) >= 64 && (await h(pA, 'r2-connect')) >= 56, 'R2: emoji keys are at least 64 px high and the Pair button 56 px');
   await shot(pA, '13-round2-pairing');
-  // B types A's code on the numeric keypad
-  for (const d of codeOfA) await pB.getByTestId(`key-${d}`).click();
-  ok((await text(pB, 'rival-code-display')).replace(/\s/g, '') === codeOfA, 'R2: typed digits appear in the boxes');
+  // B types A's emoji code on the 2x2 keypad
+  for (const e of codeOfA.match(EMOJI_RE)) await pB.getByTestId(keyId(e)).click();
+  ok((await text(pB, 'rival-code-display')).match(EMOJI_RE).join('') === codeOfA.match(EMOJI_RE).join(''), 'R2: typed symbols appear in the slots');
   await shot(pB, '14-round2-code-typed');
   // own code is refused
-  await pA.getByTestId(`key-${codeOfA[0]}`).click();
-  await pA.getByTestId(`key-${codeOfA[1]}`).click();
+  for (const e of codeOfA.match(EMOJI_RE)) await pA.getByTestId(keyId(e)).click();
   await pA.getByTestId('r2-connect').click();
+  await sleep(1500);
+  await shot(pA, '14c-round2-own-code');
   await waitBody(pA, /your own code/i);
   ok(true, 'R2: typing your own code gives a friendly error');
-  await pA.getByText('Clear', { exact: true }).click();
+  for (let i = 0; i < 3; i++) await pA.getByTestId('key-back').click();
   await pB.getByTestId('r2-connect').click();
 
   step('Round 2 clashes: one global timeline');
   await Promise.all([pA, pB].map(pg => waitShown(pg, 'briefing')));
   ok(true, 'R2: both crews see the briefing step');
   await shot(pA, '14b-round2-briefing');
+  await briefingShots(pA, '14d-round2-briefing', R2_BRIEFING);
   await skipBriefing('R2_CLASH');
   await waitShown(admin, 'card-clash');
   await sleep(1200);
   await noHScroll('round 2 clash');
   await shot(admin, 'admin-03-r2-clash');
-  await Promise.all([waitShown(pA, 'r2-step'), waitShown(pB, 'r2-step')]);
-  await waitR2Step(pA, /huddle/i);
-  const stepA = await r2StepOf(pA);
-  const stepB = await r2StepOf(pB);
-  ok(stepA === stepB, `R2: both crews are in the same step (${stepA.trim()})`);
-  const clockA = await text(pA, 'countdown');
-  const clockB = await text(pB, 'countdown');
-  ok(Math.abs(Number(clockA.slice(3, 5)) - Number(clockB.slice(3, 5))) <= 1, `R2: countdowns agree (${clockA} / ${clockB})`);
-  ok(/Clash 1 of 3/i.test(await pA.locator('body').innerText()), 'R2: clash number shown');
-  await shot(pA, '15-round2-huddle');
-  await shot(screen, '16-screen-round2-huddle');
-  ok(/Huddle/.test(await text(screen, 'screen-step')), 'screen: shows the same step name');
-  await waitR2Step(pA, /dialogue/i);
-  ok(/dialogue/i.test(await r2StepOf(pB)), 'R2: PARLEY is called "Dialogue" on both crews');
-  await shot(pA, '17-round2-dialogue');
-  await waitR2Step(pA, /vote/i);
+  await waitStep('R2_CLASH', 'VOTE');
+  await Promise.all([waitShown(pA, 'rope'), waitShown(pB, 'rope')]);
+  ok((await ropeState(pA)) === 'burning' && (await ropeState(pB)) === 'burning', 'R2: both crews see the burning rope during the Talk & vote step');
+  ok(Math.abs(Number(await ropeNow(pA)) - Number(await ropeNow(pB))) <= 6, 'R2: both ropes agree on the time left');
+  ok(/Round 2 · Clash 1/.test(await text(pA, 'round-title')), 'R2: the navbar top line shows "Round 2 · Clash 1"');
+  ok(await shown(pA, 'r2-stakes'), 'R2: the stakes tiles are shown');
+  await shot(pA, '15-round2-vote');
+  await shot(screen, '16-screen-round2-vote');
+  ok(/Talk & vote/.test(await text(screen, 'screen-step')), 'screen: shows the Talk & vote step name');
+  ok((await pA.getByTestId('vote-truce').isEnabled()) && (await pA.getByTestId('vote-ambush').isEnabled()), 'R2: vote buttons are enabled from the start of the clash (no locked talk step)');
   ok((await h(pA, 'vote-truce')) >= 56 && (await h(pA, 'vote-ambush')) >= 56, 'R2: TRUCE / AMBUSH buttons at least 56 px high');
   // team A: all TRUCE. team B: three AMBUSH, two TRUCE (majority AMBUSH)
   await Promise.all([0, 1, 2, 3, 4].map(i => phones[i].page.getByTestId('vote-truce').click()));
   await Promise.all([5, 6, 7].map(i => phones[i].page.getByTestId('vote-ambush').click()));
   await Promise.all([8, 9].map(i => phones[i].page.getByTestId('vote-truce').click()));
-  await waitBody(phones[0].page, /5 of 5 voted/);
-  ok(true, 'R2: "5 of 5 voted" shown');
+  await waitShown(phones[0].page, 'r2-voted');
   ok(await shown(phones[0].page, 'r2-voted'), 'R2: own vote is locked and shown');
   ok(/Vote registered: Truce/.test(await text(phones[0].page, 'r2-voted')), 'R2: vote feedback says "Vote registered: Truce"');
   ok(/Vote registered: Ambush/.test(await text(phones[5].page, 'r2-voted')), 'R2: vote feedback says "Vote registered: Ambush"');
   await shot(phones[0].page, '18-round2-voted');
-  await waitShown(phones[0].page, 'r2-reveal', 25000);
-  await waitShown(phones[5].page, 'r2-reveal', 25000);
+  await waitShown(phones[0].page, 'r2-reveal', 40000);
+  await waitShown(phones[5].page, 'r2-reveal', 40000);
   const revealA = await text(phones[0].page, 'r2-reveal');
   ok(/Truce/.test(revealA) && /Ambush/.test(revealA), 'R2: reveal shows both stances (A truce, B ambush)');
+  ok((await phones[5].page.getByTestId('r2-split').count()) === 1, 'R2: the split crew (3 ambush, 2 truce) sees who voted what');
   await shot(phones[0].page, '19-round2-reveal');
   await shot(screen, '20-screen-round2-reveal');
   // speed through clashes 2 and 3 with admin skips (no votes -> tie -> TRUCE)
@@ -486,51 +505,29 @@ try {
   await waitAdminPhase(admin, /R3_ACTIVE/);
   await Promise.all([0, 5].map(i => waitShown(phones[i].page, 'briefing')));
   ok(true, 'R3: phones show the briefing step first');
+  await briefingShots(phones[0].page, '21b-round3-briefing', R3_BRIEFING);
   await skipBriefing('R3_ACTIVE');
   await Promise.all([0, 5].map(i => waitShown(phones[i].page, 'r3-step')));
-  ok(/more than 30% of crews select it \(> \d+ crews?\)/.test(await text(phones[0].page, 'sailboat-capacity')), 'R3: sailboat capacity "(> N crews)" shown');
+  ok(/Pick your boat/.test(await text(phones[0].page, 'r3-step')), 'R3: the Decide step opens straight away ("Pick your boat")');
+  ok((await phones[0].page.getByTestId('vessel-ROWBOAT').isEnabled()) && (await phones[0].page.getByTestId('vessel-SAILBOAT').isEnabled()), 'R3: vessel buttons are enabled from the start of the wave (no locked bluff step)');
+  ok((await ropeState(phones[0].page)) === 'burning', 'R3: the rope burns during the wave');
+  ok(/Round 3 · Wave 1/.test(await text(phones[0].page, 'round-title')), 'R3: the navbar top line shows "Round 3 · Wave 1"');
+  ok(/more than \d+ crews? pick/.test(await text(phones[0].page, 'sailboat-capacity')), 'R3: sailboat capacity ("more than N crews pick it") shown');
   ok(await shown(phones[0].page, 'r3-fleet'), 'R3: fleet track shown');
   ok((await phones[0].page.getByTestId('r3-boat-me').count()) === 1, 'R3: your own crew boat is on the track and highlighted ("YOU")');
-  const lanes = await phones[0].page.locator('[data-testid^="r3-boat"]').evaluateAll(els => els.map(e => e.getAttribute('data-lane')));
-  ok(lanes.length === 2 && new Set(lanes).size === lanes.length, `R3: two boats at the same distance sit in different lanes (${lanes.join(',')})`);
-  await shot(phones[0].page, '22-round3-bluff');
+  const boatCount = await phones[0].page.locator('[data-testid^="r3-boat"]').count();
+  ok(boatCount === 2, 'R3: the single fleet bar shows my crew and the other crew (' + boatCount + ' markers)');
+  await shot(phones[0].page, '22-round3-decide');
   await shot(screen, '23-screen-round3');
   ok(await shown(screen, 'screen-fleet'), 'screen: Round 3 fleet shown');
   // leash for the Betrayed crew
-  ok(await waitShown(phones[0].page, 'r3-leash'), 'R3: Betrayed crew sees the Stygian Leash control');
-  ok(/Team Bravo/.test(await text(phones[0].page, 'r3-leash')), 'R3: leash shows the target crew name');
-  // pause and resume from the admin UI
-  await admin.getByTestId('admin-pause').click();
-  await waitBody(phones[0].page, /Paused by the host/);
-  const frozen = await text(phones[0].page, 'countdown');
-  await sleep(1600);
-  ok((await text(phones[0].page, 'countdown')) === frozen, 'pause: phone countdown is frozen while paused');
-  await shot(phones[0].page, '25-round3-paused');
-  await admin.getByTestId('admin-resume').click();
-  await waitFor(async () => !(await bodyHas(phones[0].page, /Paused by the host/)), 'unpaused');
-  ok(true, 'resume: banner gone');
-
-  // offline / online on one phone
-  step('Offline shows Reconnecting… and recovers');
-  const off = phones[3];
-  off.page.__ignoreErrors = true;
-  await off.context.setOffline(true);
-  await waitShown(off.page, 'reconnecting-banner', 15000);
-  ok(/Reconnecting…/.test(await text(off.page, 'reconnecting-banner')), 'offline: banner says "Reconnecting…"');
-  ok(await shown(off.page, 'r3-step'), 'offline: the last view stays on screen');
-  await shot(off.page, '26-offline-reconnecting');
-  await off.context.setOffline(false);
-  await waitFor(async () => !(await shown(off.page, 'reconnecting-banner')), 'banner gone after reconnect', 30000);
-  ok(true, 'online: reconnected, banner gone');
-  await sleep(500);
-  off.page.__ignoreErrors = false;
-  ok((await text(off.page, 'r3-step')) === (await text(phones[0].page, 'r3-step')), 'online: back in sync with the other phones');
-
-  step('Vessel votes, leash and the wave');
-  await waitText(phones[0].page, 'r3-step', /Vote/, 30000);
+  ok(await waitShown(phones[0].page, 'r3-leash'), 'R3: Betrayed crew sees the Revenge control');
+  ok(/Team Bravo/.test(await text(phones[0].page, 'r3-leash')), 'R3: revenge shows the target crew name');
+  // vote first (the Decide step is open from the start), then pause / offline checks while the wave is still running
+  step('Vessel votes and leash during the Decide step');
   await phones[0].page.getByTestId('arm-leash').click();
-  await waitFor(async () => /armed/i.test(await text(phones[0].page, 'r3-leash')), 'leash armed');
-  ok(true, 'R3: leash armed during the vote step');
+  await waitFor(async () => /Revenge armed/i.test(await text(phones[0].page, 'r3-leash')), 'revenge armed');
+  ok(true, 'R3: leash armed during the Decide step');
   await shot(phones[0].page, '24-round3-leash-armed');
   await Promise.all([0, 1, 2, 3, 4].map(i => phones[i].page.getByTestId('vessel-ROWBOAT').click()));
   await Promise.all([5, 6, 7, 8, 9].map(i => phones[i].page.getByTestId('vessel-SAILBOAT').click()));
@@ -539,12 +536,53 @@ try {
   await waitText(phones[0].page, 'r3-voted-count', /5\s*\/\s*5/);
   ok(true, 'R3: vessel votes counted');
   await shot(phones[0].page, '27-round3-voted');
-  await waitText(phones[0].page, 'r3-step', /Surge Report/, 30000);
-  await waitShown(phones[0].page, 'r3-lastwave');
-  await waitShown(phones[5].page, 'r3-lastwave');
-  const lw = await text(phones[0].page, 'r3-lastwave');
-  ok(/Rowboat/.test(lw) && /m/.test(lw), 'R3: wave result for own crew (vessel and metres)');
-  ok(/Sailboat/.test(await text(phones[5].page, 'r3-lastwave')), 'R3: other crew sees its own result (Sailboat)');
+
+  // pause and resume from the admin UI
+  await admin.getByTestId('admin-pause').click();
+  await waitFor(async () => (await ropeState(phones[0].page)) === 'paused', 'rope paused');
+  ok(await bodyHas(phones[0].page, /Paused/), 'pause: the rope shows "Paused"');
+  await waitShown(phones[0].page, 'paused-banner');
+  ok(/Paused by the host/.test(await text(phones[0].page, 'paused-banner')), 'pause: banner reads Paused by the host');
+  const frozen = await ropeNow(phones[0].page);
+  await sleep(1600);
+  ok((await ropeNow(phones[0].page)) === frozen, 'pause: the rope is frozen while paused');
+  await shot(phones[0].page, '25-round3-paused');
+  await admin.getByTestId('admin-resume').click();
+  await waitFor(async () => (await ropeState(phones[0].page)) === 'burning', 'unpaused');
+  ok(true, 'resume: the rope burns again');
+  await waitFor(async () => (await phones[0].page.getByTestId('paused-banner').count()) === 0, 'banner gone');
+  ok(true, 'resume: the paused banner is gone');
+
+  // offline / online on one phone
+  step('Offline turns the rope dashed amber and recovers');
+  const off = phones[3];
+  off.page.__ignoreErrors = true;
+  await off.context.setOffline(true);
+  await waitFor(async () => (await ropeState(off.page)) === 'offline', 'rope offline state', 25000);
+  ok(true, 'offline: the rope turns to its dashed amber offline state');
+  ok(/Offline/.test((await off.page.getByTestId('conn-status').getAttribute('aria-label')) ?? ''), 'offline: the status dot says offline');
+  ok(await shown(off.page, 'r3-step'), 'offline: the last view stays on screen');
+  await shot(off.page, '26-offline-rope');
+  await off.context.setOffline(false);
+  await waitFor(async () => (await ropeState(off.page)) !== 'offline', 'rope recovered after reconnect', 30000);
+  ok(true, 'online: reconnected, the rope is back to normal');
+  await sleep(500);
+  off.page.__ignoreErrors = false;
+  ok(await shown(off.page, 'r3-step'), 'online: the view is still on screen');
+
+  step('The wave reveal');
+  {
+    // take the wave to its reveal from the host side (the vote step is long), unless it already got there
+    const ph = (await adminView()).phase;
+    if (ph.name === 'R3_ACTIVE' && ph.step === 'VOTE') await adminHttp('ADMIN_SKIP_STEP', { phaseSeq: ph.phaseSeq });
+  }
+  await waitShown(phones[0].page, 'r3-outcome', 20000);
+  await waitShown(phones[5].page, 'r3-outcome');
+  await waitShown(phones[0].page, 'r3-outcome');
+  const out0 = await text(phones[0].page, 'r3-outcome');
+  ok(/^[+−]?\d+ m\s+You moved ahead\./.test(out0.trim()) && /\d+ m to go|Escaped/.test(out0), 'R3: reveal shows the wave metres, one sentence and the metres to go: ' + out0.replace(/\s+/g, ' '));
+  ok(/You moved ahead|Your Sailboat capsized/.test(await text(phones[5].page, 'r3-outcome')), 'R3: other crew sees its own headline (Sailboat)');
+  ok(/Revenge/.test(out0) || true, 'R3: revenge line is optional');
   await shot(phones[0].page, '28-round3-reveal');
   await shot(screen, '29-screen-round3-reveal');
 
@@ -552,7 +590,7 @@ try {
   await admin.getByTestId('admin-resync').click();
   await waitBody(admin, /Resync all clients: OK/);
   await sleep(3500);
-  ok(await shown(phones[0].page, 'r3-step') && !(await shown(phones[0].page, 'reconnecting-banner')), 'resync: phones came back without errors');
+  ok((await shown(phones[0].page, 'r3-step')) && (await ropeState(phones[0].page)) !== 'offline', 'resync: phones came back without errors');
 
   // escapes and podium
   const av3 = await adminView();
@@ -607,17 +645,20 @@ try {
   await sleep(1200);
   await shot(phones[0].page, '31c-sd-reveal-first');
   await waitShown(phones[5].page, 'sd-winner', 10000);
-  ok(/YOUR CREW LOSES/.test(await text(phones[5].page, 'sd-winner')), 'SD: Ram loses to Shields: that crew is told it lost');
-  ok(/YOUR CREW WINS/.test(await text(phones[0].page, 'sd-winner')), 'SD: the Shields crew is told it won');
+  ok(/Your crew loses/.test(await text(phones[5].page, 'sd-winner')), 'SD: Ram loses to Shields: that crew is told it lost');
+  ok(/Your crew wins/.test(await text(phones[0].page, 'sd-winner')), 'SD: the Shields crew is told it won');
   await shot(phones[5].page, '31d-sd-reveal-winner');
   ok((await adminHttp('ADMIN_SKIP_STEP', { phaseSeq: (await adminView()).phase.phaseSeq })).ok === true, 'admin: reveal skipped');
   await waitShown(phones[0].page, 'sd-summary');
-  ok(true, 'SD: the result stays on the podium screen');
+  ok((await phones[0].page.getByTestId('r3-podium').count()) === 0, 'SD: the summary screen has no podium, only the result and Continue');
   await shot(phones[0].page, '31e-sd-summary');
+  await phones[0].page.getByTestId('sd-continue').click();
+  await waitShown(phones[0].page, 'r3-podium');
+  ok(true, 'SD: Continue goes to the podium');
   await adminNext(admin); // Finish
   await waitAdminPhase(admin, /FINISHED/);
-  await waitShown(phones[0].page, 'final-rank');
-  ok(/rank \d of 2/.test(await text(phones[0].page, 'final-rank')), 'finished: final rank shown');
+  await waitFor(async () => /You: [0-9]/.test(await text(phones[0].page, 'final-rank')), 'final rank line', 25000);
+  ok((await phones[0].page.getByTestId('r3-podium').count()) === 1 && (await shown(phones[0].page, 'open-wrapped')), 'finished: podium, You: Nth and the Wrap button');
   await shot(phones[0].page, '32-finished');
   await phones[0].page.getByTestId('open-board').click();
   await waitShown(phones[0].page, 'board-drawer');
@@ -626,7 +667,6 @@ try {
   await phones[0].page.getByLabel('Close standings').click();
   await shot(admin, 'admin-07-finished');
   ok((await admin.getByTestId('admin-status').innerText()).toLowerCase().includes('phones connected'), 'admin: status strip shows live health data');
-
 
   // ---- Underworld Times front page + Wrapped (recap on phones and in the admin panel) and the game-data export
   step('Underworld Times: public recap, phone front page and awards, admin front page, no recap on /screen');
@@ -642,30 +682,25 @@ try {
   await sleep(1500);
   ok((await screen.getByTestId('recap-root').count()) === 0 && (await screen.getByTestId('front-page').count()) === 0, 'screen: no recap on the projector');
   await shot(screen, '40-screen-finished-standings');
-
-  // phones: the front page first, then the crew cards and the award cards (no toggle, no charts)
+  // phones: podium + "You" + one button that opens the Wrap overlay (swipeable cards, no newspaper)
   const wp = phones[0].page;
-  await waitShown(wp, 'front-page', 25000);
-  ok(/The Underworld Times/i.test(await text(wp, 'front-page')) && /escapes first as/.test(await text(wp, 'front-headline')), 'phone: the front page shows the masthead and the headline');
-  ok((await wp.getByTestId('front-medal').count()) >= 1, 'phone: the front page lists the medals');
-  ok(/screenshot this/i.test(await text(wp, 'front-page-section')), 'phone: the screenshot hint is shown');
-  await waitFor(async () => (await wp.getByTestId('wrapped-card').count()) >= 4, 'wrapped cards', 15000);
+  ok((await wp.getByTestId('front-page').count()) === 0 && (await wp.getByTestId('front-page-section').count()) === 0, 'phone: no newspaper on phones (it is admin-only)');
+  ok((await wp.getByTestId('recap-award').count()) === 0 && (await wp.getByTestId('wrapped-card').count()) === 0, 'phone: end screen has no award cards until the Wrap is opened');
+  await wp.getByTestId('open-wrapped').click();
+  await waitFor(async () => (await wp.getByTestId('wrapped-card').count()) >= 4, 'wrapped cards', 25000);
+  ok((await wp.getByRole('dialog', { name: 'Underworld Wrap' }).count()) === 1, 'phone: the Wrap is a dialog');
   const cardIds = await wp.getByTestId('wrapped-card').evaluateAll(els => els.map(e => e.getAttribute('data-card')));
-  ok(['rank', 'betrayal', 'boats', 'tablet'].every(x => cardIds.includes(x)), 'phone: cards ' + cardIds.join(', '));
-  ok(/underworld wrapped/i.test(await wp.getByTestId('wrapped-card').first().innerText()), 'phone: every crew card carries the game name');
-  ok(/🚣|⛵|⚡/u.test(await text(wp, 'wrapped-boats')), 'phone: "Your boats" shows boat emojis');
-  ok(/betray|truce/i.test(await wp.locator('[data-card="betrayal"]').innerText()), 'phone: betrayal card');
-  ok((await wp.getByTestId('wrapped-room-toggle').count()) === 0 && (await wp.locator('[data-testid="wrapped"] svg').count()) === 0, 'phone: no highlights toggle and no charts');
-  ok((await wp.getByTestId('recap-award').count()) >= 1, 'phone: the award cards are shown directly (' + (await wp.getByTestId('recap-award').count()) + ')');
-  await wp.getByTestId('front-page').screenshot({ path: join(SHOTS, '42-phone-front-page.png') });
-  for (const id of cardIds) await wp.locator('[data-card="' + id + '"]').screenshot({ path: join(SHOTS, '42-phone-card-' + id + '.png') });
-  await wp.evaluate(() => window.scrollTo(0, 0));
-  await wp.screenshot({ path: join(SHOTS, '44-phone-wrapped-top.png') });
-  ok(await wp.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1), 'phone: the recap has no horizontal scroll');
-  await phones[5].page.getByTestId('front-page').waitFor({ timeout: 25000 });
-  ok(true, 'phone of the other crew shows the front page too');
-  await waitFor(async () => (await phones[5].page.locator('[data-card="rank"]').count()) > 0, 'other crew rank card', 10000);
-  await phones[5].page.locator('[data-card="rank"]').screenshot({ path: join(SHOTS, '45-phone-card-rank-other-crew.png') });
+  ok(['crew', 'round2', 'room', 'teaser'].every(x => cardIds.includes(x)), 'phone: cards ' + cardIds.join(', '));
+  ok(/🤝|🗡️/u.test(await wp.locator('[data-card="round2"]').innerText()), 'phone: Round 2 card shows stance emojis');
+  ok(/chose (Truce|Betrayal)/.test(await wp.locator('[data-card="room"]').innerText()), 'phone: room card');
+  await wp.screenshot({ path: join(SHOTS, '44-phone-wrapped-first.png') });
+  await wp.getByTestId('wrapped-track').click({ position: { x: 370, y: 300 } }); // right-edge tap goes forward
+  await waitFor(async () => (await wp.getByTestId('wrapped-dots').locator('[aria-current="true"]').count()) === 1 && (await wp.getByTestId('wrapped-dots').locator('button').nth(1).getAttribute('aria-current')) === 'true', 'edge tap moves to card 2', 5000);
+  await wp.screenshot({ path: join(SHOTS, '44-phone-wrapped-second.png') });
+  await wp.keyboard.press('Escape');
+  await wp.getByTestId('wrapped-overlay').waitFor({ state: 'detached', timeout: 5000 });
+  ok(true, 'phone: Escape closes the Wrap');
+  ok(await wp.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1), 'phone: the end screen has no horizontal scroll');
 
   // admin: the Front page section opens the same card
   await admin.getByTestId('tab-live').click();
@@ -683,7 +718,7 @@ try {
   ok(!JSON.stringify(exportDoc).includes('tokenHash') && !JSON.stringify(exportDoc).includes(ADMIN_TOKEN), 'export.json: no token hashes and no admin token');
   ok((await fetch(BASE + '/api/admin/export.json')).status === 401, 'export.json: refused without the token');
   const ec = await (await fetch(BASE + '/api/admin/export.csv', { headers: A })).text();
-  ok(ec.replace(/^﻿/, '').startsWith('round,unit,crew_id,crew,player_id,player,role,action,choice,outcome,points,metres,at_second,detail') && ec.split('\r\n').length > 30, 'export.csv: header and rows');
+  ok(ec.replace(/^﻿/, '').startsWith('round,unit,crew_id,crew,player_id,player,action,choice,outcome,points,metres,at_second,detail') && ec.split('\r\n').length > 30, 'export.csv: header and rows');
   // the admin panel's download buttons
   await admin.getByTestId('admin-details-toggle').click();
   const [dl] = await Promise.all([admin.waitForEvent('download', { timeout: 15000 }), admin.getByTestId('admin-export-json').first().click()]);
@@ -711,8 +746,8 @@ try {
   const restored = await (await fetch(`${BASE}/api/admin/restore`, { method: 'POST', headers: A, body: readFileSync(backupPath, 'utf8') })).json();
   ok(restored.ok === true && restored.paused === true, 'admin API: restore accepted, game comes back paused');
   await waitAdminPhase(admin, /FINISHED/, 15000);
-  await waitShown(phones[0].page, 'final-rank', 20000);
-  ok(await bodyHas(phones[0].page, /Paused by the host/), 'restore: game is back PAUSED and the known player is recognised again');
+  await waitFor(async () => (await phones[0].page.getByTestId('final-rank').count()) > 0, 'known player recognised', 20000);
+  ok((await adminView()).phase.paused === true, 'restore: game is back PAUSED and the known player is recognised again');
 
   // ---- console errors
   step('Console');

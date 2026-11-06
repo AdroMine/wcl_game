@@ -50,7 +50,6 @@ export function buildMeta(): Meta {
   return {
     protocol: PROTOCOL_VERSION,
     limits: LIMITS,
-    roles: GAME.roles.map(r => ({ id: r.id, name: r.name, color: r.color, ...GAME.roleExtra[r.id] })),
     emojiPool: [...GAME.emojiPool],
     // Crew size N is chosen by the admin (3..6, default 5); the current value is in the lobby view (lobby.crewSize).
     teamSize: { min: CREW_SIZE_MIN, target: CREW_SIZE_DEFAULT, max: CREW_SIZE_MAX },

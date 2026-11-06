@@ -121,7 +121,7 @@ test('round 3: the roster is written only when it changes, and a changed roster 
   assert.deepEqual(first[0].members, h.state.teams[t[0]].playerIds);
   assert.equal(first[0].votes, 'RRR');
   // wave 2: nobody in t[1] votes; the roster is unchanged, so no member list is repeated
-  h.nextDeadline(); // REVEAL ends -> next wave BLUFF
+  h.nextDeadline(); // REVEAL ends -> next wave VOTE
   toVote(h);
   for (const tid of [t[0], t[2], t[3]]) voteR3(h, tid, 'SAILBOAT');
   toReveal(h);
@@ -288,7 +288,7 @@ test('recap: crew-level only, deterministic, small, and consistent with the game
   assert.ok(a.headlines.length >= 3);
   assert.ok(a.headlines.some(x => /chose to betray/.test(x)));
   assert.ok(a.headlines.every(x => x.length > 5 && !x.includes('undefined') && !x.includes('NaN')));
-  assert.equal(a.teaser.title, 'The Christmas game is coming…');
+  assert.equal(a.teaser.title, 'A Christmas game is coming');
 });
 
 test('recap: an empty or unplayed game gives an empty but valid recap (no awards, no headlines that lie)', () => {
@@ -354,4 +354,35 @@ test('recap front page: an unplayed game has no medals, no tiles and no quote, a
   assert.equal(f.round3.waves, 0);
   assert.equal(f.quote, null);
   assert.equal(f.headline, 'Nobody has escaped Tartarus yet');
+});
+
+test('recap: The True Angel needs truce in every clash AND at least one betrayal; ties name every crew', () => {
+  const base = finishedGame();
+  /** Every match plays all-truce except the listed ones, where side A stays faithful and side B ambushes the first `n` clashes. */
+  const build = (betrayedMatches: number[]) => {
+    const s: GameState = JSON.parse(JSON.stringify(base));
+    const ms = Object.values(s.r2.matches).filter(m => m.clashes.length >= 3 && m.clashes.every(c => c.resolved));
+    ms.forEach((m, k) => {
+      m.clashes.forEach(c => {
+        c.stanceA = 'TRUCE';
+        c.stanceB = betrayedMatches.includes(k) && c.clash === 1 ? 'AMBUSH' : 'TRUCE';
+      });
+    });
+    return { s, ms };
+  };
+  const angel = (s: GameState) => buildRecap(s).awards.find(a => a.id === 'saints');
+
+  assert.equal(angel(build([]).s), undefined, 'faithful but never betrayed: no award');
+
+  const one = build([0]);
+  const win = angel(one.s)!;
+  assert.ok(win, 'faithful and betrayed once: award');
+  assert.equal(buildRecap(one.s).crews[win.crew].name, one.s.teams[one.ms[0].teamA].name);
+  assert.equal(win.title, 'The True Angel');
+
+  const two = build([0, 1]);
+  const tie = angel(two.s)!;
+  const r2 = buildRecap(two.s);
+  const names = [tie.crew, ...(tie.tied ?? [])].map(c => r2.crews[c].name);
+  for (const m of [0, 1]) assert.ok(names.includes(two.s.teams[two.ms[m].teamA].name), 'tie lists both crews');
 });

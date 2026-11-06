@@ -1,14 +1,11 @@
 // Round 1 tablet pieces. A crew of n members always holds exactly n pieces (slots 0..n-1, one per
 // member, in join order). Leaf module (config and types only) so that common.ts can call it whenever
 // crew membership changes while Round 1 is running.
-import { ROLES } from './config.ts';
 import type { GameState, Team } from './types.ts';
 
 export interface PlayerSlotInfo {
   slotIndex: number;
   playerName: string;
-  roleName: string;
-  roleColor?: string;
 }
 
 export function generateHintText(hintIndex: number, teamSize: number, slotMembers: PlayerSlotInfo[]): string {
@@ -20,14 +17,13 @@ export function generateHintText(hintIndex: number, teamSize: number, slotMember
 
   const member = slotMembers.find(m => m.slotIndex === targetSlot);
   const nameLabel = member ? member.playerName : `Crew Shade #${targetSlot + 1}`;
-  const roleLabel = member ? member.roleName : `Slot #${targetSlot + 1}`;
 
   if (hintIndex === 1) {
-    return `🛡️ LEFT EDGE: "${nameLabel}" (${roleLabel}) holds the FAR LEFT piece of the ancient tablet. Place their phone on the left side of the table!`;
+    return `🛡️ LEFT EDGE: "${nameLabel}" holds the FAR LEFT piece of the ancient tablet. Place their phone on the left side of the table!`;
   } else if (hintIndex === 2) {
-    return `⚓ RIGHT EDGE: "${nameLabel}" (${roleLabel}) holds the FAR RIGHT piece of the ancient tablet. Place their phone on the right side of the table!`;
+    return `⚓ RIGHT EDGE: "${nameLabel}" holds the FAR RIGHT piece of the ancient tablet. Place their phone on the right side of the table!`;
   }
-  return `👁️ CENTER PIECE: "${nameLabel}" (${roleLabel}) holds the CENTER piece of the tablet. Place their phone in the middle between left and right!`;
+  return `👁️ CENTER PIECE: "${nameLabel}" holds the CENTER piece of the tablet. Place their phone in the middle between left and right!`;
 }
 
 export function hintTextFor(d: GameState, t: Team, hintIndex: number): string {
@@ -36,8 +32,7 @@ export function hintTextFor(d: GameState, t: Team, hintIndex: number): string {
   for (const pid of Object.keys(r1.slots)) {
     const p = d.players[pid];
     if (!p) continue;
-    const role = ROLES.find(r => r.id === p.role);
-    slotMembers.push({ slotIndex: r1.slots[pid], playerName: p.name, roleName: role?.name ?? 'Shade', roleColor: role?.color });
+    slotMembers.push({ slotIndex: r1.slots[pid], playerName: p.name });
   }
   return generateHintText(hintIndex, r1.size, slotMembers);
 }

@@ -98,7 +98,7 @@ const Round1Card: React.FC<{ view: AdminViewData }> = ({ view }) => {
   const solved = playing.filter(t => t.r1?.solved).length;
   const needle = q.trim().toLowerCase();
   const rows = playing
-    .filter(t => !needle || t.name.toLowerCase().includes(needle) || t.battleCode.toLowerCase().includes(needle))
+    .filter(t => !needle || t.name.toLowerCase().includes(needle) || t.emojiCode.toLowerCase().includes(needle))
     .sort((a, b) => Number(a.r1!.solved) - Number(b.r1!.solved) || (a.r1!.solveSeconds ?? 0) - (b.r1!.solveSeconds ?? 0) || a.name.localeCompare(b.name));
   return (
     <div className={BOX} data-testid="card-r1">
@@ -108,7 +108,7 @@ const Round1Card: React.FC<{ view: AdminViewData }> = ({ view }) => {
           {solved} of {playing.length} solved
         </div>
       </div>
-      <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search crew name or battle code" aria-label="Search crews" className={`${INPUT} w-full`} />
+      <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search crew name or crew code" aria-label="Search crews" className={`${INPUT} w-full`} />
       <div className="space-y-2">
         {rows.map(t => (
           <div key={t.id} data-testid="r1-crew" className={CARD}>
@@ -197,9 +197,9 @@ const PairingCard: React.FC<Props> = ({ view, run, busy }) => {
           {matches.map(m => (
             <div key={m.id} data-testid="pair-match" className={`${CARD} flex items-center gap-2 !space-y-0`}>
               <div className="min-w-0 flex-1 text-sm break-words">
-                <span className="font-serif font-bold">{teams.get(m.teamA)?.name ?? m.teamA}</span> <span className="text-[10px] font-mono text-[#c4a45a]">[{teams.get(m.teamA)?.battleCode}]</span>
+                <span className="font-serif font-bold">{teams.get(m.teamA)?.name ?? m.teamA}</span> <span className="text-[10px] font-mono text-[#c4a45a]">[{teams.get(m.teamA)?.emojiCode}]</span>
                 <span className="text-[#8e95a5]"> vs </span>
-                <span className="font-serif font-bold">{teams.get(m.teamB)?.name ?? m.teamB}</span> <span className="text-[10px] font-mono text-[#c4a45a]">[{teams.get(m.teamB)?.battleCode}]</span>
+                <span className="font-serif font-bold">{teams.get(m.teamB)?.name ?? m.teamB}</span> <span className="text-[10px] font-mono text-[#c4a45a]">[{teams.get(m.teamB)?.emojiCode}]</span>
               </div>
               <button className={`${BTN} shrink-0`} disabled={busy} onClick={() => void run('Unpair', 'ADMIN_R2_UNPAIR', { teamId: m.teamA })}>
                 Unpair
@@ -215,7 +215,7 @@ const PairingCard: React.FC<Props> = ({ view, run, busy }) => {
             const t = teams.get(id);
             return (
               <span key={id} className="px-2 py-1 rounded border border-amber-500/40 text-amber-200 text-xs break-words max-w-full">
-                {t?.name ?? id} {t ? `[${t.battleCode}]` : ''}
+                {t?.name ?? id} {t ? `[${t.emojiCode}]` : ''}
                 {(() => {
                   const b = view.byePoints?.[id] ?? [];
                   return b.length > 0 ? <span className="ml-1 font-mono text-emerald-300">bye: +{b.reduce((a, n) => a + n, 0)}</span> : null;
@@ -265,9 +265,9 @@ const MatchCard: React.FC<{ m: AdminMatch; view: AdminViewData; teams: Map<strin
   return (
     <div data-testid="clash-match" className={CARD}>
       <div className="text-sm break-words">
-        <span className="font-serif font-black">{nameA}</span> <span className="text-[10px] font-mono text-[#c4a45a]">[{A?.battleCode}]</span>
+        <span className="font-serif font-black">{nameA}</span> <span className="text-[10px] font-mono text-[#c4a45a]">[{A?.emojiCode}]</span>
         <span className="text-[#8e95a5]"> vs </span>
-        <span className="font-serif font-black">{nameB}</span> <span className="text-[10px] font-mono text-[#c4a45a]">[{B?.battleCode}]</span>
+        <span className="font-serif font-black">{nameB}</span> <span className="text-[10px] font-mono text-[#c4a45a]">[{B?.emojiCode}]</span>
       </div>
       {live && cur && !cur.resolved && (
         <div data-testid="clash-votes" className="text-xs font-mono text-[#a9b4c7]">
@@ -339,7 +339,7 @@ const FleetCard: React.FC<{ view: AdminViewData }> = ({ view }) => {
       <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
         <div className={H}>
           {phaseBase(view.phase)}
-          {view.phase.step ? ` · ${stepLabel(view.phase.step)}` : ''}
+          {view.phase.step ? ` · ${stepLabel(view.phase.step, view.phase.name)}` : ''}
         </div>
         <div data-testid="r3-capacity" className="text-xs font-mono font-bold text-[#e5cb87]">
           Sailboat holds {capacity} · {r3.escapeOrder.length} escaped

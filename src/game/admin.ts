@@ -24,8 +24,8 @@ export function setAdminToken(t: string): void {
 
 export interface Durations {
   r1Seconds: number;
-  r2: { HUDDLE: number; PARLEY: number; VOTE: number; DEBRIEF: number };
-  r3: { BLUFF: number; VOTE: number; REVEAL: number };
+  r2: { VOTE: number; DEBRIEF: number };
+  r3: { VOTE: number; REVEAL: number };
   sdSeconds: number;
 }
 
@@ -33,7 +33,6 @@ export interface AdminTeam {
   id: string;
   name: string;
   emojiCode: string;
-  battleCode: string;
   playerIds: string[];
   r1Points: number;
   r2Points: number;
@@ -43,7 +42,6 @@ export interface AdminTeam {
 export interface AdminPlayer {
   id: string;
   name: string;
-  role: string;
   teamId: string | null;
   connected: boolean;
   canLogin: boolean;

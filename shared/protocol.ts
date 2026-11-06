@@ -28,9 +28,6 @@ export const CREW_SIZE_MIN = 3;
 export const CREW_SIZE_MAX = 6;
 export const CREW_SIZE_DEFAULT = 5;
 
-export const ROLE_IDS = ['navigator', 'oracle', 'scholar', 'torchbearer', 'negotiator'] as const;
-export type RoleId = (typeof ROLE_IDS)[number];
-
 export const PHASES = [
   'LOBBY',
   'R1_ACTIVE',
@@ -44,8 +41,11 @@ export const PHASES = [
 ] as const;
 export type PhaseName = (typeof PHASES)[number];
 /**
- * BRIEFING is the server-timed story step at the start of R1_ACTIVE, of R2_CLASH (before clash 1's HUDDLE) and of
- * R3_ACTIVE (before wave 1's BLUFF). No submissions or votes are accepted and the round's real clock has not started.
+ * BRIEFING is the server-timed story step at the start of R1_ACTIVE, of R2_CLASH (before clash 1's VOTE) and of
+ * R3_ACTIVE (before wave 1's VOTE). No submissions or votes are accepted and the round's real clock has not started.
+ * Organizer ruling Nov 4 2026: a clash is VOTE (talk and vote, 60 s) then DEBRIEF; a wave is VOTE (75 s) then REVEAL.
+ * HUDDLE, PARLEY and BLUFF are DEPRECATED: the server never enters them. They stay in the union only so old
+ * snapshots and older web code still type-check; a restored snapshot in one of them is moved to VOTE.
  */
 export type StepName = 'BRIEFING' | 'HUDDLE' | 'PARLEY' | 'VOTE' | 'DEBRIEF' | 'BLUFF' | 'REVEAL' | 'SUDDEN_DEATH';
 
@@ -70,7 +70,6 @@ export const ENGINE_ERROR_CODES = [
   'ALREADY_PAUSED',
   'NOT_PAUSED',
   'TEAM_FULL',
-  'ROLE_TAKEN',
   'UNKNOWN_CODE',
   'INVALID_CODE',
   'OWN_CODE',
@@ -117,7 +116,6 @@ export const ERROR_MESSAGES: Record<ErrorCode, string> = {
   ALREADY_PAUSED: 'Already paused.',
   NOT_PAUSED: 'Not paused.',
   TEAM_FULL: 'That team is full.',
-  ROLE_TAKEN: 'Your role is already taken in that team.',
   UNKNOWN_CODE: 'No team has that code.',
   INVALID_CODE: 'That code is not valid.',
   OWN_CODE: 'That is your own code.',
@@ -129,7 +127,7 @@ export const ERROR_MESSAGES: Record<ErrorCode, string> = {
   NOT_PLAYING: 'Your team is not playing this round.',
   VOTE_CLOSED: 'Voting is closed.',
   ALREADY_ESCAPED: 'Your crew has already escaped.',
-  NO_LEASH: 'You have no Stygian Leash.',
+  NO_LEASH: 'You cannot take Revenge.',
   INVALID_TARGET: 'Invalid target.',
   TARGET_ESCAPED: 'That crew has already escaped.',
   NOT_TIMED: 'This step has no timer.',
@@ -151,7 +149,6 @@ export const ERROR_MESSAGES: Record<ErrorCode, string> = {
 export const PLAYER_COMMAND_TYPES = [
   'JOIN',
   'LEAVE_GAME',
-  'REROLL_ROLE',
   'CREATE_TEAM',
   'JOIN_TEAM',
   'LEAVE_TEAM',
@@ -169,7 +166,6 @@ export type PlayerCommandType = (typeof PLAYER_COMMAND_TYPES)[number];
 export interface PlayerCommandPayloads {
   JOIN: { name?: string };
   LEAVE_GAME: Record<string, never>;
-  REROLL_ROLE: Record<string, never>;
   CREATE_TEAM: { name?: string };
   JOIN_TEAM: { code: string };
   LEAVE_TEAM: Record<string, never>;
@@ -269,7 +265,6 @@ export function validatePlayerPayload(type: string, payload: unknown): Validated
       return { ok: true, value: { name } };
     }
     case 'LEAVE_GAME':
-    case 'REROLL_ROLE':
     case 'LEAVE_TEAM':
     case 'R3_ARM_LEASH':
       if (Object.keys(o).length > 0) return bad('payload must be empty');
@@ -293,8 +288,8 @@ export function validatePlayerPayload(type: string, payload: unknown): Validated
     }
     case 'R2_PAIR': {
       if (!noExtra(o, ['code'])) return bad('unexpected field');
-      const code = typeof o.code === 'string' ? o.code.trim() : '';
-      if (!/^\d{2}$/.test(code)) return bad('code must be two digits');
+      const code = cleanText(o.code, LIMITS.emojiCode);
+      if (!code) return bad('code required');
       return { ok: true, value: { code } };
     }
     case 'R2_VOTE':
@@ -389,7 +384,6 @@ export interface PhaseView {
 export interface MeView {
   id: string;
   name: string;
-  role: RoleId;
   joinedTeam: boolean;
   /**
    * Round 1 only: this player's own piece of the crew's tablet: piece `slot` of `slotCount` (0-based, left to right).
@@ -406,9 +400,7 @@ export interface TeamView {
   id: string;
   name: string;
   emojiCode: string;
-  battleCode: string;
-  members: { name: string; role: RoleId }[];
-  missingRoles: RoleId[];
+  members: { name: string }[];
   score: number;
   /** 1-based rank by score. */
   rank: number;
@@ -425,7 +417,7 @@ export interface R1View {
 
 export interface R2View {
   paired: boolean;
-  rival?: { name: string; battleCode: string };
+  rival?: { name: string; code: string };
   /**
    * Resolved clashes only. `myVotes` reveals how each teammate voted once the clash is scored: one character per member of
    * `team.members` in the same order: 'T' truce, 'A' ambush, '-' did not vote.
@@ -540,7 +532,10 @@ export const SSE_EVENT_RESYNC = 'resync';
 
 export interface BriefingRule {
   title: string;
+  /** Newlines start a new line on the phone. */
   desc: string;
+  /** Named icon (RoundBriefingModal RULE_ICON); without one the phone picks by position. */
+  icon?: 'users' | 'talk' | 'vote' | 'coins' | 'rowboat' | 'sailboat' | 'ghost';
 }
 export interface Briefing {
   /** Server-timed length of the round's BRIEFING step, from briefingSchedule() in shared/briefing.ts. Filled in by GET /api/meta. */
@@ -556,13 +551,12 @@ export interface Briefing {
 export interface Meta {
   protocol: number;
   limits: typeof LIMITS;
-  roles: { id: RoleId; name: string; color: string; icon: string; description: string }[];
   emojiPool: string[];
   teamSize: { min: number; target: number; max: number };
   durations: {
     r1Seconds: number;
-    r2: { HUDDLE: number; PARLEY: number; VOTE: number; DEBRIEF: number };
-    r3: { BLUFF: number; VOTE: number; REVEAL: number };
+    r2: { VOTE: number; DEBRIEF: number };
+    r3: { VOTE: number; REVEAL: number };
     sdSeconds: number;
     crewSize: number;
   };

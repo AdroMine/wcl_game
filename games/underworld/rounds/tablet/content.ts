@@ -18,17 +18,15 @@ export const briefing: Briefing = {
   title: 'The Shattered Tablet',
   subtitle: 'Reconstruct the Ancient Tomb Codeword',
   sentences: [
-    'Your crew is formed.',
-    'Walking along Tartarus, you reach a sealed ancient door.',
-    'You need a codeword to pass through.',
-    'Pieces of a broken ancient stone tablet lie on the ground in front of you.',
-    'Can you solve it in time to escape this place?',
+    'A sealed door blocks your way out of Tartarus.',
+    'Its codeword is carved on a shattered tablet.',
+    'Each of you holds one piece.',
   ],
   rules: [
-    { title: '1. Re-arrange Pieces', desc: 'Match and align phones to see the codeword.' },
-    { title: '2. Decipher & Submit', desc: 'Any teammate can submit.' },
+    { title: '1. Line up your phones', desc: 'Side by side, until the words join.' },
+    { title: '2. Type the codeword', desc: 'Anyone in the crew can submit.' },
   ],
-  objective: 'Unseal the tomb gate before 5:00 runs out.',
+  objective: "Open the door before it's too late.",
 };
 
 export const CODEWORDS: readonly string[] = [

@@ -18,18 +18,16 @@ export const briefing: Briefing = {
   title: 'Escape from Tartarus',
   subtitle: 'The River Styx Escape Royale',
   sentences: [
-    'You cross Tartarus and finally spot the exit across the River Styx!',
-    "But Cerberus howls behind you—Hades's hound is closing in!",
-    'Across the bank, the door is slowly closing.',
-    'There are precious few minutes left. And 3 boats in front of you!',
-    'Which boat will you select? And which will others?',
+    'The exit lies across the River Styx.',
+    'Cerberus is closing in. Three boats wait.',
+    'Which will you take, and which will the others?',
   ],
   rules: [
-    { title: '1. Choose Your Vessel', desc: 'Rowboat 🚣: safe (+150m). Sailboat ⛵: fast (+300m, but holds at most 30% of the active crews). Ghost Ship⚡: Surge (+450m, one crew only).' },
-    { title: '2. Congestion Hazards', desc: 'An overcrowded Sailboat capsizes (0m for everyone aboard). Two or more Ghost Ships collide (-50m each).' },
-    { title: '3. Moral Legacies', desc: 'If you were betrayed: unleash the Stygian Leash once to take revenge on your rival and draw them back!' },
+    { title: 'Rowboat +150 m', desc: 'Always safe.', icon: 'rowboat' },
+    { title: 'Sailboat +300 m', desc: 'Sinks if too many crews board.', icon: 'sailboat' },
+    { title: 'Ghost Ship +450 m', desc: 'Only if no other crew takes it.', icon: 'ghost' },
   ],
-  objective: 'Reach 1,000m. Waves continue until 3 crews have escaped: the first three to cross win Gold, Silver and Bronze.',
+  objective: 'First three crews to 1,000 m win Gold, Silver and Bronze.',
 };
 
 export const R3 = {
@@ -53,7 +51,7 @@ export const VESSELS_SAFEST_FIRST: readonly Vessel[] = ['ROWBOAT', 'SAILBOAT', '
 export const SD_ACTIONS: readonly SdAction[] = ['SHIELDS', 'RAM', 'SAILS'];
 
 /** Default seconds of each step of a wave, and of the Sudden Death standoff. */
-export const R3_DURATIONS = { BLUFF: 55, VOTE: 20, REVEAL: 25 };
+export const R3_DURATIONS = { VOTE: 40, REVEAL: 25 };
 export const SD_SECONDS = 40;
 /** Seconds every phone shows the Sudden Death reveal (both picks, then the winner) before the game moves on. */
 export const SD_REVEAL_SECONDS = 12;
@@ -75,8 +73,7 @@ export const briefingInstructions: Record<string, string> = { 'R3_ACTIVE/BRIEFIN
 
 /** Projector lines keyed by phase (or phase/step). */
 export const instructions: Record<string, string> = {
-  'R3_ACTIVE/BLUFF': 'Decision time: which boat will your crew select? Talk to other groups too to find their strategy and influence their choice.',
-  'R3_ACTIVE/VOTE': 'Vote for your vessel now. The majority of your crew decides.',
+  'R3_ACTIVE/VOTE': 'Decide: which boat will your crew take? Talk to other crews, bluff, then vote. Majority decides.',
   'R3_ACTIVE/REVEAL': 'The vessels are revealed. Watch the river.',
   'R3_ACTIVE/SUDDEN_DEATH': 'Sudden Death standoff between two crews. Shields beat Ram, Ram beats Sails, Sails beat Shields.',
   R3_RESULTS: 'The river is crossed. Congratulations to the podium.',

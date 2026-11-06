@@ -174,7 +174,7 @@ test('round 3 start: head-start from R1+R2 points, +75 Honourable, leash for the
   const { h, t } = setupR3(31, [5, 5, 5, 5], (c, tid, i) => (i === 1 && c <= 2 ? 'AMBUSH' : 'TRUCE'));
   // t0/t1: t1 ambushes twice. R2: t0 = 0+0+225 = 225, t1 = 150+300+225 = 675. t2/t3 all truce = 450 each.
   assert.equal(h.state.phase, 'R3_ACTIVE');
-  assert.equal(h.state.step, 'BLUFF');
+  assert.equal(h.state.step, 'VOTE');
   assert.equal(h.state.wave, 1);
   const r = h.state.r3!.teams;
   assert.equal(r[t[0]].distance, 45); // floor(225/5)
@@ -200,25 +200,24 @@ test('start distance caps the head-start at 200 m', () => {
   assert.equal(h.state.r3!.teams[t[0]].startDistance, 275);
 });
 
-test('wave timeline: BLUFF 55, VOTE 20, REVEAL 25; wave resolves at the start of REVEAL', () => {
+test('wave timeline: VOTE 40 (decide), REVEAL 25; wave resolves at the start of REVEAL', () => {
   const { h, t } = setupR3(34, [5, 5], () => 'TRUCE');
   const seen: string[] = [];
   let at = h.now;
-  for (let i = 0; i < 3; i++) {
+  for (let i = 0; i < 2; i++) {
     seen.push(`${h.state.wave}:${h.state.step}:${(h.state.endsAt! - at) / 1000}`);
     at = h.state.endsAt!;
     h.nextDeadline();
     if (h.state.step === 'REVEAL') assert.equal(h.state.r3!.reports.length, 1); // resolved on entry
   }
-  assert.deepEqual(seen, ['1:BLUFF:55', '1:VOTE:20', '1:REVEAL:25']);
+  assert.deepEqual(seen, ['1:VOTE:40', '1:REVEAL:25']);
   assert.ok(t.length === 2);
 });
 
 test('votes: only during VOTE, first vote final, escaped crews cannot vote', () => {
   const { h, t } = setupR3(35, [5, 5, 5, 5], () => 'TRUCE');
   const p = h.state.teams[t[0]].playerIds[0];
-  assert.equal(h.as(p, 'R3_VOTE', { vessel: 'ROWBOAT' }), 'WRONG_PHASE');
-  toVote(h);
+  assert.equal(h.state.step, 'VOTE'); // votes are open from the first second of the wave
   assert.equal(h.as(p, 'R3_VOTE', { vessel: 'CANOE' }), 'INVALID_PAYLOAD');
   h.ok(h.as(p, 'R3_VOTE', { vessel: 'GHOST_SHIP' }));
   const v = h.state.version;
@@ -267,7 +266,7 @@ test('vessel choices are hidden until REVEAL (fleet rows) and the sailboat capac
   const rows = round3FleetRows(h.state);
   assert.equal(rows.find(r => r.teamId === t[0])!.vessel, 'GHOST_SHIP');
   assert.equal(rows.find(r => r.teamId === t[1])!.vessel, 'ROWBOAT');
-  h.nextDeadline(); // next wave BLUFF: previous choices no longer shown
+  h.nextDeadline(); // next wave VOTE: previous choices no longer shown
   assert.ok(round3FleetRows(h.state).every(r => r.vessel === null));
 });
 
@@ -280,8 +279,7 @@ test('leash: only the Betrayed holder can arm it, only during VOTE, target must 
   const { h, t } = betrayedGame(41);
   const holder = h.state.teams[t[0]].playerIds[0];
   const other = h.state.teams[t[2]].playerIds[0];
-  assert.equal(h.as(holder, 'R3_ARM_LEASH', {}), 'WRONG_PHASE'); // BLUFF
-  toVote(h);
+  assert.equal(h.state.step, 'VOTE');
   assert.equal(h.as(other, 'R3_ARM_LEASH', {}), 'NO_LEASH');
   assert.equal(h.as(h.state.teams[t[1]].playerIds[0], 'R3_ARM_LEASH', {}), 'NO_LEASH'); // the aggressor
   assert.equal(h.as(holder, 'R3_ARM_LEASH', { targetTeamId: t[3] }), 'INVALID_TARGET');
@@ -379,7 +377,7 @@ test('waves keep going when fewer than 3 have escaped; escaped crews no longer v
   h.nextDeadline();
   assert.equal(h.state.phase, 'R3_ACTIVE');
   assert.equal(h.state.wave, 2);
-  assert.equal(h.state.step, 'BLUFF');
+  assert.equal(h.state.step, 'VOTE');
   toVote(h);
   assert.equal(h.as(h.state.teams[t[0]].playerIds[0], 'R3_VOTE', { vessel: 'ROWBOAT' }), 'ALREADY_ESCAPED');
   const dist0 = h.state.r3!.teams[t[0]].distance;
@@ -521,7 +519,7 @@ test('sudden death reveal: every phone gets both picks, the winner side and the 
 
 // ---- briefing step and extra view data ------------------------------------------------------
 
-test('briefing: Round 3 opens with a server-timed BRIEFING; wave 1 BLUFF starts when it ends', () => {
+test('briefing: Round 3 opens with a server-timed BRIEFING; wave 1 VOTE starts when it ends', () => {
   const h = harness(35);
   const t = formTeams(h, [5, 5]);
   toR2Pairing(h);
@@ -538,9 +536,11 @@ test('briefing: Round 3 opens with a server-timed BRIEFING; wave 1 BLUFF starts 
   assert.equal(h.as(p, 'R3_ARM_LEASH', {}), 'WRONG_PHASE');
   const end = h.state.endsAt!;
   h.nextDeadline();
-  assert.equal(h.state.step, 'BLUFF');
+  assert.equal(h.state.step, 'VOTE');
   assert.equal(h.state.wave, 1);
-  assert.equal(h.state.endsAt, end + 55_000, 'the wave timers start when the briefing ends');
+  assert.equal(h.state.endsAt, end + 40_000, 'the wave timers start when the briefing ends');
+  // votes and the leash are accepted from the first second of the VOTE step
+  h.ok(h.as(p, 'R3_VOTE', { vessel: 'ROWBOAT' }));
 });
 
 test('briefing: admin skip step skips the Round 3 briefing', () => {
@@ -552,8 +552,8 @@ test('briefing: admin skip step skips the Round 3 briefing', () => {
   h.ok(h.admin('ADMIN_START_R3'));
   h.tick(1);
   h.ok(h.admin('ADMIN_SKIP_STEP'));
-  assert.equal(h.state.step, 'BLUFF');
-  assert.equal(h.state.endsAt, h.now + 55_000);
+  assert.equal(h.state.step, 'VOTE');
+  assert.equal(h.state.endsAt, h.now + 40_000);
 });
 
 test('briefing: the briefing durations follow the story and rules', () => {
@@ -599,4 +599,52 @@ test('view data: empty vessels read UNBOARDED and a ghost collision reads COLLID
     ['S', 0, 'UNBOARDED', 0],
     ['G', 4, 'COLLIDED', -50],
   ]);
+});
+
+// ---- early reveal (organizer ruling, Nov 5 2026) ----------------------------------------------
+
+test('early reveal: the vote closes 2 s after the last racing member votes; earlier votes do not move the deadline', () => {
+  const { h, t } = setupR3(61, [5, 5, 5, 5], () => 'TRUCE');
+  toVote(h);
+  const original = h.state.endsAt!;
+  h.tick(5);
+  for (const tid of t.slice(0, 3)) voteR3(h, tid, 'ROWBOAT');
+  const last = h.state.teams[t[3]].playerIds;
+  for (const pid of last.slice(0, 4)) h.ok(h.as(pid, 'R3_VOTE', { vessel: 'ROWBOAT' }));
+  assert.equal(h.state.endsAt, original, 'one member missing: unchanged');
+  h.ok(h.as(last[4], 'R3_VOTE', { vessel: 'SAILBOAT' }));
+  assert.equal(h.state.endsAt, h.now + 2000);
+  assert.ok(h.state.endsAt! < original);
+  // re-sending a vote is idempotent and changes nothing
+  const v = h.state.version;
+  assert.equal(h.as(last[4], 'R3_VOTE', { vessel: 'GHOST_SHIP' }), undefined);
+  assert.equal(h.state.endsAt, h.now + 2000);
+  assert.equal(h.state.version, v);
+  h.tick(2);
+  h.runDue();
+  assert.equal(h.state.step, 'REVEAL');
+});
+
+test('early reveal: never later than the existing deadline, and escaped crews are not waited for', () => {
+  const { h, t } = setupR3(62, [5, 5, 5], () => 'TRUCE');
+  toVote(h);
+  setDistance(h, t[2], 1000);
+  assert.ok(h.state.r3!.teams[t[2]].escaped);
+  h.tick(39); // 1 s left
+  const original = h.state.endsAt!;
+  voteR3(h, t[0], 'ROWBOAT');
+  voteR3(h, t[1], 'ROWBOAT');
+  assert.equal(h.state.endsAt, Math.min(original, h.now + 2000));
+  assert.equal(h.state.endsAt, original);
+});
+
+test('early reveal: not while paused', () => {
+  const { h, t } = setupR3(63, [5, 5], () => 'TRUCE');
+  toVote(h);
+  const original = h.state.endsAt!;
+  voteR3(h, t[0], 'ROWBOAT');
+  for (const pid of h.state.teams[t[1]].playerIds.slice(0, 4)) h.ok(h.as(pid, 'R3_VOTE', { vessel: 'ROWBOAT' }));
+  h.ok(h.admin('ADMIN_PAUSE'));
+  assert.equal(h.as(h.state.teams[t[1]].playerIds[4], 'R3_VOTE', { vessel: 'ROWBOAT' }), 'PAUSED');
+  assert.equal(h.state.endsAt, original);
 });

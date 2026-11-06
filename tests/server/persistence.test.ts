@@ -36,7 +36,6 @@ test('gameStateProblem accepts real states and rejects broken ones', () => {
   assert.ok(gameStateProblem({ ...s, players: [] }));
   assert.ok(gameStateProblem({ ...s, playerOrder: ['ghost'] }));
   const p = Object.keys(s.players)[0];
-  assert.ok(gameStateProblem({ ...s, players: { ...s.players, [p]: { ...s.players[p], role: 'wizard' } } }));
   assert.ok(gameStateProblem({ ...s, players: { ...s.players, [p]: { ...s.players[p], teamId: 'missing' } } }));
   assert.ok(gameStateProblem({ ...s, config: { ...s.config, r2: null } }));
 });

@@ -32,7 +32,7 @@ test('crew size: the shared validator accepts 3..6 and rejects the rest', () => 
   assert.equal(validateAdminBody({ type: 'ADMIN_SET_CREW_SIZE', payload: { size: 4, extra: 1 } }).ok, false);
 });
 
-test('crew size N is the max for create/join; roles are unique among the first min(N,5)', () => {
+test('crew size N is the max for create/join', () => {
   for (const N of [3, 4, 5, 6]) {
     const h = harness(N);
     h.ok(h.admin('ADMIN_SET_CREW_SIZE', { size: N }));
@@ -40,36 +40,28 @@ test('crew size N is the max for create/join; roles are unique among the first m
     h.ok(h.as('lead', 'CREATE_TEAM', {}));
     const tid = h.state.players.lead.teamId!;
     const code = h.state.teams[tid].emojiCode;
-    let joined = 1;
-    for (let i = 0; i < 80 && joined < N; i++) {
+    for (let i = 1; i < N; i++) {
       h.join(`j${N}_${i}`);
-      const err = h.as(`j${N}_${i}`, 'JOIN_TEAM', { code });
-      if (!err) joined++;
-      else assert.equal(err, 'ROLE_TAKEN');
+      h.ok(h.as(`j${N}_${i}`, 'JOIN_TEAM', { code }));
     }
     assert.equal(h.state.teams[tid].playerIds.length, N, `N=${N} crew fills up`);
     h.join('over');
     assert.equal(h.as('over', 'JOIN_TEAM', { code }), 'TEAM_FULL', `N=${N}: crew of N is full`);
-    const roles = h.state.teams[tid].playerIds.map(p => h.state.players[p].role);
-    assert.equal(new Set(roles).size, Math.min(N, 5), `N=${N}: first min(N,5) members have unique roles`);
     // the preview reports N
-    const r = previewTeamByEmoji(h.state, code, 'over');
+    const r = previewTeamByEmoji(h.state, code);
     assert.ok(r.ok && r.preview.maxMembers === N && r.preview.isFull);
   }
 });
 
-test('crew size 6: the sixth member may repeat a role', () => {
+test('crew size 6: a sixth member joins and a seventh is refused', () => {
   const h = harness(4);
   h.ok(h.admin('ADMIN_SET_CREW_SIZE', { size: 6 }));
   const [tid] = formTeams(h, [5]);
-  // formTeams placed five unique-role members; a sixth with any role joins
-  for (let i = 0; i < 20; i++) {
-    h.join(`x${i}`);
-    if (!h.as(`x${i}`, 'JOIN_TEAM', { code: h.state.teams[tid].emojiCode })) break;
-  }
+  h.join('x0');
+  h.ok(h.as('x0', 'JOIN_TEAM', { code: h.state.teams[tid].emojiCode }));
   assert.equal(h.state.teams[tid].playerIds.length, 6);
-  const roles = h.state.teams[tid].playerIds.map(p => h.state.players[p].role);
-  assert.equal(new Set(roles).size, 5);
+  h.join('x1');
+  assert.equal(h.as('x1', 'JOIN_TEAM', { code: h.state.teams[tid].emojiCode }), 'TEAM_FULL');
 });
 
 test('auto-group sizes for every crew size N', () => {

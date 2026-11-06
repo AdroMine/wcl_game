@@ -1,18 +1,18 @@
 // Admin commands: game flow and roster only (organizer ruling Nov 3: no manual score, distance, honour or solved changes, no crew rename).
 // Authentication happens in the server; the engine only checks actor.kind.
 // Behaviour ported from the supabaseAdmin* functions in src/lib/supabaseService.ts.
-import { CREW_SIZE_MAX, CREW_SIZE_MIN, MIN_DEADLINE_MS, ROLE_IDS } from './config.ts';
+import { CREW_SIZE_MAX, CREW_SIZE_MIN, MIN_DEADLINE_MS } from './config.ts';
 import { asObj, cleanName, detachPlayer, maxAdminSize, removeTeam, reqInt, reqString } from './common.ts';
 import { effNow, setStep } from './clock.ts';
 import { nextNumber } from './ids.ts';
-import { addToTeam, autoGroup, pickBalancedRole, removePlayer } from './lobby.ts';
+import { addToTeam, autoGroup, removePlayer } from './lobby.ts';
 import { advance, endRound3 } from './phases.ts';
 import { initRound1 } from './round1.ts';
 import { briefingSeconds } from '../content.ts';
 import { adminAutoPair, adminPairAndMaybeStart, initRound2Pairing, startClashes, unpairTeam } from './round2.ts';
 import { startRound3, triggerSuddenDeath } from './round3.ts';
 import { createInitialState } from './state.ts';
-import type { Handler, RoleId } from './types.ts';
+import type { Handler } from './types.ts';
 import { NOOP, fail } from './types.ts';
 
 const startGame: Handler = (d, _c, now, ev) => {
@@ -124,13 +124,12 @@ const addPlayer: Handler = (d, c, _now, ev) => {
   const n = nextNumber(d);
   const id = `adm${n.toString(36)}`;
   const name = cleanName(o?.name) || `Shade-${n}`;
-  const role: RoleId = ROLE_IDS.includes(o?.role as RoleId) ? (o!.role as RoleId) : pickBalancedRole(d);
   const teamId = o?.teamId;
   if (teamId !== undefined && teamId !== null) {
     if (typeof teamId !== 'string' || !d.teams[teamId]) return fail('UNKNOWN_TEAM');
     if (d.teams[teamId].playerIds.length >= maxAdminSize(d)) return fail('TEAM_FULL');
   }
-  d.players[id] = { id, name, role, tokenHash: '', teamId: null, joinedSeq: n };
+  d.players[id] = { id, name, tokenHash: '', teamId: null, joinedSeq: n };
   d.playerOrder.push(id);
   if (typeof teamId === 'string') addToTeam(d, d.teams[teamId], d.players[id]);
   ev.push({ type: 'PLAYER_ADDED', playerId: id });
@@ -166,11 +165,8 @@ const setDurations: Handler = (d, c) => {
   const good =
     apply(o.r1Seconds, n => (next.r1Seconds = n)) &&
     apply(o.sdSeconds, n => (next.sdSeconds = n)) &&
-    apply(r2.HUDDLE, n => (next.r2.HUDDLE = n)) &&
-    apply(r2.PARLEY, n => (next.r2.PARLEY = n)) &&
     apply(r2.VOTE, n => (next.r2.VOTE = n)) &&
     apply(r2.DEBRIEF, n => (next.r2.DEBRIEF = n)) &&
-    apply(r3.BLUFF, n => (next.r3.BLUFF = n)) &&
     apply(r3.VOTE, n => (next.r3.VOTE = n)) &&
     apply(r3.REVEAL, n => (next.r3.REVEAL = n));
   if (!good) return fail('INVALID_DURATION');

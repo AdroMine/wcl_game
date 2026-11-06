@@ -1,26 +1,15 @@
-// Lobby: join, role assignment, reroll, leave, teams (create / join by emoji code / leave /
+// Lobby: join, leave, teams (create / join by emoji code / leave /
 // rename) and admin auto-grouping. Behaviour ported from src/lib/supabaseService.ts
-// (supabaseJoinPlayer, supabaseRerollPlayerRole, supabaseCreateTeam, supabaseJoinTeamByEmoji,
+// (supabaseJoinPlayer, supabaseCreateTeam, supabaseJoinTeamByEmoji,
 // supabaseLeaveTeam, supabaseAdminAutoGroup) and src/components/LobbyTeamFormation.tsx.
-import { MAX_TEAM_NAME, ROLE_IDS } from './config.ts';
-import { asObj, cleanName, crewSizeOf, detachPlayer, maxJoinSize, recomputeScore, reqString, uniqueRoleSlots } from './common.ts';
+import { MAX_TEAM_NAME } from './config.ts';
+import { asObj, cleanName, crewSizeOf, detachPlayer, maxJoinSize, recomputeScore, reqString } from './common.ts';
 import { resyncR1Slots } from './r1slots.ts';
 import { nextId, nextNumber } from './ids.ts';
-import { rngPick, rngShuffle } from './rng.ts';
-import { generateBattleCode, generateTeamEmojiCode, normalizeEmojiCode } from './teamCodes.ts';
-import type { GameEvent, GameState, Handler, Player, RoleId, Team } from './types.ts';
+import { rngShuffle } from './rng.ts';
+import { generateTeamEmojiCode, normalizeEmojiCode } from './teamCodes.ts';
+import type { GameEvent, GameState, Handler, Player, Team } from './types.ts';
 import { NOOP, fail } from './types.ts';
-
-/** Least-used role across all players; ties broken by the seeded RNG. */
-export function pickBalancedRole(d: GameState, exclude?: RoleId): RoleId {
-  const counts: Record<string, number> = {};
-  for (const r of ROLE_IDS) counts[r] = 0;
-  for (const pid of d.playerOrder) counts[d.players[pid].role]++;
-  const eligible = ROLE_IDS.filter(r => r !== exclude);
-  const min = Math.min(...eligible.map(r => counts[r]));
-  const candidates = eligible.filter(r => counts[r] === min);
-  return candidates.length === 1 ? candidates[0] : rngPick(d, candidates);
-}
 
 export function findTeamByEmoji(d: GameState, code: string): Team | null {
   const target = normalizeEmojiCode(code);
@@ -35,13 +24,9 @@ export function findTeamByEmoji(d: GameState, code: string): Team | null {
 /** Create a team with fresh unique codes. Returns null if codes are exhausted. */
 export function createTeamRecord(d: GameState, name: string): Team | null {
   const emojis = new Set<string>();
-  const battles = new Set<string>();
   for (const tid of d.teamOrder) {
     emojis.add(d.teams[tid].emojiCode);
-    battles.add(d.teams[tid].battleCode);
   }
-  const battleCode = generateBattleCode(d, battles);
-  if (battleCode == null) return null;
   const emojiCode = generateTeamEmojiCode(d, emojis);
   if (!emojiCode) return null;
   const id = nextId(d, 't');
@@ -49,7 +34,6 @@ export function createTeamRecord(d: GameState, name: string): Team | null {
     id,
     name,
     emojiCode,
-    battleCode,
     playerIds: [],
     r1Points: 0,
     r2Points: 0,
@@ -67,10 +51,6 @@ export function addToTeam(d: GameState, team: Team, p: Player): void {
   team.playerIds.push(p.id);
   p.teamId = team.id;
   resyncR1Slots(d, team);
-}
-
-export function roleConflict(d: GameState, team: Team, p: Player): boolean {
-  return team.playerIds.length < uniqueRoleSlots(d) && team.playerIds.some(id => d.players[id].role === p.role);
 }
 
 const join: Handler = (d, c, _now, ev) => {
@@ -91,11 +71,9 @@ const join: Handler = (d, c, _now, ev) => {
     return NOOP;
   }
   const n = nextNumber(d);
-  const role = pickBalancedRole(d);
   d.players[id] = {
     id,
     name: name || `Shade-${n}`,
-    role,
     tokenHash,
     teamId: null,
     joinedSeq: n,
@@ -124,16 +102,6 @@ export function removePlayer(d: GameState, p: Player): void {
   d.playerOrder = d.playerOrder.filter(id => id !== p.id);
 }
 
-const reroll: Handler = (d, c, _now, ev) => {
-  const bad = requireLobby(d);
-  if (bad) return bad;
-  const p = d.players[(c.actor as { playerId: string }).playerId];
-  if (p.teamId) return fail('ALREADY_IN_TEAM');
-  p.role = pickBalancedRole(d, p.role);
-  ev.push({ type: 'ROLE_REROLLED', playerId: p.id, role: p.role });
-  return undefined;
-};
-
 const createTeam: Handler = (d, c, _now, ev) => {
   const bad = requireLobby(d);
   if (bad) return bad;
@@ -158,7 +126,6 @@ const joinTeam: Handler = (d, c, _now, ev) => {
   const team = findTeamByEmoji(d, code);
   if (!team) return fail('UNKNOWN_CODE');
   if (team.playerIds.length >= maxJoinSize(d)) return fail('TEAM_FULL');
-  if (roleConflict(d, team, p)) return fail('ROLE_TAKEN');
   addToTeam(d, team, p);
   ev.push({ type: 'TEAM_JOINED', teamId: team.id, playerId: p.id });
   return undefined;
@@ -206,32 +173,21 @@ export function planCrewSizes(n: number, N: number): number[] {
 /**
  * Admin auto-group: unassigned players go into NEW crews of N (crew size setting); a remainder of 2+
  * forms one smaller crew; a single leftover stays unassigned for the admin to place. Existing crews are
- * never topped up or touched. Roles are interleaved so that consecutive crews get distinct roles
- * whenever the role mix allows it. Returns the number of players placed.
+ * never topped up or touched. Returns the number of players placed.
  */
 export function autoGroup(d: GameState, ev: GameEvent[]): number {
   const free = d.playerOrder.filter(id => !d.players[id].teamId);
   if (free.length === 0) return 0;
   const shuffled = rngShuffle(d, free);
 
-  // Interleave by role so consecutive chunks are role-diverse.
-  const byRole: Record<string, string[]> = {};
-  for (const r of ROLE_IDS) byRole[r] = [];
-  for (const id of shuffled) byRole[d.players[id].role].push(id);
-  const order = ROLE_IDS.slice().sort((a, b) => byRole[b].length - byRole[a].length);
-  const interleaved: string[] = [];
-  for (let i = 0; interleaved.length < shuffled.length; i++) {
-    for (const r of order) if (i < byRole[r].length) interleaved.push(byRole[r][i]);
-  }
-
-  const sizes = planCrewSizes(interleaved.length, crewSizeOf(d));
+  const sizes = planCrewSizes(shuffled.length, crewSizeOf(d));
 
   let placed = 0;
   let cursor = 0;
   for (const size of sizes) {
     const team = createTeamRecord(d, `Crew #${d.teamOrder.length + 1}`);
     if (!team) break;
-    for (let i = 0; i < size; i++) addToTeam(d, team, d.players[interleaved[cursor++]]);
+    for (let i = 0; i < size; i++) addToTeam(d, team, d.players[shuffled[cursor++]]);
     placed += size;
     ev.push({ type: 'TEAM_CREATED', teamId: team.id });
   }
@@ -242,7 +198,6 @@ export function autoGroup(d: GameState, ev: GameEvent[]): number {
 export const lobbyHandlers: Record<string, Handler> = {
   JOIN: join,
   LEAVE_GAME: leaveGame,
-  REROLL_ROLE: reroll,
   CREATE_TEAM: createTeam,
   JOIN_TEAM: joinTeam,
   LEAVE_TEAM: leaveTeam,

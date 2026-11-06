@@ -26,7 +26,7 @@ export function buildAdminView(input: AdminViewInput): { stable: string; hash: s
     counts: { players: s.playerOrder.length, teams: s.teamOrder.length, connected: s.playerOrder.filter(id => connected.has(id)).length },
     players: s.playerOrder.map(id => {
       const p = s.players[id];
-      return { id, name: p.name, role: p.role, teamId: p.teamId, connected: connected.has(id), canLogin: p.tokenHash !== '' };
+      return { id, name: p.name, teamId: p.teamId, connected: connected.has(id), canLogin: p.tokenHash !== '' };
     }),
     teams: s.teamOrder.map(id => {
       const t = s.teams[id];
@@ -34,7 +34,6 @@ export function buildAdminView(input: AdminViewInput): { stable: string; hash: s
         id,
         name: t.name,
         emojiCode: t.emojiCode,
-        battleCode: t.battleCode,
         playerIds: t.playerIds,
         r1Points: t.r1Points,
         r2Points: t.r2Points,

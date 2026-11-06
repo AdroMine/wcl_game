@@ -98,7 +98,7 @@ test('stream: only clients whose view CONTENT changed get an event', async () =>
   await sleep(200);
   const nx = lx.views().length;
   const ny = ly.views().length;
-  await x.cmd('REROLL_ROLE'); // changes only Xena's own view
+  await x.cmd('JOIN', { name: 'Xenia' }); // changes only Xena's own view
   await lx.waitFor(() => lx.views().length > nx, 1000);
   await sleep(250);
   assert.equal(ly.views().length, ny, 'Yuri got nothing');

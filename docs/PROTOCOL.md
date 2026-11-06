@@ -65,8 +65,7 @@ while any snapshot store is failing (the game keeps running).
 
 ### `GET /api/meta`
 
-Static content (assembled by server/content.ts from the game disk in games/underworld/) that must not be repeated in every view: protocol version, `limits`, `roles` (id, name, colour, icon name,
-description), `emojiPool`, `teamSize` (`{min:3, target:5, max:6}`: the limits; the live crew size is `lobby.crewSize` in the lobby view), default `durations` (with `crewSize`), the three round briefings (`rounds[]`: title, subtitle,
+Static content (assembled by server/content.ts from the game disk in games/underworld/) that must not be repeated in every view: protocol version, `limits`, `emojiPool`, `teamSize` (`{min:3, target:5, max:6}`: the limits; the live crew size is `lobby.crewSize` in the lobby view), default `durations` (with `crewSize`), the three round briefings (`rounds[]`: title, subtitle,
 story `sentences`, `rules`, `objective`, `briefingSeconds`), `r2Stakes` (points per clash: `{clash, bothTruce, ambushWin, truceLoss, bothAmbush}[]`), `r3` (`targetDistance`, `podiumSize`, `honourBonus`), `vessels`, `stances`, `sdActions`, `moralStatuses`, `hints`, `errors` (a
 fallback message per error code) and `instructions` (the projector text per phase, keyed `PHASE` or `PHASE/STEP`).
 Load it once at start. A phone plays the round briefing story while the view's `phase.step` is `BRIEFING` (see Views).
@@ -91,7 +90,7 @@ Response:
 ```
 
 `v` is the state version after the command. HTTP status: `200` for every game-level answer (including `ok:false` with an
-engine error code such as `ROLE_TAKEN`; those are normal and meant for the UI), `400 BAD_REQUEST` for a malformed body,
+engine error code such as `TEAM_FULL`; those are normal and meant for the UI), `400 BAD_REQUEST` for a malformed body,
 `401 UNAUTHORIZED` for an unknown player or a wrong token, `413 PAYLOAD_TOO_LARGE`, `429 RATE_LIMITED` (honour
 `Retry-After`, then retry with the same `commandId`). `5xx` and network errors: retry with backoff and the same id.
 
@@ -107,23 +106,22 @@ removed, whitespace collapsed and the length capped (truncated, not rejected). U
 | --- | --- | --- |
 | `JOIN` | `{ name?: string }` (<= 24) | first call registers; later calls only update the name |
 | `LEAVE_GAME` | `{}` | lobby only |
-| `REROLL_ROLE` | `{}` | lobby only, before joining a team |
 | `CREATE_TEAM` | `{ name?: string }` (<= 32) | lobby only |
-| `JOIN_TEAM` | `{ code: string }` | the 3-emoji code, e.g. `"🔥💀⚡"`; `ROLE_TAKEN` / `TEAM_FULL` / `UNKNOWN_CODE` on failure |
+| `JOIN_TEAM` | `{ code: string }` | the 3-emoji code, e.g. `"🔥💀⚡"`; `TEAM_FULL` / `UNKNOWN_CODE` on failure |
 | `LEAVE_TEAM` | `{}` | lobby only |
 | `RENAME_TEAM` | `{ name: string }` | lobby only |
 | `R1_SUBMIT` | `{ answer: string }` | `WRONG_ANSWER`, `ROUND_CLOSED` after the deadline |
 | `R1_HINT` | `{ hint: 1 \| 2 \| 3 }` | `HINT_LOCKED` before it unlocks (2:00, 3:00, 4:00); costs 30 points |
-| `R2_PAIR` | `{ code: "07" }` | the rival crew's 2-digit battle code (`OWN_CODE`, `UNKNOWN_CODE`, `ALREADY_PAIRED`) |
+| `R2_PAIR` | `{ code: "🔥💀⚡" }` | the rival crew's emoji code, normalized like `JOIN_TEAM` (variation selectors and spaces ignored) (`OWN_CODE`, `UNKNOWN_CODE`, `ALREADY_PAIRED`) |
 | `R2_VOTE` | `{ vote: "TRUCE" \| "AMBUSH" }` | during the VOTE step only; the first vote is final |
 | `R3_VOTE` | `{ vessel: "ROWBOAT" \| "SAILBOAT" \| "GHOST_SHIP" }` | during the wave's VOTE step; the first vote is final |
-| `R3_ARM_LEASH` | `{}` | Betrayed crews only (`r3.leash.available`); arms the Stygian Leash on the nemesis for this wave |
+| `R3_ARM_LEASH` | `{}` | Betrayed crews only (`r3.leash.available`); arms Revenge (the Stygian Leash) on the nemesis for this wave |
 | `SD_VOTE` | `{ action: "SHIELDS" \| "RAM" \| "SAILS" }` | only the two crews in a Sudden Death standoff |
 
 ### Error codes
 
 Engine codes (game rules): `INVALID_PAYLOAD UNKNOWN_COMMAND FORBIDDEN UNKNOWN_PLAYER UNKNOWN_TEAM NOT_IN_TEAM
-ALREADY_IN_TEAM WRONG_PHASE PAUSED ALREADY_PAUSED NOT_PAUSED TEAM_FULL ROLE_TAKEN UNKNOWN_CODE INVALID_CODE OWN_CODE
+ALREADY_IN_TEAM WRONG_PHASE PAUSED ALREADY_PAUSED NOT_PAUSED TEAM_FULL UNKNOWN_CODE INVALID_CODE OWN_CODE
 ALREADY_PAIRED NO_CODES_LEFT WRONG_ANSWER HINT_LOCKED ROUND_CLOSED NOT_PLAYING VOTE_CLOSED ALREADY_ESCAPED NO_LEASH
 INVALID_TARGET TARGET_ESCAPED NOT_TIMED NOT_DUE STALE INVALID_DURATION SAME_TEAM NOT_IN_DUEL NO_STANDOFF NOT_PAIRED`.
 
@@ -148,10 +146,10 @@ interface View {
   v: number;        // state version, monotonic within one sid
   serverNow: number;// server clock (ms since epoch) when this view was sent
   phase: { name; step; clash; wave; endsAt: number|null; startedAt?: number /* BRIEFING only */; paused: boolean; pausedAt?; pausedRemainingMs? };
-  me?: { id; name; role; joinedTeam: boolean; slot?; slotCount?; myVote? };
-  team?: { id; name; emojiCode; battleCode; members: {name; role}[]; missingRoles: RoleId[]; score; rank };
+  me?: { id; name; joinedTeam: boolean; slot?; slotCount?; myVote? };
+  team?: { id; name; emojiCode; members: {name}[]; score; rank };
   r1?: { tablet?: { line1; line2 }; solved; points; closed; hints: { index; unlocksAt; taken; text? }[] };
-  r2?: { paired; rival?: {name; battleCode}; clashes: { clash; myStance; rivalStance; myPts; rivalPts; myVotes: string }[];
+  r2?: { paired; rival?: {name; code}; clashes: { clash; myStance; rivalStance; myPts; rivalPts; myVotes: string }[];
          votedCount?; votedBy?: boolean[]; teamSize; moral?; bye?: number[] };
   r3?: { distance; escaped; escapedRank?; activeCrews; escapedCount; sailboatCapacity; votedCount?; teamSize;
          honourable?: true; leash?: { available; targetName; armed }; fleet: [name, distance, escapedRank|0, vessel 'R'|'S'|'G'|''][];
@@ -168,7 +166,7 @@ Key rules for the client:
 - **`me` absent** = the server does not know this `playerId`/`token` pair (new device, game reset, or server lost the
   player): show the join screen. This is a normal 200 response, never an error.
 - **Phase names**: `LOBBY R1_ACTIVE R1_RESULTS R2_PAIRING R2_CLASH R2_RESULTS R3_ACTIVE R3_RESULTS FINISHED`.
-  Steps: `BRIEFING` (see below) at the start of `R1_ACTIVE`, of `R2_CLASH` (clash 1, before its huddle) and of `R3_ACTIVE` (wave 1, before its bluff); Round 1 then runs with `step: null`; Round 2 `HUDDLE PARLEY VOTE DEBRIEF` (clash 1..3); Round 3 `BLUFF VOTE REVEAL` (wave 1..n) and `SUDDEN_DEATH`.
+  Steps: `BRIEFING` (see below) at the start of `R1_ACTIVE`, of `R2_CLASH` (clash 1, before its VOTE) and of `R3_ACTIVE` (wave 1, before its VOTE); Round 1 then runs with `step: null`; Round 2 `VOTE DEBRIEF` (clash 1..3; VOTE is 60 s of talking AND voting, votes accepted from its first second, then the 15 s reveal); Round 3 `VOTE REVEAL` (wave 1..n; VOTE is 40 s of talking, voting and arming the leash, all open from the first second, then the 25 s reveal) and `SUDDEN_DEATH`. `HUDDLE`, `PARLEY` and `BLUFF` are deprecated: they stay in the `StepName` type only for old snapshots and the server never enters them (a restored snapshot in one of them is moved to `VOTE`). `meta.durations` and the admin `config` are now `r2: {VOTE, DEBRIEF}` and `r3: {VOTE, REVEAL}`; `ADMIN_SET_DURATIONS` accepts those keys (unknown keys are ignored).
 - **BRIEFING** is a server-timed story step. `phase.startedAt` and `phase.endsAt` are absolute server times (use the same
   `offset = serverNow - Date.now()` as for countdowns): animate the briefing from `(now + offset - startedAt)`, so a refreshed or
   late phone resumes at the right point. Its length is `meta.rounds[i].briefingSeconds` = `ceil(sentences * 2.8 + 3 + (rules + 1) * 2 + 3)`.
@@ -183,14 +181,14 @@ Key rules for the client:
 - **R1**: `r1.tablet` (own crew only, only while `R1_ACTIVE`, including the briefing) is the crew's codeword split into the two tablet lines; draw the vector tablet from it and show piece `me.slot` of `me.slotCount` (0-based, left to right). `slotCount` always equals the crew's current member count and each member holds a distinct slot; if crew membership changes during Round 1 (admin add, move, remove) the slots are recomputed and the view changes. A disconnect never changes membership. The old ASCII `me.slice` / `me.sliceFmt` fields no longer exist.
   `r1.hints[].unlocksAt` is an absolute server time; a hint is takeable when `now + offset >= unlocksAt`. `text` appears
   once the team took it. `team.members[0]` is the team's first member (slot 0).
-- **R2**: `team.battleCode` is "Your code"; the player types the rival's code into `R2_PAIR`. `r2.clashes` lists only
+- **R2**: `team.emojiCode` is "Your code"; the player types the rival's emoji code into `R2_PAIR`. `r2.clashes` lists only
   resolved clashes (stances appear at DEBRIEF). `clashes[].myVotes` reveals, once the clash is scored, how each teammate voted: one character per entry of `team.members` in the same order (`T` truce, `A` ambush, `-` did not vote). During VOTE, `votedCount` of `teamSize` teammates have voted and `votedBy` says who (a boolean per entry of `team.members`, never what they voted); `me.myVote` is
-  the player's own vote. `r2.rival.battleCode` is the rival crew's code. The points at stake per clash are static: `meta.r2Stakes`. `r2.moral` is one of `HONOURABLE BETRAYED AGGRESSOR BLOOD_FEUD NONE` from R2_RESULTS on (an unpaired crew that received bye points is `HONOURABLE`). `r2.bye` (only when `paired` is false) lists the mutual-Truce points the unpaired crew received for each resolved clash, in clash order; the state field is `r2.bye: Record<teamId, number[]>` (old snapshots without it restore as `{}`).
+  the player's own vote. `r2.rival.code` is the rival crew's emoji code. The points at stake per clash are static: `meta.r2Stakes`. `r2.moral` is one of `HONOURABLE BETRAYED AGGRESSOR BLOOD_FEUD NONE` from R2_RESULTS on (an unpaired crew that received bye points is `HONOURABLE`). `r2.bye` (only when `paired` is false) lists the mutual-Truce points the unpaired crew received for each resolved clash, in clash order; the state field is `r2.bye: Record<teamId, number[]>` (old snapshots without it restore as `{}`).
 - **R3**: `fleet` is the first 8 crews on the river (escaped crews first); the vessel letter is filled only from the REVEAL
   step. `r3.lastWave` is this crew's own outcome of the last resolved wave plus the all-crews summary: `vessels` has three rows in the order Rowboat, Sailboat, Ghost Ship, each `[code 'R'|'S'|'G', crews that boarded, outcome 'SAFE'|'CAPSIZED'|'COLLIDED'|'UNBOARDED', metres per boarding crew]` (e.g. `['S', 2, 'CAPSIZED', 0]`), and `leashes` lists every leash event of that wave involving this crew (`kind` `ANCHOR_SIPHON`, `WRECK_DRAG` or `LEASH_SNAPPED`, `delta` for this crew, `otherName`, `role` `holder` or `target`). `r3.honourable` is `true` when the crew holds the Honourable head start (`meta.r3.honourBonus` metres, "Winds of Olympus"); absent otherwise. `r3.leash` exists only for the Betrayed crew
   that still holds the leash. `r3.sd` describes a Sudden Death standoff (`mine` = this crew is in it; `side` = `A`/`B` for the two crews). When the standoff resolves (time up or admin skip), the step stays `SUDDEN_DEATH` for `SD_REVEAL_SECONDS` (12 s, games/underworld/rounds/styx/content.ts) with `resolved: true`, `pickA`, `pickB`, `winner`, `winnerSide` and `text`; `phase.startedAt` is the start of that reveal so phones animate in step. The next deadline (or skip) leaves Sudden Death. `r3.podium` lists
   Gold, Silver, Bronze crew names.
-- Static texts (role names and colours, round titles and briefings, vessel descriptions, instruction lines) are NOT in
+- Static texts (round titles and briefings, vessel descriptions, instruction lines) are NOT in
   views: use `GET /api/meta`.
 
 ### `GET /api/stream`: Server-Sent Events
@@ -222,8 +220,7 @@ Lobby preview of a team by its emoji code (URL-encode the emoji):
 
 ```json
 { "ok": true, "team": { "name": "Crew 3", "emojiCode": "🔥💀⚡", "memberCount": 2, "maxMembers": 5, "isFull": false,
-  "leaderName": "Ada", "members": [{ "name": "Ada", "role": "oracle" }], "missingRoles": ["navigator", "scholar"],
-  "hasRoleConflict": true, "conflictingRole": "oracle" } }
+  "leaderName": "Ada", "members": [{ "name": "Ada" }] } }
 ```
 
 `401` without valid credentials, `404 UNKNOWN_CODE`, `400 INVALID_CODE`. No player or team ids are returned.
@@ -252,8 +249,8 @@ The end-of-game recap does **not** travel in the 4 KB per-phone view. It is one 
 
 `GET /api/admin/export.json` and `GET /api/admin/export.csv` need `Authorization: Bearer <ADMIN_TOKEN>` exactly like `/api/admin/backup` (a token in the URL is not accepted) and answer `Content-Disposition: attachment` and `Cache-Control: no-store`. They work in any phase; before the end they hold what has happened so far. Neither contains token hashes or the admin token. They are pure functions of the state in `games/underworld/export.ts`.
 
-- **JSON** (`format: 1`): `game_meta`, `timeline` (phase log), `crews` (members with names and roles, score, Round 1 result with `wrongGuesses {count, log:[{atSecond, guess}]}`, Round 2 rival and moral legacy, Round 3 end state), `round1`, `round2.clashes` (both crews' stance, points, outcome and every member's vote or `null`) and `round2.byes`, `round3.waves` (per wave: capacity, capsize and collision flags, leash events, and per crew vessel, unanimity, metres, crash, leash target and every member's vote), `suddenDeath`, `standings`, `podium`. Games recorded before the vote log existed give `votes: null` for Round 3.
-- **CSV** (UTF-8 with a byte-order mark, CRLF): columns `round,unit,crew_id,crew,player_id,player,role,action,choice,outcome,points,metres,at_second,detail`; `round` is 1, 2, 3 or SD, `unit` the clash or wave. One row per action: `SOLVE`, `HINT`, `WRONG_GUESS` (Round 1), `VOTE` (Rounds 2, 3 and SD; `ABSTAIN` when a member did not vote), `BYE`, `LEASH_ARMED`, `LEASH_RESULT`. Text that starts with `= + - @` is prefixed with an apostrophe so a spreadsheet cannot run it.
+- **JSON** (`format: 1`): `game_meta`, `timeline` (phase log), `crews` (members with names, score, Round 1 result with `wrongGuesses {count, log:[{atSecond, guess}]}`, Round 2 rival and moral legacy, Round 3 end state), `round1`, `round2.clashes` (both crews' stance, points, outcome and every member's vote or `null`) and `round2.byes`, `round3.waves` (per wave: capacity, capsize and collision flags, leash events, and per crew vessel, unanimity, metres, crash, leash target and every member's vote), `suddenDeath`, `standings`, `podium`. Games recorded before the vote log existed give `votes: null` for Round 3.
+- **CSV** (UTF-8 with a byte-order mark, CRLF): columns `round,unit,crew_id,crew,player_id,player,action,choice,outcome,points,metres,at_second,detail`; `round` is 1, 2, 3 or SD, `unit` the clash or wave. One row per action: `SOLVE`, `HINT`, `WRONG_GUESS` (Round 1), `VOTE` (Rounds 2, 3 and SD; `ABSTAIN` when a member did not vote), `BYE`, `LEASH_ARMED`, `LEASH_RESULT`. Text that starts with `= + - @` is prefixed with an apostrophe so a spreadsheet cannot run it.
 
 ### State fields behind the export (append-only, plain JSON)
 

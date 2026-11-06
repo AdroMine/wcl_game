@@ -1,167 +1,128 @@
 // Round 3: Escape from Tartarus (the River Styx). Display and input only; the server resolves every wave.
-import React, { useEffect, useRef } from 'react';
-import { AlertTriangle, CheckCircle2, DoorOpen, Link2, Lock, Shield, Skull, Swords, Trophy, Users, Wind } from 'lucide-react';
+// A wave = one VOTE step ("Decide": boats and revenge open from the start), then a REVEAL. The rope is the timer.
+import React, { useEffect, useRef, useState } from 'react';
+import { AlertTriangle, Anchor, Check, CheckCircle2, Ghost, Link2, Loader2, Medal, Sailboat, Wind } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import type { SdAction, Vessel } from '../../../../../shared/protocol.ts';
 import { useGame } from '../../../../../src/game/useGame';
 import { usePendingVote, VoteFeedback } from '../../../../../src/game/usePendingVote';
-import { CARD, Countdown, ErrorNote, LABEL, pts } from '../../../../../src/components/ui';
+import { CARD, ErrorNote, OVERLAY_TOP, ordinal, pts, reducedMotion, useOverlay } from '../../../../../src/components/ui';
 import { useTick } from '../../../../../src/game/useNow';
 import { SdReveal, SdTriangle } from './SuddenDeath';
 
-const STEP_TITLES: Record<string, string> = {
-  BRIEFING: 'Briefing',
-  BLUFF: 'Phase 1: Decision Time',
-  VOTE: '🗳️ Phase 2: Secret Fleet Vote',
-  REVEAL: '⚡ Phase 3: Wave Surge Report',
-  SUDDEN_DEATH: 'Sudden Death',
+const OUTCOME_LINE = {
+  moved: 'You moved ahead.',
+  sailboatSank: 'Your Sailboat capsized.',
+  ghostSank: 'Your Ghost Ship collided.',
+  escaped: 'You escaped!',
 };
-const VESSEL_NAME: Record<string, string> = { R: 'Rowboat', S: 'Sailboat', G: 'Ghost Ship' };
-const VESSEL_EMOJI: Record<string, string> = { ROWBOAT: '🚣', SAILBOAT: '⛵', GHOST_SHIP: '⚡', R: '🚣', S: '⛵', G: '⚡' };
-
-const VESSEL_STYLE: Record<Vessel, { tag: string; tagBox: string; on: string; hover: string; amount: string }> = {
-  ROWBOAT: { tag: 'SAFE', tagBox: 'bg-emerald-950 border-emerald-500/40 text-emerald-300', on: 'bg-emerald-950/70 border-emerald-400 ring-2 ring-emerald-400/50', hover: 'hover:border-emerald-500/60', amount: 'text-emerald-400' },
-  SAILBOAT: { tag: 'BALANCED', tagBox: 'bg-sky-950 border-sky-500/40 text-sky-300', on: 'bg-sky-950/70 border-sky-400 ring-2 ring-sky-400/50', hover: 'hover:border-sky-500/60', amount: 'text-sky-400' },
-  GHOST_SHIP: { tag: 'SOLO GAMBLE', tagBox: 'bg-purple-950 border-purple-500/40 text-purple-300', on: 'bg-purple-950/70 border-purple-400 ring-2 ring-purple-400/50', hover: 'hover:border-purple-500/60', amount: 'text-purple-400' },
+/** Signed metres with a real minus sign: +250 m, −100 m, 0 m. */
+const metres = (n: number) => `${n > 0 ? '+' : n < 0 ? '−' : ''}${Math.abs(n)} m`;
+const VESSEL_ICON: Record<Vessel, typeof Anchor> = {
+  ROWBOAT: Anchor,
+  SAILBOAT: Sailboat,
+  GHOST_SHIP: Ghost,
 };
 
-const SD_OPTIONS: { id: SdAction; label: string; hint: string; icon: React.ReactNode; on: string; hover: string }[] = [
-  { id: 'SHIELDS', label: 'RAISE SHIELDS', hint: 'Deflects Ram • Loses to Sails', icon: <Shield className="w-6 h-6 text-blue-400" />, on: 'bg-blue-950/80 border-blue-400', hover: 'hover:border-blue-400/60' },
-  { id: 'RAM', label: 'RAM THEIR HULL', hint: 'Smashes Sails • Loses to Shields', icon: <Swords className="w-6 h-6 text-red-400" />, on: 'bg-red-950/80 border-red-400', hover: 'hover:border-red-400/60' },
-  { id: 'SAILS', label: 'FULL SAILS', hint: 'Outruns Shields • Loses to Ram', icon: <Wind className="w-6 h-6 text-emerald-400" />, on: 'bg-emerald-950/80 border-emerald-400', hover: 'hover:border-emerald-400/60' },
-];
-
-const LEASH_LABEL: Record<string, { label: string; tone: string }> = {
-  LEASH_SNAPPED: { label: '⚡ LEASH SNAPPED', tone: 'text-rose-400' },
-  WRECK_DRAG: { label: '💥 WRECK DRAG', tone: 'text-amber-400' },
-  ANCHOR_SIPHON: { label: '⚓ ANCHOR SIPHON', tone: 'text-emerald-400' },
+const VESSEL_STYLE: Record<Vessel, { on: string; hover: string; amount: string; icon: string }> = {
+  ROWBOAT: {
+    on: 'bg-emerald-950/70 border-emerald-400 ring-2 ring-emerald-400/50',
+    hover: 'hover:border-emerald-500/60',
+    amount: 'text-emerald-400',
+    icon: 'text-emerald-300',
+  },
+  SAILBOAT: {
+    on: 'bg-sky-950/70 border-sky-400 ring-2 ring-sky-400/50',
+    hover: 'hover:border-sky-500/60',
+    amount: 'text-sky-400',
+    icon: 'text-sky-300',
+  },
+  GHOST_SHIP: {
+    on: 'bg-purple-950/70 border-purple-400 ring-2 ring-purple-400/50',
+    hover: 'hover:border-purple-500/60',
+    amount: 'text-purple-400',
+    icon: 'text-purple-300',
+  },
 };
 
-// ------------------------------------------------------------------ the river
-// Blue water with rows of wave lines, tiled from a small inline SVG.
-const WAVE_TILE = encodeURIComponent(
-  '<svg xmlns="http://www.w3.org/2000/svg" width="48" height="15"><path d="M0 9 Q12 3 24 9 T48 9" fill="none" stroke="#7dd3fc" stroke-opacity="0.3" stroke-width="1.5"/></svg>',
-);
-const RIVER_BG = `url("data:image/svg+xml,${WAVE_TILE}") repeat, linear-gradient(180deg, #0b3a66 0%, #0a2f55 100%)`;
-const TRACK_LANES = 4;
-const LANE_PX = 30;
-const BOAT_PCT = 11; // boats closer than this overlap on a phone-width track
-
-/** Boats shown on the track: your crew plus the top boats; everyone else only appears in the list. */
-function trackBoats(rows: [string, number, number, string][], mine: string | undefined, target: number): { name: string; dist: number; pct: number; lane: number; isMe: boolean }[] {
-  const ranked = [...rows].sort((x, y) => (x[2] > 0 && y[2] > 0 ? x[2] - y[2] : x[2] > 0 ? -1 : y[2] > 0 ? 1 : y[1] - x[1]));
-  const keep = rows.length <= 8 ? ranked : ranked.filter((r, i) => i < 5 || r[0] === mine);
-  const boats = keep
-    .map(([name, dist, rank]) => ({ name, dist, pct: Math.min(94, rank > 0 ? 100 : Math.max(0, (dist / Math.max(1, target)) * 100)), lane: 0, isMe: name === mine }))
-    .sort((x, y) => x.pct - y.pct);
-  // Greedy lane assignment: first lane whose last boat is far enough to the left; otherwise the emptiest gap.
-  const lastPct: number[] = Array(TRACK_LANES).fill(-1000);
-  for (const bt of boats) {
-    let lane = lastPct.findIndex(l => bt.pct - l >= BOAT_PCT);
-    if (lane < 0) lane = lastPct.indexOf(Math.min(...lastPct));
-    bt.lane = lane;
-    lastPct[lane] = bt.pct;
-  }
-  return boats;
-}
-const FleetTrack: React.FC<{ rows: [string, number, number, string][]; mine: string | undefined; target: number; rival: string | null | undefined }> = ({ rows, mine, target, rival }) => {
-  const boats = trackBoats(rows, mine, target);
-  const lanes = Math.min(TRACK_LANES, Math.max(1, boats.length));
-  const height = lanes * LANE_PX + 12;
+// ------------------------------------------------------------------ the progress strip
+/** "135 m · 4th" over a thin river strip: your crew in gold, the others as small dots. No list. */
+const ProgressStrip: React.FC<{
+  rows: [string, number, number, string][];
+  mine: string | undefined;
+  distance: number;
+  pos: number | undefined;
+  target: number;
+  honour: number | null;
+}> = ({ rows, mine, distance, pos, target, honour }) => {
+  const pct = (dist: number, rank: number) => Math.min(96, rank > 0 ? 100 : Math.max(0, (dist / Math.max(1, target)) * 100));
   return (
-    <div className="space-y-2" data-testid="r3-fleet">
-      <div className="flex items-center justify-between text-sm font-mono">
-        <span className="text-[#a9b4c7]">RIVER STYX FLEET TRACK</span>
-        <span className="text-[#e5cb87] font-bold flex items-center space-x-1">
-          <DoorOpen className="w-4 h-4" />
-          <span>PORTAL AT {target} m</span>
-        </span>
-      </div>
-      <div className="relative w-full rounded-xl border border-sky-800/70 overflow-hidden" style={{ height, background: RIVER_BG }}>
-        <div className="absolute right-0 top-0 bottom-0 w-3 bg-gradient-to-l from-emerald-500 to-transparent" />
-        <div className="absolute right-3 top-0 flex items-center text-xs font-mono font-bold text-emerald-400/80">🚪 {target} m</div>
-        {boats.map((bt, i) => {
-          const isRival = !!rival && bt.name === rival;
-          return (
-            <div
-              key={`${bt.name}-${i}`}
-              data-testid={bt.isMe ? 'r3-boat-me' : 'r3-boat'}
-              data-lane={bt.lane}
-              title={`${bt.name}: ${bt.dist} m`}
-              style={{ left: `${bt.pct}%`, top: 6 + (bt.lane % lanes) * LANE_PX, height: LANE_PX - 2 }}
-              className={`absolute flex items-center transition-all duration-700 ${bt.isMe ? 'z-20' : isRival ? 'z-10' : 'z-0'}`}
-            >
-              <div
-                className={`w-7 h-7 rounded flex items-center justify-center text-sm shadow-md border ${
-                  bt.isMe ? 'bg-[#c4a45a] text-[#08090c] border-white ring-2 ring-[#c4a45a]/60' : isRival ? 'bg-rose-950 border-rose-500 text-rose-300' : 'bg-[#1e2330] border-[#2a2e3d] text-[#f4f0e8] opacity-80'
-                }`}
-              >
-                {isRival ? <Skull className="w-4 h-4 text-rose-400" /> : '⛵'}
-              </div>
-              {bt.isMe && <span className="ml-1 text-[10px] font-mono font-bold text-[#e5cb87] bg-[#08090c]/80 px-1 rounded">YOU</span>}
-            </div>
-          );
-        })}
-      </div>
-      {rows.length > boats.length && <p className="text-[11px] font-mono text-[#8e95a5]">Showing your crew and the top 5 boats. All crews are in the list below.</p>}
-    </div>
-  );
-};
-
-/** A short ranked list so the crew sees who is ahead, plus its own row. */
-const Leaders: React.FC<{ rows: [string, number, number, string][]; mine: string | undefined; target: number }> = ({ rows, mine, target }) => {
-  const sorted = [...rows].sort((a, b) => (a[2] > 0 && b[2] > 0 ? a[2] - b[2] : a[2] > 0 ? -1 : b[2] > 0 ? 1 : b[1] - a[1]));
-  const top = sorted.slice(0, 5);
-  const me = sorted.findIndex(r => r[0] === mine);
-  const show = me >= 5 ? [...top, sorted[me]] : top;
-  return (
-    <div className="space-y-1.5 pt-1">
-      {show.map(([name, dist, rank]) => (
-        <div key={name} className={`p-2.5 rounded-xl border flex items-center justify-between text-sm ${name === mine ? 'border-[#c4a45a] bg-[#161922]' : 'border-[#2a2e3d] bg-[#161922]/60'}`}>
-          <span className="font-bold text-[#f4f0e8] truncate pr-2">{name}</span>
-          <span className="font-mono text-[#e5cb87] shrink-0">{rank > 0 ? `ESCAPED #${rank}` : `${dist} / ${target} m`}</span>
+    <div className="space-y-1.5" data-testid="r3-fleet">
+      <div className="flex items-baseline justify-between gap-2">
+        <div className="text-xl font-mono font-black text-[#e5cb87]">
+          <span data-testid="r3-distance">{distance} m</span>
+          {pos ? <span> · {ordinal(pos)}</span> : null}
         </div>
-      ))}
+        <div className="text-sm text-[#a9b4c7]">Escape at {target} m</div>
+      </div>
+      <div className="relative h-7 rounded-full overflow-hidden border border-sky-800/70 bg-gradient-to-b from-[#0b3a66] to-[#0a2f55]">
+        <div className="absolute right-0 inset-y-0 w-2 bg-emerald-500/70" />
+        {rows
+          .filter(([name]) => name !== mine)
+          .map(([name, dist, rank], i) => (
+            <span
+              key={`${name}-${i}`}
+              data-testid="r3-boat"
+              title={`${name}: ${dist} m`}
+              className="absolute top-1/2 w-2.5 h-2.5 rounded-full bg-[#cbd5e1]/70"
+              style={{
+                left: `${pct(dist, rank)}%`,
+                transform: 'translate(-50%,-50%)',
+              }}
+            />
+          ))}
+        <span
+          data-testid="r3-boat-me"
+          className="absolute top-1/2 w-5 h-5 rounded-full bg-[#e5cb87] border-2 border-white shadow-[0_0_8px_rgba(229,203,135,0.7)]"
+          style={{
+            left: `${Math.min(97, (distance / Math.max(1, target)) * 100)}%`,
+            transform: 'translate(-50%,-50%)',
+            transition: 'left 700ms ease-out',
+          }}
+        />
+      </div>
+      {honour != null && (
+        <p data-testid="r3-honourable" className="text-sm text-emerald-300 flex items-center gap-1.5">
+          <Wind className="w-4 h-4" />+{honour} m head start for keeping your word
+        </p>
+      )}
     </div>
   );
 };
 
 // ------------------------------------------------------------------ the podium
-const Podium: React.FC<{ names: string[] }> = ({ names }) => {
-  const slot = (i: number, fallback: string) => names[i] ?? fallback;
-  return (
-    <div className="bg-gradient-to-b from-[#161922] via-[#10121a] to-[#08090c] border-2 border-[#c4a45a] rounded-2xl p-5 shadow-2xl text-center space-y-4" data-testid="r3-podium">
-      <div className="inline-flex items-center space-x-1.5 px-3 py-1 bg-[#c4a45a]/20 border border-[#c4a45a]/50 rounded-full text-sm font-mono font-bold text-[#e5cb87]">
-        <Trophy className="w-4 h-4" />
-        <span>THE RIVER STYX IS CROSSED</span>
-      </div>
-      <h2 className="text-2xl font-serif font-black text-[#f4f0e8]">The Odyssey Podium of Champions</h2>
-      <div className="grid grid-cols-3 gap-2 pt-2 items-end">
-        <div className="flex flex-col items-center space-y-2">
-          <span className="text-3xl">🥈</span>
-          <div className="w-full bg-[#1e2330] border-t-2 border-slate-300 rounded-t-xl p-2.5 text-center min-h-[130px] flex flex-col justify-between">
-            <span className="text-xs font-mono font-bold text-slate-300">SILVER 2ND</span>
-            <h4 className="text-sm font-serif font-black text-[#f4f0e8] break-words">{slot(1, '-')}</h4>
-          </div>
-        </div>
-        <div className="flex flex-col items-center space-y-2">
-          <span className="text-4xl animate-bounce">🥇</span>
-          <div className="w-full bg-gradient-to-b from-[#c4a45a]/30 to-[#1e2330] border-t-4 border-[#c4a45a] rounded-t-xl p-2.5 text-center min-h-[180px] flex flex-col justify-between">
-            <span className="text-xs font-mono font-black text-[#e5cb87]">GOLD 1ST</span>
-            <h4 className="text-base font-serif font-black text-[#f4f0e8] break-words">{slot(0, '-')}</h4>
-          </div>
-        </div>
-        <div className="flex flex-col items-center space-y-2">
-          <span className="text-3xl">🥉</span>
-          <div className="w-full bg-[#1e2330] border-t-2 border-amber-700 rounded-t-xl p-2.5 text-center min-h-[100px] flex flex-col justify-between">
-            <span className="text-xs font-mono font-bold text-amber-500">BRONZE 3RD</span>
-            <h4 className="text-sm font-serif font-black text-[#f4f0e8] break-words">{slot(2, '-')}</h4>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-};
+const PODIUM_COLOR = ['#e5cb87', '#cbd5e1', '#d6893a'];
+export const Podium: React.FC<{ names: string[] }> = ({ names }) => (
+  <div className="bg-gradient-to-b from-[#161922] via-[#10121a] to-[#08090c] border-2 border-[#c4a45a] rounded-2xl p-4 space-y-3" data-testid="r3-podium">
+    <h2 className="text-2xl font-serif font-black text-[#f4f0e8] text-center">The Podium</h2>
+    {/* Rows, not columns: a 32-character crew name needs the full width. */}
+    <ol className="space-y-2">
+      {[0, 1, 2].map(place => (
+        <li
+          key={place}
+          className="flex items-center gap-3 rounded-xl border bg-[#1e2330] px-3 py-3 min-h-[64px]"
+          style={{ borderColor: place === 0 ? PODIUM_COLOR[0] : '#3a4157' }}
+        >
+          <Medal className={`w-8 h-8 shrink-0 ${place === 0 ? 'motion-safe:animate-bounce' : ''}`} style={{ color: PODIUM_COLOR[place] }} aria-hidden="true" />
+          <span className="w-10 shrink-0 text-base font-mono font-bold" style={{ color: PODIUM_COLOR[place] }}>
+            {ordinal(place + 1)}
+          </span>
+          <h4 className="min-w-0 text-lg leading-snug font-serif font-black text-[#f4f0e8] [overflow-wrap:anywhere]">{names[place] ?? '-'}</h4>
+        </li>
+      ))}
+    </ol>
+  </div>
+);
 
 // ------------------------------------------------------------------ the screen
 export const OdysseyEscapeRoyaleRound: React.FC = () => {
@@ -170,24 +131,33 @@ export const OdysseyEscapeRoyaleRound: React.FC = () => {
   const step = view?.phase.step ?? '';
   const phaseName = view?.phase.name;
   const r3 = view?.r3;
+  // Local UI only: which Sudden Death result this phone has already dismissed with Continue.
+  const [sdSeen, setSdSeen] = useState('');
   // A Sudden Death run from the results screen takes over until its reveal ends.
   const finished = (phaseName === 'R3_RESULTS' || phaseName === 'FINISHED') && step !== 'SUDDEN_DEATH';
   const inSd = step === 'SUDDEN_DEATH' && !!r3?.sd;
   useTick(inSd && r3?.sd?.resolved ? 250 : 60_000);
   const myVote = view?.me?.myVote;
+  useOverlay(inSd);
 
   const vesselVote = usePendingVote<Vessel>(step === 'VOTE' ? (myVote as Vessel | undefined) : null, `v:${wave}:${step}`);
   const leashVote = usePendingVote<'ARMED'>(r3?.leash?.armed ? 'ARMED' : null, `l:${wave}`);
   const sdVote = usePendingVote<SdAction>(inSd ? (myVote as SdAction | undefined) : null, `sd:${wave}:${step}`);
 
-  // Confetti once when the podium appears.
+  // Confetti once when the podium appears (not with reduced motion).
   const podiumLen = r3?.podium?.length ?? 0;
   const fired = useRef(false);
   useEffect(() => {
     if (!finished || podiumLen === 0 || fired.current) return;
     fired.current = true;
+    if (reducedMotion()) return;
     try {
-      confetti({ particleCount: 80, spread: 90, origin: { y: 0.5 }, colors: ['#c4a45a', '#f4f0e8', '#38bdf8', '#ef4444'] });
+      confetti({
+        particleCount: 80,
+        spread: 90,
+        origin: { y: 0.5 },
+        colors: ['#c4a45a', '#f4f0e8', '#38bdf8', '#ef4444'],
+      });
     } catch {
       /* ignore */
     }
@@ -195,9 +165,9 @@ export const OdysseyEscapeRoyaleRound: React.FC = () => {
 
   if (!view || !r3) {
     return (
-      <div className={`${CARD} text-center space-y-1`}>
-        <h3 className="text-lg font-serif font-black text-[#f4f0e8]">Your crew is not on the river</h3>
-        <p className="text-sm text-[#a9b4c7]">Watch the main screen and the standings.</p>
+      <div className={`${CARD} text-center space-y-1 mt-6`}>
+        <h3 className="text-xl font-serif font-black text-[#f4f0e8]">Your crew is not on the river</h3>
+        <p className="text-base text-[#a9b4c7]">Watch the main screen.</p>
       </div>
     );
   }
@@ -206,31 +176,55 @@ export const OdysseyEscapeRoyaleRound: React.FC = () => {
   const honourBonus = meta?.r3.honourBonus ?? 75;
   const myName = view.team?.name;
   const cap = r3.sailboatCapacity;
-  const rival = r3.leash?.targetName;
 
+  const sdKey = r3.sd ? `${r3.sd.teamA}|${r3.sd.teamB}|${r3.sd.winner ?? ''}` : '';
+  const showSd = !!r3.sd?.resolved && sdKey !== sdSeen;
   if (finished) {
     return (
-      <div className="space-y-4">
-        <Podium names={r3.podium ?? []} />
-        {r3.sd?.resolved && (
-          <div className={`${CARD} space-y-2`} data-testid="sd-summary">
-            <span className={LABEL}>Sudden Death</span>
-            <SdReveal teamA={r3.sd.teamA} teamB={r3.sd.teamB} side={r3.sd.side} pickA={r3.sd.pickA} pickB={r3.sd.pickB} winner={r3.sd.winner} winnerSide={r3.sd.winnerSide} text={r3.sd.text} elapsed={Infinity} celebrate={false} />
+      <div className="space-y-4 pt-2">
+        {showSd && r3.sd ? (
+          // A moment, not a page: centred under the navbar like the lobby's first screen.
+          <div className="min-h-[calc(100dvh-9rem)] flex flex-col justify-center pb-12">
+            <div className={`${CARD} space-y-4`} data-testid="sd-summary">
+              <h2 className="text-center text-2xl font-serif font-black text-[#e5cb87]">Sudden Death</h2>
+              <SdReveal
+                teamA={r3.sd.teamA}
+                teamB={r3.sd.teamB}
+                side={r3.sd.side}
+                pickA={r3.sd.pickA}
+                pickB={r3.sd.pickB}
+                winner={r3.sd.winner}
+                winnerSide={r3.sd.winnerSide}
+                text={r3.sd.text}
+                elapsed={Infinity}
+                celebrate={false}
+              />
+              <button
+                type="button"
+                data-testid="sd-continue"
+                onClick={() => setSdSeen(sdKey)}
+                className="w-full min-h-[52px] rounded-xl bg-[#c4a45a] text-[#08090c] font-serif font-black text-lg active:scale-[0.98]"
+              >
+                Continue
+              </button>
+            </div>
+          </div>
+        ) : (
+          <Podium names={r3.podium ?? []} />
+        )}
+        {!showSd && (
+          <div className="text-center py-1">
+            {r3.escaped ? (
+              <h3 data-testid="r3-escaped" className="text-2xl font-serif font-black text-emerald-200">
+                Your crew escaped as #{r3.escapedRank}
+              </h3>
+            ) : (
+              <h3 className="text-2xl font-serif font-black text-[#f4f0e8]">
+                Your crew: {r3.distance} m{r3.myPos ? ` · ${ordinal(r3.myPos)}` : ''}
+              </h3>
+            )}
           </div>
         )}
-        <div className={`${CARD} text-center space-y-1`}>
-          {r3.escaped ? (
-            <h3 data-testid="r3-escaped" className="text-xl font-serif font-black text-emerald-200">
-              Your crew escaped as #{r3.escapedRank}!
-            </h3>
-          ) : (
-            <h3 className="text-xl font-serif font-black text-[#f4f0e8]">Your crew reached {r3.distance} m</h3>
-          )}
-        </div>
-        <div className={`${CARD} space-y-2`}>
-          <FleetTrack rows={r3.fleet} mine={myName} target={target} rival={null} />
-          <Leaders rows={r3.fleet} mine={myName} target={target} />
-        </div>
       </div>
     );
   }
@@ -238,7 +232,6 @@ export const OdysseyEscapeRoyaleRound: React.FC = () => {
   const sd = r3.sd;
   const canVote = step === 'VOTE' && !r3.escaped;
   const lw = r3.lastWave;
-  const briefing = step === 'BRIEFING';
   const vessels = meta?.vessels ?? [];
 
   const castVessel = (vessel: Vessel) => {
@@ -254,21 +247,16 @@ export const OdysseyEscapeRoyaleRound: React.FC = () => {
     void sdVote.submit(action, () => send('SD_VOTE', { action }));
   };
 
-  // ---------------------------------------------------------------- Sudden Death: a full overlay
+  // ---------------------------------------------------------------- Sudden Death: a full overlay (the rope stays on top)
   if (inSd && sd) {
     return (
-      <div className="fixed inset-0 z-40 overflow-y-auto bg-[#08090c] p-4" data-testid="r3-sd">
-        <div className="max-w-md mx-auto bg-[#10121a] border-2 border-red-500/60 rounded-2xl p-5 shadow-2xl space-y-4">
-          <div className="text-center space-y-2">
-            <div className="inline-flex items-center space-x-1.5 px-3 py-1 bg-red-950/80 border border-red-500/60 rounded-full text-sm font-mono font-black text-red-300 animate-pulse">
-              <Swords className="w-4 h-4 text-red-400" />
-              <span>THE NARROW GATE • SUDDEN DEATH</span>
-            </div>
-            <h3 className="text-2xl font-serif font-black text-[#f4f0e8]">
+      <div className="fixed inset-0 z-40 overflow-y-auto bg-[#08090c] px-4 pb-4" style={{ paddingTop: OVERLAY_TOP }} data-testid="r3-sd">
+        <div className="max-w-md mx-auto bg-[#10121a] border-2 border-red-500/60 rounded-2xl p-5 space-y-4">
+          <div className="text-center space-y-1">
+            <div className="text-base font-bold text-red-300">Sudden Death</div>
+            <h3 className="text-xl font-serif font-black text-[#f4f0e8] [overflow-wrap:anywhere]">
               {sd.teamA} vs {sd.teamB}
             </h3>
-            {!sd.resolved && <p className="text-base text-[#a9b4c7]">Only one crew can slip through the final rift in the gates!</p>}
-            {!sd.resolved && <Countdown endsAt={view.phase.endsAt} className="text-5xl" />}
           </div>
 
           {sd.resolved ? (
@@ -285,44 +273,17 @@ export const OdysseyEscapeRoyaleRound: React.FC = () => {
             />
           ) : sd.mine ? (
             <div className="space-y-3">
-              <p className="text-center text-base font-mono text-[#e5cb87] font-bold">Lock your crew&apos;s maneuver</p>
-              <SdTriangle />
-              <div className="grid grid-cols-1 gap-2.5">
-                {SD_OPTIONS.map(o => {
-                  const picked = sdVote.choice === o.id;
-                  const dim = sdVote.choice && !picked;
-                  return (
-                    <button
-                      key={o.id}
-                      type="button"
-                      data-testid={`sd-${o.id}`}
-                      disabled={sdVote.locked}
-                      onClick={() => castSd(o.id)}
-                      className={`min-h-[76px] p-3.5 rounded-xl border-2 flex items-center space-x-3 text-left transition disabled:cursor-not-allowed ${
-                        picked ? `${o.on} shadow-lg` : dim ? 'bg-[#161922] border-[#2a2e3d] opacity-40' : `bg-[#161922] border-[#3a4157] ${o.hover} active:scale-[0.98]`
-                      }`}
-                    >
-                      <span className="shrink-0">{o.icon}</span>
-                      <span className="min-w-0">
-                        <span className="block font-serif font-black text-lg text-[#f4f0e8]">{o.label}</span>
-                        <span className="block text-sm text-[#a9b4c7]">{o.hint}</span>
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
+              <p className="text-center text-lg font-serif font-bold text-[#e5cb87]">Tap your move</p>
+              <SdTriangle className="w-full max-w-[300px] mx-auto" onPick={castSd} picked={sdVote.choice ?? null} disabled={sdVote.locked} />
               <VoteFeedback vote={sdVote} testId="sd-voted" />
               <ErrorNote text={sdVote.error} />
-              <p className="text-center text-sm font-mono text-[#e5cb87]">
-                {sd.votedCount ?? 0} of {r3.teamSize} teammates voted
+              <p className="text-center text-base text-[#e5cb87]">
+                {sd.votedCount ?? 0}/{r3.teamSize} voted
               </p>
             </div>
           ) : (
-            <div className="p-4 rounded-xl bg-[#08090c] border border-[#2a2e3d] text-center space-y-1">
-              <h4 className="text-lg font-serif font-bold text-[#e5cb87]">Spectating the duel</h4>
-              <p className="text-base text-[#a9b4c7]">
-                {sd.teamA} and {sd.teamB} are locked in a sudden-death duel for podium glory.
-              </p>
+            <div className="space-y-2 text-center">
+              <h4 className="text-lg font-serif font-bold text-[#e5cb87]">You are watching</h4>
               <SdTriangle />
             </div>
           )}
@@ -331,250 +292,187 @@ export const OdysseyEscapeRoyaleRound: React.FC = () => {
     );
   }
 
-  // ---------------------------------------------------------------- the wave report
-  const WaveReport = lw ? (
-    <div data-testid="r3-lastwave" className={`${CARD} space-y-3`}>
-      <div className="text-center space-y-1">
-        <span className="text-sm font-mono text-[#e5cb87] font-bold block">{step === 'REVEAL' ? `══ WAVE ${lw.wave} SURGE REPORT ══` : `Last wave (${lw.wave})`}</span>
-        {step === 'REVEAL' && <h4 className="text-lg font-serif font-black text-[#f4f0e8]">The Styx waters settle</h4>}
+  const strip = (
+    <ProgressStrip
+      rows={r3.fleet}
+      mine={myName}
+      distance={r3.distance}
+      pos={r3.myPos}
+      target={target}
+      honour={r3.honourable && wave <= 1 ? honourBonus : null}
+    />
+  );
+
+  // ---------------------------------------------------------------- BRIEFING fallback (the modal normally covers it)
+  if (step === 'BRIEFING') {
+    return (
+      <div className="min-h-[50vh] flex items-center justify-center">
+        <h2 className="text-3xl font-serif font-black text-[#f4f0e8]">Get ready</h2>
       </div>
+    );
+  }
 
-      <div className="p-3 rounded-xl bg-[#08090c] border border-[#2a2e3d] space-y-2 font-mono text-sm">
-        {lw.vessels.map(([code, boarded, outcome, metres], i) => (
-          <div key={code} className={`flex items-center justify-between gap-2 ${i > 0 ? 'border-t border-[#2a2e3d]/60 pt-2' : ''}`}>
-            <span className="text-[#a9b4c7]">
-              {VESSEL_EMOJI[code]} {VESSEL_NAME[code] ?? code}: {boarded} {boarded === 1 ? 'crew' : 'crews'}
-            </span>
-            {outcome === 'SAFE' && <span className={`font-bold text-right ${code === 'G' ? 'text-purple-400' : code === 'S' ? 'text-sky-400' : 'text-emerald-400'}`}>{code === 'G' ? 'SOLO SURGE' : 'Safe'} ({pts(metres)} m)</span>}
-            {outcome === 'CAPSIZED' && (
-              <span className="text-rose-400 font-bold flex items-center space-x-1 text-right">
-                <AlertTriangle className="w-4 h-4 shrink-0" />
-                <span>OVERLOADED, capsized ({pts(metres)} m)</span>
-              </span>
-            )}
-            {outcome === 'COLLIDED' && <span className="text-rose-400 font-bold text-right">COLLIDED ({pts(metres)} m)</span>}
-            {outcome === 'UNBOARDED' && <span className="text-[#a9b4c7]">Unboarded</span>}
-          </div>
-        ))}
-      </div>
-
-      {lw.leashes && lw.leashes.length > 0 && (
-        <div className="p-3 rounded-xl bg-red-950/40 border border-red-500/50 space-y-2">
-          {lw.leashes.map((l, i) => {
-            const meta2 = LEASH_LABEL[l.kind] ?? { label: l.kind, tone: 'text-red-300' };
-            return (
-              <div key={i} className="text-sm font-mono p-2.5 rounded-lg bg-black/40 border border-red-500/20 space-y-0.5">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-[#f4f0e8] font-bold">{l.role === 'holder' ? `🐕‍🦺 You leashed ${l.otherName}` : `🐕‍🦺 ${l.otherName} leashed you`}</span>
-                  <span className={`font-bold shrink-0 ${meta2.tone}`}>{meta2.label}</span>
-                </div>
-                <div className="text-[#a9b4c7]">
-                  {l.kind === 'LEASH_SNAPPED' ? 'The holder’s own boat crashed. The curse was wasted.' : l.kind === 'WRECK_DRAG' ? 'Dragged down into the deep.' : 'Metres siphoned from the hull.'} ({pts(l.delta)} m for your crew)
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
-
-      <div className="p-4 rounded-xl bg-gradient-to-r from-[#161922] via-[#242b3b] to-[#161922] border border-[#c4a45a] text-center space-y-1">
-        <span className="text-xs uppercase text-[#e5cb87] font-bold font-mono">Your crew wave summary</span>
-        <h5 className="text-lg font-serif font-black text-[#f4f0e8]">
-          Sailed on {lw.vessel === 'ROWBOAT' ? 'the Rowboat' : lw.vessel === 'SAILBOAT' ? 'the Sailboat' : 'the Ghost Ship'} ({pts(lw.gained)} m)
-        </h5>
-        {lw.sailboatCapsized && lw.vessel === 'SAILBOAT' && <p className="text-sm text-red-300">The Sailboat was overcrowded (limit {lw.capacity}) and capsized.</p>}
-        {lw.ghostCollided && lw.vessel === 'GHOST_SHIP' && <p className="text-sm text-red-300">Ghost Ships collided.</p>}
-        <p className="text-sm text-[#a9b4c7]">
-          Total distance: <strong className="text-white">{r3.distance} m / {target} m</strong>
-        </p>
-      </div>
-    </div>
-  ) : null;
-
-  return (
-    <div className="space-y-4">
-      {r3.honourable && (
-        <div className="bg-gradient-to-r from-emerald-950/90 via-teal-950/80 to-emerald-950/90 border border-emerald-500/60 rounded-2xl p-4 shadow-xl text-emerald-100 space-y-1" data-testid="r3-honourable">
-          <div className="text-emerald-300 font-bold text-sm uppercase tracking-wider font-mono">🕊️ WINDS OF OLYMPUS ACTIVATED</div>
-          <p className="text-sm text-emerald-200/90 leading-relaxed font-serif">Your crew kept its word in the dark cavern.</p>
-          <div className="text-base font-bold text-emerald-300 font-mono">Athena rewards your honour: +{honourBonus} m wind boost granted!</div>
-        </div>
-      )}
-
-      <div className={`${CARD} flex items-center justify-between gap-3`}>
-        <div className="min-w-0">
-          <span className={LABEL}>Round 3: Escape Royale</span>
-          <h3 data-testid="r3-step" className="text-xl font-serif font-black text-[#f4f0e8] leading-tight">
-            {STEP_TITLES[step] ?? step}
-          </h3>
-          {step === 'BLUFF' && <p className="text-base font-serif italic text-[#e5cb87]">Which boat will you select?</p>}
-          <span className="text-sm font-mono text-[#a9b4c7]">Wave {wave}</span>
-        </div>
-        <div className="text-right shrink-0">
-          <span className="text-xs font-mono text-[#a9b4c7] block">PHASE ENDS IN</span>
-          <Countdown endsAt={view.phase.endsAt} className="text-4xl" />
-        </div>
-      </div>
-
-      <div className={`${CARD} space-y-3`}>
-        <FleetTrack rows={r3.fleet} mine={myName} target={target} rival={rival} />
-        {r3.escaped ? (
-          <div data-testid="r3-escaped" className="text-center space-y-1">
-            <h3 className="text-2xl font-serif font-black text-emerald-200 flex items-center justify-center space-x-2">
-              <CheckCircle2 className="w-6 h-6" />
-              <span>ESCAPED!</span>
+  // ---------------------------------------------------------------- REVEAL: what this wave did to my crew
+  if (step === 'REVEAL') {
+    if (!lw) {
+      return (
+        <div className="space-y-4 pt-2">
+          <div data-testid="r3-outcome" className="rounded-2xl border border-[#3a4157] bg-[#10121a] p-6 text-center">
+            <h3 data-testid="r3-step" className="text-2xl font-serif font-black text-[#f4f0e8]">
+              No boat this wave
             </h3>
-            <p className="text-base text-[#cbd5e1]">Your crew crossed the Styx in position #{r3.escapedRank}. Watch the others race.</p>
           </div>
-        ) : (
-          <div className="space-y-2">
-            <div className="flex items-end justify-between gap-2">
-              <div>
-                <div className="text-xs font-mono text-[#a9b4c7] uppercase">Your crew</div>
-                <div data-testid="r3-distance" className="text-4xl font-mono font-black text-[#e5cb87]">
-                  {r3.distance} m
-                </div>
-                <div className="text-sm font-mono text-[#a9b4c7]">of {target} m</div>
-              </div>
-              <div className="text-right text-sm font-mono text-[#a9b4c7]">
-                <div className="text-[#f4f0e8] font-bold">{Math.max(0, target - r3.distance)} m to escape</div>
-                {r3.myPos ? <div>Position {r3.myPos}</div> : null}
-                <div>
-                  {r3.escapedCount} escaped • {r3.activeCrews} racing
-                </div>
-              </div>
-            </div>
-            {r3.honourable && <p className="text-sm text-emerald-400 font-mono">Includes the +{honourBonus} m 🕊️ Winds of Olympus head start.</p>}
-          </div>
-        )}
-      </div>
-
-      {briefing && (
-        <div data-testid="r3-briefing" className={`${CARD} text-center space-y-1`}>
-          <h3 className="text-xl font-serif font-black text-[#f4f0e8]">Briefing...</h3>
-          <p className="text-sm text-[#a9b4c7]">Wave 1 begins when the briefing ends. Voting is closed.</p>
+          {strip}
         </div>
-      )}
+      );
+    }
+    const bad = (lw.vessel === 'SAILBOAT' && lw.sailboatCapsized) || (lw.vessel === 'GHOST_SHIP' && lw.ghostCollided);
+    const sentence = r3.escaped
+      ? OUTCOME_LINE.escaped
+      : bad
+        ? lw.vessel === 'SAILBOAT'
+          ? OUTCOME_LINE.sailboatSank
+          : OUTCOME_LINE.ghostSank
+        : OUTCOME_LINE.moved;
+    const OutIcon = bad ? AlertTriangle : CheckCircle2;
+    const toGo = Math.max(0, target - r3.distance);
+    const total = lw.gained;
+    const revenge = (lw.leashes ?? []).map(l => {
+      if (l.kind === 'LEASH_SNAPPED') return 'Your revenge failed (boat sank).';
+      if (l.role === 'holder') return `Revenge on ${l.otherName}: ${metres(l.delta)}`;
+      return `${l.otherName} took revenge: ${metres(l.delta)}`;
+    });
+    return (
+      <div className="space-y-4 pt-1">
+        <div
+          data-testid="r3-outcome"
+          className={`rounded-2xl border-2 px-5 py-4 text-center space-y-1.5 ${bad ? 'border-red-400 bg-red-950/60' : 'border-emerald-400 bg-emerald-950/50'}`}
+        >
+          <OutIcon className={`w-7 h-7 mx-auto ${bad ? 'text-red-300' : 'text-emerald-300'}`} aria-hidden="true" />
+          <p
+            data-testid="r3-lastwave"
+            className={`text-[44px] leading-none font-mono font-black tabular-nums ${total > 0 ? 'text-emerald-300' : total < 0 ? 'text-red-300' : 'text-[#cbd5e1]'}`}
+          >
+            {metres(total)}
+          </p>
+          <p data-testid="r3-step" className="text-lg font-sans font-medium text-white [overflow-wrap:anywhere]">
+            {sentence}
+          </p>
+          {revenge.map((t, i) => (
+            <p key={i} className="text-[15px] leading-snug text-[#cbd5e1] [overflow-wrap:anywhere]">
+              {t}
+            </p>
+          ))}
+          <p className="text-[15px] font-semibold text-[#e5cb87] tabular-nums" data-testid="r3-togo">
+            {r3.escaped ? 'Escaped' : `${toGo} m to go`}
+          </p>
+        </div>
+        {strip}
+      </div>
+    );
+  }
 
-      {/* Decision time (BLUFF) and the vote: the three vessels and what each does. Buttons unlock in VOTE. */}
-      {(step === 'BLUFF' || step === 'VOTE') && !r3.escaped && (
-        <div className={`${CARD} space-y-4`}>
-          {step === 'VOTE' ? (
-            <div className="flex items-center justify-between gap-2 border-b border-[#3a4157] pb-2">
-              <h4 className="text-lg font-serif font-black text-[#f4f0e8]">Vote now: your crew&apos;s majority decides</h4>
-              <span data-testid="r3-voted-count" className="flex items-center space-x-1.5 text-sm font-mono text-[#e5cb87] font-bold shrink-0">
-                <Users className="w-4 h-4" />
-                <span>
-                  {r3.votedCount ?? 0}/{r3.teamSize}
-                </span>
-              </span>
-            </div>
-          ) : (
-            <div className="p-3 rounded-xl bg-[#161922] border border-[#3a4157] text-center text-sm font-mono text-[#a9b4c7]">
-              <Lock className="w-4 h-4 inline mr-1 text-amber-400" />
-              Voting opens when this timer ends.
-            </div>
-          )}
+  // ---------------------------------------------------------------- VOTE ("Decide")
+  const leash = r3.leash && (r3.leash.available || r3.leash.armed) ? r3.leash : null;
+  const leashTarget = leash?.targetName;
+  const armed = !!leash?.armed || leashVote.locked;
+  return (
+    // Context rides at the top; the boats and Revenge sit in the thumb zone (mt-auto) so nothing jumps between states.
+    <div className="min-h-[calc(100dvh-8rem)] flex flex-col gap-4 pt-1" style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}>
+      {strip}
 
-          <div className="space-y-3">
-            {vessels.map(v => {
-              const st = VESSEL_STYLE[v.id];
-              const picked = vesselVote.choice === v.id;
-              const dim = vesselVote.choice && !picked;
-              return (
-                <button
-                  key={v.id}
-                  type="button"
-                  data-testid={`vessel-${v.id}`}
-                  disabled={!canVote || vesselVote.locked}
-                  onClick={() => castVessel(v.id)}
-                  className={`w-full min-h-[76px] p-4 rounded-xl border-2 text-left flex items-center justify-between gap-2 transition disabled:cursor-not-allowed ${
-                    picked ? `${st.on} shadow-lg` : dim ? 'bg-[#161922] border-[#2a2e3d] opacity-40' : `bg-[#161922] border-[#3a4157] ${canVote ? `${st.hover} active:scale-[0.99]` : ''}`
-                  }`}
-                >
-                  <span className="flex items-center space-x-3 min-w-0">
-                    <span className="text-3xl shrink-0">{VESSEL_EMOJI[v.id]}</span>
-                    <span className="min-w-0">
-                      <span className="font-serif font-black text-lg text-[#f4f0e8] flex flex-wrap items-center gap-x-1.5">
-                        <span>{v.name.toUpperCase()}</span>
-                        <span className={`text-xs font-mono px-1.5 py-0.5 rounded font-bold border ${st.tagBox}`}>{st.tag}</span>
-                      </span>
-                      <span className="block text-sm text-[#cbd5e1] leading-snug" data-testid={v.id === 'SAILBOAT' ? 'sailboat-capacity' : undefined}>
-                        {v.id === 'ROWBOAT' && 'Never capsizes.'}
-                        {v.id === 'SAILBOAT' && `Capsizes (${v.fail} m) when more than 30% of crews select it (> ${cap} ${cap === 1 ? 'crew' : 'crews'}).`}
-                        {v.id === 'GHOST_SHIP' && `Only if exactly 1 crew selects it. 2 or more collide (${pts(v.fail)} m each).`}
-                      </span>
-                    </span>
-                  </span>
-                  <span className={`font-mono text-base font-bold shrink-0 ${st.amount}`}>{pts(v.success)} m</span>
-                </button>
-              );
-            })}
-          </div>
-
-          <VoteFeedback vote={vesselVote} testId="r3-voted" />
-          <ErrorNote text={vesselVote.error} />
-          {vesselVote.status === 'idle' && <p className="text-center text-sm text-[#a9b4c7]">The first vote you cast is final.</p>}
-
-          {r3.leash && (r3.leash.available || r3.leash.armed) && (
-            <div className={`p-4 rounded-xl border transition-all space-y-3 ${r3.leash.armed || leashVote.locked ? 'bg-gradient-to-r from-red-950/80 via-[#16121f] to-red-950/80 border-red-500' : 'bg-[#10121a] border-[#3a4157]/80'}`} data-testid="r3-leash">
-              <div className="flex items-center space-x-2 text-sm font-mono font-bold text-red-300">
-                <Link2 className="w-4 h-4 shrink-0" />
-                <span>🐕‍🦺 STYGIAN LEASH</span>
-                {r3.leash.targetName && (
-                  <>
-                    <span className="text-[#a9b4c7]">➔</span>
-                    <span className="text-[#f4f0e8] underline decoration-red-500 truncate">{r3.leash.targetName}</span>
-                  </>
-                )}
-              </div>
-              <div className="text-sm space-y-1 font-mono text-[#cbd5e1] bg-black/40 p-3 rounded-lg border border-red-500/20">
-                <p className="text-[#f4f0e8]">Once per game, tether the crew that betrayed you for this wave.</p>
-                <div>
-                  <span className="text-emerald-400">• If they float:</span> they lose <strong>50 m</strong>, you gain <strong>50 m</strong>.
-                </div>
-                <div>
-                  <span className="text-amber-400">• If they crash:</span> they lose <strong>100 m</strong>, you gain <strong>100 m</strong>.
-                </div>
-                <div className="text-rose-300 pt-1 border-t border-white/10">
-                  ⚠️ <strong>Do not crash:</strong> if your own boat crashes, the leash snaps and is wasted.
-                </div>
-              </div>
-              {r3.leash.armed && leashVote.status === 'idle' ? (
-                <div className="rounded-xl border border-red-400/60 bg-red-900/40 p-3 text-center text-base font-bold text-red-100">✓ Leash armed</div>
-              ) : (
-                <>
+      {r3.escaped ? (
+        <div data-testid="r3-escaped" className="mt-4 p-6 rounded-2xl bg-emerald-950/40 border border-emerald-500/50 text-center space-y-2">
+          <CheckCircle2 className="w-12 h-12 text-emerald-300 mx-auto" />
+          <h3 className="text-2xl font-serif font-black text-emerald-200">Escaped as #{r3.escapedRank}</h3>
+        </div>
+      ) : (
+        <>
+          {/* Status above, decision below: the prompt sits with the boats it governs. */}
+          <div className="mt-auto space-y-3">
+            <h3 data-testid="r3-step" className="text-xl tracking-normal font-serif font-black text-[#f4f0e8] text-center">
+              Pick your boat.
+            </h3>
+            {/* Three boats side by side so the whole choice fits on one screen without scrolling. */}
+            <div className="grid grid-cols-3 gap-2">
+              {vessels.map(v => {
+                const st = VESSEL_STYLE[v.id];
+                const Icon = VESSEL_ICON[v.id];
+                const picked = vesselVote.choice === v.id;
+                const dim = vesselVote.choice && !picked;
+                return (
                   <button
+                    key={v.id}
                     type="button"
-                    data-testid="arm-leash"
-                    disabled={!canVote || leashVote.locked}
-                    onClick={armLeash}
-                    className={`w-full min-h-[56px] rounded-xl border font-bold text-base transition ${leashVote.locked ? 'bg-red-700/70 border-red-300 text-white' : 'bg-red-900/50 border-red-400/60 text-red-100 active:scale-[0.98]'} disabled:cursor-not-allowed`}
+                    data-testid={`vessel-${v.id}`}
+                    disabled={!canVote || vesselVote.locked}
+                    onClick={() => castVessel(v.id)}
+                    className={`min-w-0 min-h-[176px] px-2 py-3 rounded-2xl border-2 text-center flex flex-col items-center gap-1.5 transition disabled:cursor-not-allowed ${
+                      picked
+                        ? `${st.on} shadow-lg`
+                        : dim
+                          ? 'bg-[#161922] border-[#2a2e3d] opacity-40'
+                          : `bg-[#161922] border-[#3a4157] ${canVote ? `${st.hover} active:scale-[0.98]` : ''}`
+                    }`}
                   >
-                    {leashVote.locked ? '✓ LEASH ARMED' : `ARM STYGIAN LEASH${r3.leash.targetName ? ` on ${r3.leash.targetName}` : ''}`}
+                    <Icon className={`w-9 h-9 shrink-0 ${st.icon}`} />
+                    <span className="block font-serif font-black text-base leading-tight text-[#f4f0e8]">{v.name}</span>
+                    <span className={`font-mono text-lg font-black tabular-nums leading-none ${st.amount}`}>{pts(v.success)} m</span>
+                    <span className="block text-sm text-[#cbd5e1] leading-snug" data-testid={v.id === 'SAILBOAT' ? 'sailboat-capacity' : undefined}>
+                      {v.id === 'ROWBOAT' && 'Always safe.'}
+                      {v.id === 'SAILBOAT' && `Sinks if more than ${cap} ${cap === 1 ? 'crew picks' : 'crews pick'} it.`}
+                      {v.id === 'GHOST_SHIP' && 'Only if no other crew picks it.'}
+                    </span>
                   </button>
-                  <VoteFeedback vote={leashVote} registeredText="Leash registered" testId="r3-leash-registered" />
-                  <ErrorNote text={leashVote.error} />
-                </>
+                );
+              })}
+            </div>
+
+            <div className="min-h-[60px] flex flex-col justify-center gap-2">
+              <VoteFeedback vote={vesselVote} testId="r3-voted" />
+              <ErrorNote text={vesselVote.error} />
+              {vesselVote.status === 'idle' && !vesselVote.error && (
+                <p className="text-base text-center text-[#cbd5e1]">Crew majority decides.</p>
               )}
             </div>
-          )}
-        </div>
+            <div className="flex justify-center">
+              <span data-testid="r3-voted-count" className="text-base font-mono text-[#e5cb87]">
+                {r3.votedCount ?? 0}/{r3.teamSize} voted
+              </span>
+            </div>
+
+            {leash && (
+              <div data-testid="r3-leash" className="space-y-1.5">
+                {/* Quiet outlined toggle: never louder than the chosen boat. */}
+                <button
+                  type="button"
+                  data-testid={armed ? 'r3-leash-registered' : 'arm-leash'}
+                  aria-pressed={armed}
+                  disabled={!canVote || armed}
+                  onClick={armLeash}
+                  className={`w-full min-w-0 min-h-[48px] py-2 px-3 rounded-xl border bg-transparent flex items-center justify-center gap-2 text-base font-bold transition disabled:cursor-not-allowed ${
+                    armed ? 'border-red-300/50 text-red-200' : 'border-[#3a4157] text-[#cbd5e1] active:scale-[0.98]'
+                  }`}
+                >
+                  {leashVote.status === 'sending' ? (
+                    <Loader2 className="w-5 h-5 shrink-0 animate-spin" />
+                  ) : armed ? (
+                    <Check className="w-5 h-5 shrink-0" />
+                  ) : (
+                    <Link2 className="w-5 h-5 shrink-0" />
+                  )}
+                  <span className="leading-tight [overflow-wrap:anywhere]">
+                    {leashVote.status === 'sending' ? 'Arming…' : armed ? 'Revenge armed' : `Take revenge${leashTarget ? ` on ${leashTarget}` : ''}`}
+                  </span>
+                </button>
+                {leashVote.status === 'sending' && leashVote.slow && <p className="text-sm text-amber-300">Still sending. Keep this screen open.</p>}
+                <ErrorNote text={leashVote.error} />
+                <p className="text-sm text-center text-[#cbd5e1]">{leashTarget ? `${leashTarget} loses` : 'They lose'} 50 m, you gain 50 m. Don’t sink.</p>
+              </div>
+            )}
+          </div>
+        </>
       )}
-
-      {sd && sd.resolved && !inSd && (
-        <div className={`${CARD} space-y-2`} data-testid="sd-summary">
-          <span className={LABEL}>Sudden Death</span>
-          <SdReveal teamA={sd.teamA} teamB={sd.teamB} side={sd.side} pickA={sd.pickA} pickB={sd.pickB} winner={sd.winner} winnerSide={sd.winnerSide} text={sd.text} elapsed={Infinity} celebrate={false} />
-        </div>
-      )}
-
-      {lw && (step === 'REVEAL' || step === 'BLUFF' || step === 'VOTE') ? WaveReport : null}
-
-      <div className={`${CARD} space-y-1`}>
-        <span className={LABEL}>The river</span>
-        <Leaders rows={r3.fleet} mine={myName} target={target} />
-      </div>
     </div>
   );
 };

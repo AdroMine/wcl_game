@@ -6,4 +6,4 @@ export { crewSizeOf } from './common.ts';
 export * from './selectors.ts';
 export * from './selectors.ts';
 export type * from './types.ts';
-export { ROLES, DEFAULT_DURATIONS, TEAM_EMOJI_POOL, CODEWORDS } from './config.ts';
+export { DEFAULT_DURATIONS, TEAM_EMOJI_POOL, CODEWORDS } from './config.ts';

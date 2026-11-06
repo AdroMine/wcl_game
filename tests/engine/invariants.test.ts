@@ -190,8 +190,8 @@ test('due(): fires each step exactly once and never before its deadline', () => 
     // a different id for the same, now stale, step is rejected
     assert.equal(h.send(cmds[0].type, cmds[0].actor, cmds[0].payload, { id: 'other-' + guard }), 'STALE');
   }
-  assert.equal(fired.length, 13); // briefing + 3 x 4 steps
-  assert.equal(new Set(fired).size, 13);
+  assert.equal(fired.length, 7); // briefing + 3 x 2 steps (VOTE, DEBRIEF)
+  assert.equal(new Set(fired).size, 7);
   assert.equal(h.state.phase, 'R2_RESULTS');
 });
 

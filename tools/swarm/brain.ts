@@ -75,8 +75,7 @@ async function joinTeamLoop(bot: Bot, world: World, group: number): Promise<void
     const r = await bot.cmd('JOIN_TEAM', { code });
     if (r?.body.ok) return;
     const err = r?.body.error;
-    if (err === 'ROLE_TAKEN') await bot.cmd('REROLL_ROLE', {});
-    else if (err === 'TEAM_FULL' || err === 'UNKNOWN_CODE' || err === 'ALREADY_IN_TEAM') return;
+    if (err === 'TEAM_FULL' || err === 'UNKNOWN_CODE' || err === 'ALREADY_IN_TEAM') return;
     await sleep(300 + bot.rng() * 1200);
   }
 }

@@ -1,5 +1,5 @@
 // Tab 2: "Crews & roster". Crew cards (compact, expandable), the unassigned pool and "Add offline player".
-// No rename, no score or role editing: the admin only moves people and disbands crews in the lobby.
+// No rename or score editing: the admin only moves people and disbands crews in the lobby.
 import React, { useState } from 'react';
 import { ChevronDown, ChevronRight, Trash2, Users } from 'lucide-react';
 import type { AdminPlayer, AdminTeam, AdminViewData } from '../../game/admin';
@@ -26,7 +26,7 @@ export const RosterTab: React.FC<Props> = ({ view, run, busy, ask }) => {
   const matches = (t: AdminTeam) =>
     !needle ||
     t.name.toLowerCase().includes(needle) ||
-    t.battleCode.toLowerCase().includes(needle) ||
+    t.emojiCode.toLowerCase().includes(needle) ||
     membersOf(view, t.id).some(p => p.name.toLowerCase().includes(needle));
   const teams = view.teams.filter(matches);
   const visibleUnassigned = unassigned.filter(p => !needle || p.name.toLowerCase().includes(needle));
@@ -38,7 +38,7 @@ export const RosterTab: React.FC<Props> = ({ view, run, busy, ask }) => {
     <div className="space-y-3" data-testid="tab-roster-body">
       <div className={BOX}>
         <div className={H}>Crews ({view.teams.length})</div>
-        <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search crew, battle code or player" aria-label="Search roster" className={`${INPUT} w-full`} />
+        <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search crew, crew code or player" aria-label="Search roster" className={`${INPUT} w-full`} />
         <div className="grid grid-cols-2 gap-2">
           <button className={BTN} onClick={() => setAll(true)}>
             Expand all
@@ -84,7 +84,7 @@ export const RosterTab: React.FC<Props> = ({ view, run, busy, ask }) => {
                     const full = t.playerIds.length >= MAX_CREW;
                     return (
                       <option key={t.id} value={t.id} disabled={full}>
-                        {trunc(t.name, 22)} ({t.battleCode}) {t.playerIds.length}/{view.crewSize}
+                        {trunc(t.name, 22)} ({t.emojiCode}) {t.playerIds.length}/{view.crewSize}
                         {full ? ' full' : ''}
                       </option>
                     );
@@ -149,7 +149,7 @@ const CrewCard: React.FC<{
         {open ? <ChevronDown className="w-4 h-4 mt-1 shrink-0 text-[#8e95a5]" /> : <ChevronRight className="w-4 h-4 mt-1 shrink-0 text-[#8e95a5]" />}
         <span className="min-w-0 flex-1">
           <span className="block break-words font-serif font-black text-[#f4f0e8]">
-            {t.name} <span className="text-[11px] font-mono font-bold text-[#c4a45a]">[{t.battleCode}]</span>
+            {t.name} <span className="text-[11px] font-mono font-bold text-[#c4a45a]">[{t.emojiCode}]</span>
           </span>
           <span className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs">
             <span className="text-base leading-none">{t.emojiCode}</span>
@@ -169,7 +169,6 @@ const CrewCard: React.FC<{
               <div className="flex items-center gap-2 min-w-0">
                 <Dot on={p.connected} />
                 <span className="font-bold break-words min-w-0">{p.name}</span>
-                <span className="text-[11px] text-[#8e95a5] shrink-0">{p.role}</span>
               </div>
               <div className="grid grid-cols-2 gap-2">
                 <button className={BTN} disabled={busy} onClick={() => void run(`Move ${p.name} to the lobby`, 'ADMIN_MOVE_PLAYER', { playerId: p.id, teamId: null })}>

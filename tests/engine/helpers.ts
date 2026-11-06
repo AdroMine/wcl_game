@@ -75,7 +75,7 @@ export function harness(seed = 1, startNow = 1_000_000): Harness {
   return h;
 }
 
-/** Create `sizes.length` teams; team i has sizes[i] members p<i>_<j> with unique roles where possible. */
+/** Create `sizes.length` teams; team i has sizes[i] members p<i>_<j> with joined in order. */
 export function formTeams(h: Harness, sizes: number[]): string[] {
   const teamIds: string[] = [];
   sizes.forEach((size, i) => {
@@ -85,20 +85,14 @@ export function formTeams(h: Harness, sizes: number[]): string[] {
       h.join(id);
       ids.push(id);
     }
-    // Everyone creates/joins; re-roll roles until unique (bounded).
     const first = ids[0];
     h.ok(h.as(first, 'CREATE_TEAM', { name: `Team ${i}` }), 'create team');
     const tid = h.state.players[first].teamId!;
     teamIds.push(tid);
     for (const pid of ids.slice(1)) {
-      for (let tries = 0; tries < 30; tries++) {
-        const err = h.as(pid, 'JOIN_TEAM', { code: h.state.teams[tid].emojiCode });
-        if (!err) break;
-        if (err === 'TEAM_FULL') break; // beyond the crew size: placed by the admin override below
-        if (err !== 'ROLE_TAKEN') throw new Error(`join failed: ${err}`);
-        h.ok(h.as(pid, 'REROLL_ROLE'), 'reroll');
-      }
-      // Rerolling is random; fall back to the admin override (which ignores role rules).
+      const err = h.as(pid, 'JOIN_TEAM', { code: h.state.teams[tid].emojiCode });
+      if (err && err !== 'TEAM_FULL') throw new Error(`join failed: ${err}`);
+      // Beyond the crew size: placed by the admin override.
       if (h.state.players[pid].teamId !== tid) h.ok(h.admin('ADMIN_MOVE_PLAYER', { playerId: pid, teamId: tid }), `place ${pid}`);
     }
   });
@@ -123,10 +117,10 @@ export function teamVotesR2(h: Harness, teamId: string, vote: 'TRUCE' | 'AMBUSH'
   for (const pid of h.state.teams[teamId].playerIds) h.ok(h.as(pid, 'R2_VOTE', { vote }), `vote ${pid}`);
 }
 
-/** Pair two teams via battle codes, as players would. */
+/** Pair two teams via emoji codes, as players would. */
 export function pairByCode(h: Harness, a: string, b: string): void {
   const p = h.state.teams[a].playerIds[0];
-  h.ok(h.as(p, 'R2_PAIR', { code: h.state.teams[b].battleCode }), 'pair');
+  h.ok(h.as(p, 'R2_PAIR', { code: h.state.teams[b].emojiCode }), 'pair');
 }
 
 /** Run a whole Round 2 where each clash's stances come from `plan(clash, teamId)`. */
@@ -144,7 +138,7 @@ export function playRound2(h: Harness, plan: (clash: number, teamId: string) => 
   }
 }
 
-/** Fast-forward a game that is in R2_RESULTS into R3 wave 1 BLUFF. */
+/** Fast-forward a game that is in R2_RESULTS into R3 wave 1 VOTE. */
 export function toR3(h: Harness): void {
   h.ok(h.admin('ADMIN_START_R3'));
   skipBriefing(h);

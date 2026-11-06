@@ -50,7 +50,7 @@ export function trunc(s: string, n = 24): string {
 }
 
 export function teamLabel(t: AdminTeam, n = 24): string {
-  return `${trunc(t.name, n)} (${t.battleCode})`;
+  return `${trunc(t.name, n)} (${t.emojiCode})`;
 }
 
 export const Modal: React.FC<{ title: string; onClose: () => void; children: React.ReactNode; danger?: boolean; testId?: string }> = ({ title, onClose, children, danger, testId }) => (
@@ -95,7 +95,7 @@ export function medal(rank: number | null | undefined): string {
 
 export const CrewName: React.FC<{ t: AdminTeam }> = ({ t }) => (
   <span className="min-w-0 break-words font-serif font-black text-[#f4f0e8]">
-    {t.name} <span className="text-[11px] font-mono font-bold text-[#c4a45a]">[{t.battleCode}]</span>
+    {t.name} <span className="text-[11px] font-mono font-bold text-[#c4a45a]">[{t.emojiCode}]</span>
   </span>
 );
 

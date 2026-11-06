@@ -1,10 +1,21 @@
-// Test hooks that render the recap against the live game without a player session, for design checks and
-// screenshots: /wrapped-preview?crew=N shows the phone recap of crew number N (0 = first place) and /front-page
-// shows only the front page. Both read the public recap only.
+// Test hooks for design checks and screenshots: /wrapped-preview opens the phone "Underworld Wrap" overlay on fixture data
+// (no server needed; ?crew=1 previews the second fixture crew) and /front-page shows only the front page (live recap).
 import React from 'react';
 import { FrontPagePanel } from './FrontPagePanel.tsx';
-import { useRecap } from './useRecap.ts';
-import { WrappedBody } from './WrappedCards.tsx';
+import type { RecapData } from '../../recap.ts';
+import { WrappedOverlay } from './WrappedCards.tsx';
+
+const crew = (name: string, emoji: string, rank: number, extra: object) => ({ name, emoji, rank, score: 900 - rank * 100, stances: 'TTA', outcomes: 'MDB', escape: 0, metres: [0, 300, 650], ranks: [rank, rank, rank], awards: [], ...extra });
+const FIXTURE = {
+  crews: [crew('The Salty Shades', '🔥🐍🌊', 1, { escape: 1, metres: [0, 400, 1000], ranks: [3, 2, 1] }), crew('Angels of Tartarus', '😇🕊️🌙', 2, { stances: 'TTT', outcomes: 'MDD', escape: 2 }), crew('Late Arrivals', '🐢🐌🕰️', 14, { stances: 'ATT', outcomes: 'BMM' })],
+  betrayal: [{ clash: 1, truce: 30, ambush: 10 }, { clash: 2, truce: 24, ambush: 16 }, { clash: 3, truce: 22, ambush: 18 }],
+  awards: [
+    { id: 'treacherous', title: 'Most Treacherous Crew', emoji: '🗡️', blurb: '', crew: 2, stat: 'ambushed in 1 of 3 clashes' },
+    { id: 'saints', title: 'The True Angel', emoji: '😇', blurb: '', crew: 1, stat: 'Truce every clash, betrayed 2 times each', tied: [2] },
+    { id: 'comeback', title: 'Comeback Crew', emoji: '🚀', blurb: '', crew: 0, stat: 'from 3rd to 1st on the river' },
+  ],
+  teaser: { title: 'A Christmas game is coming', lines: [] },
+} as unknown as RecapData;
 
 const Shell: React.FC<{ children: React.ReactNode }> = ({ children }) => (
   <div className="min-h-screen bg-[#08090c] text-[#f4f0e8]">
@@ -13,13 +24,15 @@ const Shell: React.FC<{ children: React.ReactNode }> = ({ children }) => (
 );
 
 export const WrappedPreview: React.FC = () => {
-  const { recap } = useRecap(true, undefined, undefined);
-  const n = Number(new URLSearchParams(window.location.search).get('crew') ?? 0);
-  if (!recap) return <div className="p-8 text-center text-[#a9b4c7]">Loading the recap…</div>;
-  const c = recap.crews[Math.min(Math.max(0, n), recap.crews.length - 1)];
+  const n = Math.min(2, Math.max(0, Number(new URLSearchParams(window.location.search).get('crew') ?? 0)));
+  const c = FIXTURE.crews[n];
+  const [open, setOpen] = React.useState(true);
   return (
     <Shell>
-      <WrappedBody recap={recap} team={c ? { emojiCode: c.emoji, name: c.name } : undefined} />
+      <button type="button" onClick={() => setOpen(true)} className="w-full min-h-[64px] rounded-2xl bg-[#c4a45a] text-[#08090c] font-serif font-black text-2xl">
+        ✨ Underworld Wrap
+      </button>
+      {open && <WrappedOverlay recap={FIXTURE} team={{ emojiCode: c.emoji, name: c.name }} onClose={() => setOpen(false)} />}
     </Shell>
   );
 };

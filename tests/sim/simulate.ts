@@ -175,9 +175,7 @@ export function runSimulation(opts: SimOptions): SimResult {
         for (const pid of g.slice(1)) {
           const p = state.players[pid];
           if (!p || p.teamId || rnd() > 0.35) continue;
-          const conflict = t.playerIds.length < 5 && t.playerIds.some(m => state.players[m].role === p.role);
-          if (conflict && rnd() < 0.9) out.push(mk('REROLL_ROLE', P(pid), {}));
-          else out.push(mk('JOIN_TEAM', P(pid), { code: t.emojiCode }));
+          out.push(mk('JOIN_TEAM', P(pid), { code: t.emojiCode }));
         }
       }
     });
@@ -262,12 +260,12 @@ export function runSimulation(opts: SimOptions): SimResult {
         const at = range(2, 25);
         const pa = members(a)[int(members(a).length)];
         const pb = members(b)[int(members(b).length)];
-        todo.push({ at, make: () => mk('R2_PAIR', P(pa), { code: state.teams[b]?.battleCode ?? '00' }) });
-        if (rnd() < 0.4) todo.push({ at: at + 3, make: () => mk('R2_PAIR', P(pb), { code: state.teams[a]?.battleCode ?? '00' }) });
+        todo.push({ at, make: () => mk('R2_PAIR', P(pa), { code: state.teams[b]?.emojiCode ?? '00' }) });
+        if (rnd() < 0.4) todo.push({ at: at + 3, make: () => mk('R2_PAIR', P(pb), { code: state.teams[a]?.emojiCode ?? '00' }) });
       }
       // noise: own code, unknown code
       const noisy = members(order[0])[0];
-      todo.push({ at: 1, make: () => mk('R2_PAIR', P(noisy), { code: state.teams[order[0]]?.battleCode ?? '00' }) });
+      todo.push({ at: 1, make: () => mk('R2_PAIR', P(noisy), { code: state.teams[order[0]]?.emojiCode ?? '00' }) });
       todo.push({ at: 2, make: () => mk('R2_PAIR', P(noisy), { code: '07' }) });
       if (order.length % 2 === 1) todo.push({ at: 40, make: () => mk('ADMIN_R2_FORCE_START', ADMIN, {}) });
       // move the late joiners into teams
@@ -300,15 +298,15 @@ export function runSimulation(opts: SimOptions): SimResult {
       phaseTick0 = tick;
       todo.length = 0;
       const step = state.step;
-      if (state.clash === 1 && step === 'HUDDLE') {
+      if (state.clash === 1 && step === 'VOTE') {
         for (const tid of state.teamOrder) personality[tid] = [0.05, 0.3, 0.6, 0.95][int(4)];
       }
-      if (step === 'BRIEFING' || step === 'HUDDLE' || step === 'PARLEY') {
+      if (step === 'BRIEFING' || step === 'DEBRIEF') {
         // votes outside the window must be refused
         const stray = ids[int(N - 10)];
         todo.push({ at: 3, make: () => mk('R2_VOTE', P(stray), { vote: 'TRUCE' }) });
       }
-      if (step === 'PARLEY' && state.clash === 2) {
+      if (step === 'VOTE' && state.clash === 2) {
         todo.push({ at: 5, make: () => mk('ADMIN_PAUSE', ADMIN, {}) });
         pauseResumeAt = tick + 5 + 15;
       }
@@ -318,7 +316,7 @@ export function runSimulation(opts: SimOptions): SimResult {
           for (const pid of members(tid)) {
             if (rnd() < 0.12) continue; // never votes
             const v = rnd() < personality[tid] ? 'AMBUSH' : 'TRUCE';
-            const at = int(22);
+            const at = int(40);
             todo.push({ at, make: () => mk('R2_VOTE', P(pid), { vote: v }) });
             if (rnd() < 0.1) todo.push({ at: at + 1 + int(2), make: () => mk('R2_VOTE', P(pid), { vote: v === 'AMBUSH' ? 'TRUCE' : 'AMBUSH' }) });
           }
@@ -353,7 +351,7 @@ export function runSimulation(opts: SimOptions): SimResult {
       todo.length = 0;
       const step = state.step;
       if (step === 'BRIEFING') todo.push({ at: 2, make: () => mk('R3_VOTE', P(ids[int(N - 10)]), { vessel: 'ROWBOAT' }) });
-      if (step === 'BLUFF' && state.wave === 1) {
+      if (step === 'VOTE' && state.wave === 1) {
         for (const tid of state.teamOrder) {
           const a = rnd();
           const b = rnd();
@@ -372,11 +370,11 @@ export function runSimulation(opts: SimOptions): SimResult {
             if (rnd() < 0.1) continue;
             const x = rnd() * total;
             const vessel = x < w[0] ? 'ROWBOAT' : x < w[0] + w[1] ? 'SAILBOAT' : 'GHOST_SHIP';
-            todo.push({ at: int(17), make: () => mk('R3_VOTE', P(pid), { vessel }) });
+            todo.push({ at: int(50), make: () => mk('R3_VOTE', P(pid), { vessel }) });
           }
           if (t3.leashHolder && !t3.leashUsed && rnd() < 0.7) {
             const who = members(tid)[int(members(tid).length)];
-            todo.push({ at: int(10), make: () => mk('R3_ARM_LEASH', P(who), {}) });
+            todo.push({ at: int(40), make: () => mk('R3_ARM_LEASH', P(who), {}) });
           }
           if (t3.escaped && rnd() < 0.3) todo.push({ at: 4, make: () => mk('R3_VOTE', P(members(tid)[0]), { vessel: 'ROWBOAT' }) });
         }
@@ -397,7 +395,7 @@ export function runSimulation(opts: SimOptions): SimResult {
         }
         sdVoteTick = tick;
       }
-      if (state.phase === 'R3_ACTIVE' && state.wave >= 30 && step === 'BLUFF') {
+      if (state.phase === 'R3_ACTIVE' && state.wave >= 30 && step === 'VOTE') {
         todo.push({ at: 1, make: () => mk('ADMIN_END_R3', ADMIN, {}) });
       }
       if (state.phase === 'R3_RESULTS' && step === null) todo.push({ at: 6, make: () => mk('ADMIN_FINISH', ADMIN, {}) });
@@ -494,13 +492,16 @@ export function runSimulation(opts: SimOptions): SimResult {
       opts.onTick?.(state, tick, now);
       break;
     }
-    if (opts.shuffle && state.phase !== 'LOBBY' && state.phase !== 'R2_PAIRING') {
-      // Independent player commands may arrive in any order within a tick; admin commands stay first
+    if (state.phase !== 'LOBBY' && state.phase !== 'R2_PAIRING') {
+      // Admin commands (e.g. a pause) always apply first within a tick, shuffled or not, so a vote in the same
+      // tick as a pause is refused in both runs; independent player commands may then arrive in any order.
       const admin = cmds.filter(c => c.actor.kind === 'admin');
       const players = cmds.filter(c => c.actor.kind !== 'admin');
-      for (let i = players.length - 1; i > 0; i--) {
-        const j = Math.floor(chaos() * (i + 1));
-        [players[i], players[j]] = [players[j], players[i]];
+      if (opts.shuffle) {
+        for (let i = players.length - 1; i > 0; i--) {
+          const j = Math.floor(chaos() * (i + 1));
+          [players[i], players[j]] = [players[j], players[i]];
+        }
       }
       cmds = [...admin, ...players];
     }
@@ -568,7 +569,7 @@ function checkInvariants(s: GameState, firstVote: Map<string, string>, failures:
     if (n > allowed) fail(`step entered ${n} times: ${k}`);
   }
   const r2Steps = s.phaseLog.filter(e => e.phase === 'R2_CLASH').length;
-  if (r2Steps !== 13 && s.r2.matches && Object.keys(s.r2.matches).length > 0) fail(`expected 13 R2 steps (briefing + 12), saw ${r2Steps}`);
+  if (r2Steps !== 7 && s.r2.matches && Object.keys(s.r2.matches).length > 0) fail(`expected 7 R2 steps (briefing + 3 x VOTE, DEBRIEF), saw ${r2Steps}`);
 
   // each round opens with a BRIEFING step of the content-derived length, and its real clock starts when it ends
   const briefingEnds = (phase: string, secs: number): void => {

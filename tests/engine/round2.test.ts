@@ -11,7 +11,7 @@ import type { Clash } from '../../server/engine/index.ts';
 
 // ---- golden values ported from tests/test_round2.ts ----------------------------------------
 
-test('golden: team stance is a majority of cast votes; tie -> TRUCE; no role effect', () => {
+test('golden: team stance is a majority of cast votes; tie -> TRUCE', () => {
   const ids = ['p1', 'p2', 'p3', 'p4', 'p5'];
   assert.equal(calculateTeamStance({ p1: 'TRUCE', p2: 'TRUCE', p3: 'TRUCE', p4: 'AMBUSH', p5: 'AMBUSH' }, ids), 'TRUCE');
   assert.equal(calculateTeamStance({ p1: 'TRUCE', p2: 'AMBUSH', p3: 'AMBUSH', p4: 'AMBUSH', p5: 'AMBUSH' }, ids), 'AMBUSH');
@@ -85,12 +85,10 @@ function r2(sizes = [5, 5, 4, 3]): { h: Harness; t: string[] } {
 test('pairing: own code, unknown code, bad format, already paired, same pairing is a no-op', () => {
   const { h, t } = r2();
   const p0 = h.state.teams[t[0]].playerIds[0];
-  assert.equal(h.as(p0, 'R2_PAIR', { code: h.state.teams[t[0]].battleCode }), 'OWN_CODE');
-  assert.equal(h.as(p0, 'R2_PAIR', { code: '5' }), 'INVALID_CODE');
-  assert.equal(h.as(p0, 'R2_PAIR', { code: 'ab' }), 'INVALID_CODE');
-  const used = new Set(Object.values(h.state.teams).map(x => x.battleCode));
-  const unknown = Array.from({ length: 90 }, (_, i) => String(10 + i)).find(c => !used.has(c))!;
-  assert.equal(h.as(p0, 'R2_PAIR', { code: unknown }), 'UNKNOWN_CODE');
+  assert.equal(h.as(p0, 'R2_PAIR', { code: h.state.teams[t[0]].emojiCode }), 'OWN_CODE');
+  assert.equal(h.as(p0, 'R2_PAIR', { code: '  ' }), 'INVALID_CODE');
+  assert.equal(h.as(p0, 'R2_PAIR', { code: '07' }), 'UNKNOWN_CODE');
+  assert.equal(h.as(p0, 'R2_PAIR', { code: '🔥🔥🔥🔥🔥🔥' }), 'UNKNOWN_CODE');
   pairByCode(h, t[0], t[1]);
   const v = h.state.version;
   // the rival can re-enter the same pairing from the other side, and so can the first team
@@ -98,8 +96,8 @@ test('pairing: own code, unknown code, bad format, already paired, same pairing 
   pairByCode(h, t[0], t[1]);
   assert.equal(h.state.version, v);
   // either side already paired -> error
-  assert.equal(h.as(h.state.teams[t[2]].playerIds[0], 'R2_PAIR', { code: h.state.teams[t[0]].battleCode }), 'ALREADY_PAIRED');
-  assert.equal(h.as(h.state.teams[t[0]].playerIds[1], 'R2_PAIR', { code: h.state.teams[t[2]].battleCode }), 'ALREADY_PAIRED');
+  assert.equal(h.as(h.state.teams[t[2]].playerIds[0], 'R2_PAIR', { code: h.state.teams[t[0]].emojiCode }), 'ALREADY_PAIRED');
+  assert.equal(h.as(h.state.teams[t[0]].playerIds[1], 'R2_PAIR', { code: h.state.teams[t[2]].emojiCode }), 'ALREADY_PAIRED');
   assert.equal(h.state.phase, 'R2_PAIRING');
 });
 
@@ -112,11 +110,13 @@ test('pairing: clash 1 starts automatically once every team is paired', () => {
   assert.equal(h.state.step, 'BRIEFING');
   assert.equal(h.state.clash, 1);
   assert.equal(h.state.endsAt, h.now + briefingSeconds(2) * 1000);
-  // the briefing plays first: no votes; the global clash clock (HUDDLE 50 s) starts when it ends
+  // the briefing plays first: no votes; the global clash clock (VOTE 60 s: talk and vote) starts when it ends
   assert.equal(h.as(h.state.teams[t[0]].playerIds[0], 'R2_VOTE', { vote: 'TRUCE' }), 'WRONG_PHASE');
   h.nextDeadline();
-  assert.equal(h.state.step, 'HUDDLE');
-  assert.equal(h.state.endsAt, h.now + 50_000);
+  assert.equal(h.state.step, 'VOTE');
+  assert.equal(h.state.endsAt, h.now + 60_000);
+  // voting is open from the very first second of the clash
+  h.ok(h.as(h.state.teams[t[0]].playerIds[0], 'R2_VOTE', { vote: 'TRUCE' }));
 });
 
 test('briefing: admin skip step skips the Round 2 briefing', () => {
@@ -125,8 +125,8 @@ test('briefing: admin skip step skips the Round 2 briefing', () => {
   pairByCode(h, t[2], t[3]);
   h.tick(2);
   h.ok(h.admin('ADMIN_SKIP_STEP'));
-  assert.equal(h.state.step, 'HUDDLE');
-  assert.equal(h.state.endsAt, h.now + 50_000);
+  assert.equal(h.state.step, 'VOTE');
+  assert.equal(h.state.endsAt, h.now + 60_000);
 });
 
 test('pairing: admin force start leaves unpaired teams out, admin can pair/unpair/auto-pair', () => {
@@ -205,7 +205,7 @@ test('bye: state survives a JSON round trip and an old snapshot without r2.bye r
   assert.equal(gameStateProblem(copy), null);
 });
 
-test('timeline: 3 clashes x HUDDLE 50, PARLEY 40, VOTE 25, DEBRIEF 40 on one global clock', () => {
+test('timeline: 3 clashes x VOTE 60 (talk and vote), DEBRIEF 15 on one global clock', () => {
   const { h, t } = r2([5, 5]);
   pairByCode(h, t[0], t[1]);
   const start = h.now;
@@ -218,9 +218,9 @@ test('timeline: 3 clashes x HUDDLE 50, PARLEY 40, VOTE 25, DEBRIEF 40 on one glo
   }
   assert.deepEqual(seen, [
     `1:BRIEFING:${briefingSeconds(2)}`,
-    '1:HUDDLE:50', '1:PARLEY:40', '1:VOTE:25', '1:DEBRIEF:40',
-    '2:HUDDLE:50', '2:PARLEY:40', '2:VOTE:25', '2:DEBRIEF:40',
-    '3:HUDDLE:50', '3:PARLEY:40', '3:VOTE:25', '3:DEBRIEF:40',
+    '1:VOTE:60', '1:DEBRIEF:15',
+    '2:VOTE:60', '2:DEBRIEF:15',
+    '3:VOTE:60', '3:DEBRIEF:15',
   ]);
   assert.equal(h.state.phase, 'R2_RESULTS');
   assert.equal(h.state.endsAt, null);
@@ -229,8 +229,6 @@ test('timeline: 3 clashes x HUDDLE 50, PARLEY 40, VOTE 25, DEBRIEF 40 on one glo
 test('no early advance: everyone voting does not move the clock', () => {
   const { h, t } = r2([5, 5]);
   pairByCode(h, t[0], t[1]);
-  h.nextDeadline();
-  h.nextDeadline();
   h.nextDeadline(); // now VOTE
   assert.equal(h.state.step, 'VOTE');
   const ends = h.state.endsAt;
@@ -246,11 +244,7 @@ test('votes: only during VOTE, first vote is final, closed at the deadline', () 
   pairByCode(h, t[0], t[1]);
   const p = h.state.teams[t[0]].playerIds[0];
   assert.equal(h.as(p, 'R2_VOTE', { vote: 'TRUCE' }), 'WRONG_PHASE'); // BRIEFING
-  h.nextDeadline();
-  assert.equal(h.as(p, 'R2_VOTE', { vote: 'TRUCE' }), 'WRONG_PHASE'); // HUDDLE
-  h.nextDeadline();
-  assert.equal(h.as(p, 'R2_VOTE', { vote: 'TRUCE' }), 'WRONG_PHASE'); // PARLEY
-  h.nextDeadline();
+  h.nextDeadline(); // VOTE: open from the first second
   assert.equal(h.as(p, 'R2_VOTE', { vote: 'MAYBE' }), 'INVALID_PAYLOAD');
   h.ok(h.as(p, 'R2_VOTE', { vote: 'TRUCE' }));
   const v = h.state.version;
@@ -266,8 +260,6 @@ test('unpaired team members cannot vote', () => {
   pairByCode(h, t[0], t[1]);
   h.ok(h.admin('ADMIN_R2_FORCE_START'));
   h.nextDeadline();
-  h.nextDeadline();
-  h.nextDeadline();
   assert.equal(h.as(h.state.teams[t[2]].playerIds[0], 'R2_VOTE', { vote: 'TRUCE' }), 'NOT_PAIRED');
 });
 
@@ -275,8 +267,6 @@ test('scoring: applied exactly once per clash at the end of VOTE; score = R1 + R
   const { h, t } = r2([5, 5]);
   addPoints(h, t[0], 40);
   pairByCode(h, t[0], t[1]);
-  h.nextDeadline();
-  h.nextDeadline();
   h.nextDeadline();
   teamVotesR2(h, t[0], 'AMBUSH');
   teamVotesR2(h, t[1], 'TRUCE');
@@ -324,8 +314,6 @@ test('match view: during VOTE only counts, never anyone\'s vote; results reveale
   const { h, t } = r2([5, 5]);
   pairByCode(h, t[0], t[1]);
   h.nextDeadline();
-  h.nextDeadline();
-  h.nextDeadline();
   const [a, b, c] = h.state.teams[t[0]].playerIds;
   h.ok(h.as(a, 'R2_VOTE', { vote: 'AMBUSH' }));
   h.ok(h.as(b, 'R2_VOTE', { vote: 'AMBUSH' }));
@@ -356,7 +344,23 @@ test('a pause during a clash shifts the deadline and due() returns nothing', () 
   h.ok(h.admin('ADMIN_RESUME'));
   assert.equal(h.state.endsAt, ends + 600_000);
   assert.equal(h.runDue(), 0);
-  h.tick(40);
+  h.tick(50);
   assert.equal(h.runDue(), 1);
-  assert.equal(h.state.step, 'PARLEY');
+  assert.equal(h.state.step, 'DEBRIEF');
+});
+
+test('pairing: the rival code is matched like JOIN_TEAM (variation selectors, spaces) and old shield codes still pair', () => {
+  const { h, t } = r2();
+  const [a, b, c, d] = t;
+  const p = h.state.teams[a].playerIds[0];
+  const code = h.state.teams[b].emojiCode;
+  const spaced = Array.from(code).join(' ');
+  h.ok(h.as(p, 'R2_PAIR', { code: spaced }), 'pair with spaces');
+  assert.ok(h.state.r2.matchOfTeam[a]);
+  // an old snapshot's team whose code contains the retired shield emoji
+  h.state.teams[c].emojiCode = '🛡️🔥💀';
+  h.state.teams[c].battleCode = '42';
+  const pd = h.state.teams[d].playerIds[0];
+  h.ok(h.as(pd, 'R2_PAIR', { code: '🛡🔥💀' }), 'pair with legacy shield code');
+  assert.equal(h.state.r2.matchOfTeam[c], h.state.r2.matchOfTeam[d]);
 });

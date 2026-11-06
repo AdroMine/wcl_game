@@ -18,11 +18,12 @@ const PHASE_LABEL: Record<string, string> = {
   FINISHED: 'Finished',
 };
 const STEP_LABEL: Record<string, string> = {
-  HUDDLE: 'Huddle',
-  PARLEY: 'Dialogue',
-  VOTE: 'Vote',
+  VOTE: 'Talk & vote', // Round 2 clash; Round 3 wave shows 'Decide' (see stepLabel)
   DEBRIEF: 'Reveal',
-  BLUFF: 'Bluff',
+  // Deprecated steps: only seen on a very old snapshot that was not yet restored into VOTE.
+  HUDDLE: 'Talk & vote',
+  PARLEY: 'Talk & vote',
+  BLUFF: 'Decide',
   REVEAL: 'Reveal',
   SUDDEN_DEATH: 'Sudden Death',
 };
@@ -32,7 +33,8 @@ export function phaseBase(p: AdminViewData['phase']): string {
   if (p.name === 'R3_ACTIVE') return `Round 3 · Wave ${p.wave}`;
   return PHASE_LABEL[p.name] ?? p.name;
 }
-export function stepLabel(step: string | null): string {
+export function stepLabel(step: string | null, phaseName?: string): string {
+  if (step === 'VOTE' && phaseName === 'R3_ACTIVE') return 'Decide';
   return step ? (step === 'BRIEFING' ? 'Briefing' : STEP_LABEL[step] ?? step) : '';
 }
 
@@ -102,7 +104,7 @@ export const AdminHeader: React.FC<Props> = ({ view, health, light, leftMs, busy
               {phase ? (
                 <>
                   {phaseBase(phase)}
-                  {phase.step && !briefing ? ` · ${stepLabel(phase.step)}` : ''}
+                  {phase.step && !briefing ? ` · ${stepLabel(phase.step, phase.name)}` : ''}
                   {briefing ? ' · Briefing' : ''}
                   {leftMs !== null && (
                     <>

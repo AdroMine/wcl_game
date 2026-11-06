@@ -82,9 +82,9 @@ test('payloads: enums and codes', () => {
   assert.equal(validatePlayerPayload('R1_HINT', { hint: 4 }).ok, false);
   assert.equal(validatePlayerPayload('R1_HINT', { hint: '1' }).ok, false);
   assert.ok(validatePlayerPayload('R1_HINT', { hint: 2 }).ok);
-  assert.ok(validatePlayerPayload('R2_PAIR', { code: ' 07 ' }).ok);
-  assert.equal(validatePlayerPayload('R2_PAIR', { code: '7' }).ok, false);
-  assert.equal(validatePlayerPayload('R2_PAIR', { code: '123' }).ok, false);
+  assert.ok(validatePlayerPayload('R2_PAIR', { code: ' 🔥💀⚡ ' }).ok);
+  assert.equal(validatePlayerPayload('R2_PAIR', { code: '' }).ok, false);
+  assert.equal(validatePlayerPayload('R2_PAIR', { code: 7 }).ok, false);
   assert.equal(validatePlayerPayload('R3_VOTE', { vessel: 'SUBMARINE' }).ok, false);
   assert.ok(validatePlayerPayload('R3_VOTE', { vessel: 'GHOST_SHIP' }).ok);
   assert.ok(validatePlayerPayload('SD_VOTE', { action: 'RAM' }).ok);

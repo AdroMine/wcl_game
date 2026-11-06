@@ -1,14 +1,12 @@
 // Pure selectors the server uses to build views. They never return tokenHash, codewords, other
 // teams' votes before reveal, or admin data. Everything returned is plain JSON.
-import { R3, ROLES, ROLE_IDS, ROUND1_HINT_COST } from './config.ts';
-import { crewSizeOf, uniqueRoleSlots } from './common.ts';
+import { R3, ROUND1_HINT_COST } from './config.ts';
+import { crewSizeOf } from './common.ts';
 import { r1ElapsedSeconds } from './clock.ts';
 import { ROUND1_HINTS, parseTabletCodeword } from './round1.ts';
 import { r3ActiveTeamIds, sailboatCapacity } from './round3.ts';
 import { normalizeEmojiCode } from './teamCodes.ts';
-import type { ErrorCode, GameState, MoralStatus, Phase, RoleId, SdAction, Stance, Step, Vessel, WaveReport } from './types.ts';
-
-const roleName = (id: RoleId): string => ROLES.find(r => r.id === id)?.name ?? id;
+import type { ErrorCode, GameState, MoralStatus, Phase, SdAction, Stance, Step, Vessel, WaveReport } from './types.ts';
 
 // ---- phase ------------------------------------------------------------------
 
@@ -46,10 +44,8 @@ export interface TeamPublic {
   id: string;
   name: string;
   emojiCode: string;
-  battleCode: string;
   size: number;
-  members: { playerId: string; name: string; role: RoleId; roleName: string }[];
-  missingRoles: RoleId[];
+  members: { playerId: string; name: string }[];
   score: number;
 }
 
@@ -58,17 +54,14 @@ export function teamPublic(state: GameState, teamId: string): TeamPublic | null 
   if (!t) return null;
   const members = t.playerIds.map(pid => {
     const p = state.players[pid];
-    return { playerId: pid, name: p.name, role: p.role, roleName: roleName(p.role) };
+    return { playerId: pid, name: p.name };
   });
-  const present = new Set(members.map(m => m.role));
   return {
     id: t.id,
     name: t.name,
     emojiCode: t.emojiCode,
-    battleCode: t.battleCode,
     size: members.length,
     members,
-    missingRoles: ROLE_IDS.filter(r => !present.has(r)),
     score: t.score,
   };
 }
@@ -81,15 +74,12 @@ export interface TeamPreview {
   maxMembers: number;
   isFull: boolean;
   leaderName: string;
-  members: { name: string; role: RoleId; roleName: string }[];
-  hasRoleConflict: boolean;
-  conflictingRoleName?: string;
+  members: { name: string }[];
 }
 
 export function previewTeamByEmoji(
   state: GameState,
   code: string,
-  playerId?: string,
 ): { ok: true; preview: TeamPreview } | { ok: false; error: ErrorCode } {
   const target = normalizeEmojiCode(code);
   if (!target) return { ok: false, error: 'INVALID_CODE' };
@@ -97,10 +87,8 @@ export function previewTeamByEmoji(
   if (!team) return { ok: false, error: 'UNKNOWN_CODE' };
   const members = team.playerIds.map(pid => {
     const p = state.players[pid];
-    return { name: p.name, role: p.role, roleName: roleName(p.role) };
+    return { name: p.name };
   });
-  const me = playerId ? state.players[playerId] : undefined;
-  const conflict = !!me && members.length < uniqueRoleSlots(state) && members.some(m => m.role === me.role);
   return {
     ok: true,
     preview: {
@@ -112,8 +100,6 @@ export function previewTeamByEmoji(
       isFull: members.length >= crewSizeOf(state),
       leaderName: members[0]?.name ?? 'Captain',
       members,
-      hasRoleConflict: conflict,
-      ...(conflict && me ? { conflictingRoleName: roleName(me.role) } : {}),
     },
   };
 }
@@ -123,8 +109,6 @@ export function previewTeamByEmoji(
 export interface PlayerPrivate {
   playerId: string;
   name: string;
-  role: RoleId;
-  roleName: string;
   teamId: string | null;
   /** Only this player's own piece (slot) of the crew's tablet, only during Round 1. */
   r1: { slot: number; slotCount: number } | null;
@@ -160,8 +144,6 @@ export function playerPrivate(state: GameState, playerId: string): PlayerPrivate
   return {
     playerId,
     name: p.name,
-    role: p.role,
-    roleName: roleName(p.role),
     teamId: p.teamId,
     r1,
     myVote: { r2, r3, sd },

@@ -2,9 +2,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  checkTeamRoleCompatibility,
   formatEmojiCodeLabels,
-  generateBattleCode,
   generateTeamEmojiCode,
   normalizeEmojiCode,
   parseEmojiCode,
@@ -13,11 +11,11 @@ import { TEAM_EMOJI_LABELS, TEAM_EMOJI_POOL } from '../../server/engine/config.t
 import { rngInt, rngNext, rngShuffle, seedToState } from '../../server/engine/rng.ts';
 import { nextId } from '../../server/engine/ids.ts';
 
-test('5-emoji pool and labels', () => {
-  assert.equal(TEAM_EMOJI_POOL.length, 5);
-  assert.deepEqual([...TEAM_EMOJI_POOL], ['🔥', '💀', '⚡', '🌊', '🛡️']);
+test('4-emoji pool and labels (the shield is retired but old codes still parse)', () => {
+  assert.equal(TEAM_EMOJI_POOL.length, 4);
+  assert.deepEqual([...TEAM_EMOJI_POOL], ['🔥', '💀', '⚡', '🌊']);
   assert.equal(TEAM_EMOJI_LABELS['🔥'], 'Fire');
-  assert.equal(TEAM_EMOJI_LABELS['🛡️'], 'Shield');
+  assert.equal(TEAM_EMOJI_LABELS['🛡️'], undefined);
 });
 
 test('normalisation and parsing', () => {
@@ -42,37 +40,16 @@ test('50 unique emoji codes without collision', () => {
   assert.equal(seen.size, 50);
 });
 
-test('all 125 three-emoji codes can be allocated, then it expands to four', () => {
+test('all 64 three-emoji codes can be allocated, then it expands to four', () => {
   const rng = { rng: seedToState(9) };
   const seen = new Set<string>();
-  for (let i = 0; i < 125; i++) {
+  for (let i = 0; i < 64; i++) {
     const code = generateTeamEmojiCode(rng, seen);
     assert.equal(Array.from(normalizeEmojiCode(code)).length, 3);
     seen.add(normalizeEmojiCode(code));
   }
-  assert.equal(seen.size, 125);
+  assert.equal(seen.size, 64);
   assert.equal(Array.from(normalizeEmojiCode(generateTeamEmojiCode(rng, seen))).length, 4);
-});
-
-test('battle codes: 2 digits 10-99, unique, 90 available then null', () => {
-  const rng = { rng: seedToState(3) };
-  const seen = new Set<string>();
-  for (let i = 0; i < 90; i++) {
-    const c = generateBattleCode(rng, seen)!;
-    assert.match(c, /^[1-9]\d$/);
-    assert.ok(!seen.has(c));
-    seen.add(c);
-  }
-  assert.equal(generateBattleCode(rng, seen), null);
-});
-
-test('role compatibility', () => {
-  const names = { navigator: 'Navigator', oracle: 'Oracle', scholar: 'Scholar', torchbearer: 'Torchbearer', negotiator: 'Negotiator' };
-  const roles = ['navigator', 'oracle', 'scholar'];
-  assert.equal(checkTeamRoleCompatibility(roles, 'torchbearer', names).compatible, true);
-  const dup = checkTeamRoleCompatibility(roles, 'oracle', names);
-  assert.equal(dup.compatible, false);
-  assert.equal(dup.conflictingRoleName, 'Oracle');
 });
 
 test('rng is deterministic and well spread; shuffle is a permutation', () => {

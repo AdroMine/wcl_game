@@ -54,6 +54,8 @@ export interface RecapAward {
   crew: number;
   /** A short computed line, e.g. "ambushed 3 of 3 clashes". */
   stat: string;
+  /** Other crews sharing the award (a tie), as crew indexes. */
+  tied?: number[];
 }
 
 /** One escape place on the front page. */
@@ -91,7 +93,7 @@ export interface FrontPage {
     sailboatSunk: number;
     sailboatCapsizedWaves: number;
   };
-  /** Closing quote: the Most Treacherous crew (or the Saints), null when neither award exists. */
+  /** Closing quote: the Most Treacherous crew (or the True Angel), null when neither award exists. */
   quote: { label: string; crew: number; line: string } | null;
 }
 
@@ -323,12 +325,14 @@ export function buildRecap(s: GameState): RecapData {
     if (i >= 0) give('treacherous', i, `ambushed in ${count(crews[i].stances, 'A')} of ${count(crews[i].stances, 'A') + count(crews[i].stances, 'T')} clashes`);
   }
   {
-    const faithful = (c: number) => crews[c].rival >= 0 && count(crews[c].stances, 'T') === nClash;
-    const i = best(c => (faithful(c) ? 1 + count(crews[c].outcomes, 'D') : -1), 1);
-    if (i >= 0) {
-      const n = crews.filter((_, c) => faithful(c)).length;
-      const b = count(crews[i].outcomes, 'D');
-      give('saints', i, `Truce all ${nClash} clashes${b > 0 ? `, betrayed ${b === 1 ? 'once' : `${b} times`}` : ''} (${plural(n, 'crew')} kept the faith)`);
+    // The True Angel: truce in every clash although the rival ambushed at least once. Most betrayals absorbed wins; a tie names every tied crew.
+    const angel = (c: number) => (crews[c].rival >= 0 && count(crews[c].stances, 'T') === nClash ? count(crews[c].outcomes, 'D') : 0);
+    const top = Math.max(0, ...crews.map((_, c) => angel(c)));
+    const tied = top > 0 ? crews.map((_, c) => c).filter(c => angel(c) === top) : [];
+    if (tied.length > 0) {
+      const times = top === 1 ? 'once' : `${top} times`;
+      give('saints', tied[0], `Truce every clash, betrayed ${times}${tied.length > 1 ? ' each' : ''}`);
+      if (tied.length > 1) awards[awards.length - 1].tied = tied.slice(1);
     }
   }
   {
@@ -406,7 +410,7 @@ export function buildRecap(s: GameState): RecapData {
     if (caps > 0) headlines.push(`The Sailboat capsized in ${caps} of ${plural(W, 'wave')}.`);
   }
   const leashHits = leashes.filter(l => l.holderDelta > 0).length;
-  if (leashHits > 0) headlines.push(`${plural(leashHits, 'Stygian Leash', 'Stygian Leashes')} landed.`);
+  if (leashHits > 0) headlines.push(`${plural(leashHits, 'Revenge', 'Revenges')} landed.`);
   const escaped = crews.filter(c => c.escape > 0).length;
   if (W > 0) headlines.push(`${plural(escaped, 'crew')} escaped Tartarus in ${plural(W, 'wave')}.`);
 

@@ -32,8 +32,8 @@ test('command dedupe over HTTP: the same commandId applies once, both calls repo
   assert.equal(c.body.error, 'ALREADY_IN_TEAM');
   // a duplicate of a rejected command reports ok (deduped) without changing anything
   const rej = cid();
-  const r1 = await p.cmd('REROLL_ROLE', {}, rej);
-  const r2 = await p.cmd('REROLL_ROLE', {}, rej);
+  const r1 = await p.cmd('CREATE_TEAM', {}, rej);
+  const r2 = await p.cmd('CREATE_TEAM', {}, rej);
   assert.equal(r1.body.error, 'ALREADY_IN_TEAM');
   assert.ok(r2.body.ok);
 });
@@ -60,9 +60,9 @@ test('auth: bad token and unknown player are 401; malformed bodies are 400; bad 
   await p.join();
   const bad = new Player(srv.url, 3);
   (bad as { token: string }).token = 'wrong-token-wrong-token-wrong';
-  assert.equal((await bad.cmd('REROLL_ROLE')).status, 401);
+  assert.equal((await bad.cmd('LEAVE_TEAM')).status, 401);
   const ghost = new Player(srv.url, 999);
-  const g = await ghost.cmd('REROLL_ROLE');
+  const g = await ghost.cmd('LEAVE_TEAM');
   assert.equal(g.status, 401);
   assert.equal(g.body.error, 'UNAUTHORIZED');
   const post = (body: string) => fetch(`${srv.url}/api/command`, { method: 'POST', body });
@@ -169,15 +169,15 @@ test('rate limit: per-player command bucket returns 429 RATE_LIMITED', async () 
     const p = new Player(s.url, 1);
     await p.join();
     const codes: number[] = [];
-    for (let i = 0; i < 12; i++) codes.push((await p.cmd('REROLL_ROLE')).status);
+    for (let i = 0; i < 12; i++) codes.push((await p.cmd('LEAVE_TEAM')).status);
     assert.ok(codes.filter(c => c === 429).length >= 5, JSON.stringify(codes));
-    const last = await p.cmd('REROLL_ROLE');
+    const last = await p.cmd('LEAVE_TEAM');
     assert.equal(last.status, 429);
     assert.equal(last.body.error, 'RATE_LIMITED');
     // another player is unaffected
     const q = new Player(s.url, 2);
     await q.join();
-    assert.equal((await q.cmd('REROLL_ROLE')).status, 200);
+    assert.equal((await q.cmd('LEAVE_TEAM')).status, 200);
   } finally {
     await s.cleanup();
   }
@@ -217,9 +217,8 @@ test('/api/meta is static and cacheable; views do not repeat it', async () => {
   const res = await fetch(`${srv.url}/api/meta`);
   assert.equal(res.headers.get('cache-control'), 'public, max-age=300');
   const meta = (await res.json()) as Meta;
-  assert.equal(meta.roles.length, 5);
   assert.ok(meta.rounds.length === 3 && meta.rounds[0].sentences.length > 0);
-  assert.ok(meta.emojiPool.length === 5);
+  assert.ok(meta.emojiPool.length === 4);
   // briefing length per round comes from the shared reading schedule
   for (const r of meta.rounds) assert.equal(r.briefingSeconds, Math.ceil(briefingSchedule(r).totalMs / 1000));
   // Round 2 stakes per clash
@@ -249,7 +248,7 @@ test('/health has the documented fields and no secrets', async () => {
   assert.equal(typeof h.p99ApplyMs, 'number');
 });
 
-test('team preview: auth required, shows names/roles/missing roles only', async () => {
+test('team preview: auth required, shows member names only', async () => {
   const a = new Player(srv.url, 21);
   const b = new Player(srv.url, 22);
   await a.join('Alice');
@@ -259,11 +258,10 @@ test('team preview: auth required, shows names/roles/missing roles only', async 
   const url = `${srv.url}/api/team-preview?code=${encodeURIComponent(code)}&playerId=${b.id}&token=${b.token}`;
   const res = await fetch(url);
   assert.equal(res.status, 200);
-  const j = (await res.json()) as { ok: boolean; team: Record<string, unknown> & { members: { name: string; role: string }[]; missingRoles: string[] } };
+  const j = (await res.json()) as { ok: boolean; team: Record<string, unknown> & { members: { name: string }[] } };
   assert.equal(j.team.name, 'Preview Crew');
   assert.equal(j.team.members[0].name, 'Alice');
   assert.equal(j.team.members.length, 1);
-  assert.equal(j.team.missingRoles.length, 4);
   assert.ok(!JSON.stringify(j).includes(a.id), 'no player ids');
   assert.ok(!('id' in j.team));
   assert.equal((await fetch(`${srv.url}/api/team-preview?code=${encodeURIComponent(code)}`)).status, 401);

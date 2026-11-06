@@ -77,7 +77,7 @@ export interface Health {
 export interface AdminTeam {
   id: string;
   name: string;
-  battleCode: string;
+  emojiCode: string;
   playerIds: string[];
   score: number;
   r1: { codeword: string; solved: boolean; points: number; solveSeconds: number | null } | null;
@@ -100,8 +100,8 @@ export interface AdminViewData {
   } | null;
 }
 
-export const FAST_DURATIONS = { r1Seconds: 30, r2: { HUDDLE: 6, PARLEY: 5, VOTE: 10, DEBRIEF: 5 }, r3: { BLUFF: 6, VOTE: 10, REVEAL: 5 }, sdSeconds: 10 };
-export const NORMAL_DURATIONS = { r1Seconds: 300, r2: { HUDDLE: 50, PARLEY: 40, VOTE: 25, DEBRIEF: 40 }, r3: { BLUFF: 55, VOTE: 20, REVEAL: 25 }, sdSeconds: 40 };
+export const FAST_DURATIONS = { r1Seconds: 30, r2: { VOTE: 12, DEBRIEF: 5 }, r3: { VOTE: 12, REVEAL: 5 }, sdSeconds: 10 };
+export const NORMAL_DURATIONS = { r1Seconds: 300, r2: { VOTE: 60, DEBRIEF: 15 }, r3: { VOTE: 40, REVEAL: 25 }, sdSeconds: 40 };
 
 export interface SampleSummary {
   samples: number;
@@ -322,8 +322,8 @@ export class Swarm {
       // Rivals: consecutive teams in creation order, like crews who sit next to each other.
       const unpaired = a.teams.filter(t => a.unpairedTeamIds.includes(t.id));
       for (let i = 0; i + 1 < unpaired.length; i += 2) {
-        this.world.rivalCode.set(unpaired[i].id, unpaired[i + 1].battleCode);
-        this.world.rivalCode.set(unpaired[i + 1].id, unpaired[i].battleCode);
+        this.world.rivalCode.set(unpaired[i].id, unpaired[i + 1].emojiCode);
+        this.world.rivalCode.set(unpaired[i + 1].id, unpaired[i].emojiCode);
       }
     })();
     return this.pairingRefresh;

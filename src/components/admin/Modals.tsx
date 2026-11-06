@@ -68,7 +68,7 @@ export const StandingsModal: React.FC<{ view: AdminViewData; onClose: () => void
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                   <span className="text-sm font-serif font-bold text-[#f4f0e8] break-words min-w-0">{t.name}</span>
-                  <span className="text-[10px] font-mono text-[#c4a45a]">[{t.battleCode}]</span>
+                  <span className="text-[10px] font-mono text-[#c4a45a]">[{t.emojiCode}]</span>
                   <MoralBadge status={view.moral[t.id]?.status} />
                 </div>
                 <div className="text-[11px] text-[#8e95a5] break-words">

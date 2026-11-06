@@ -11,7 +11,7 @@ export interface PracticeOptions {
   target: string;
   crews: number;
   botsPerCrew: number;
-  /** One bot crew never types a code and waits for the humans to enter its battle code. */
+  /** One bot crew never types a code and waits for the humans to enter its crew code. */
   leaveRivalForHumans: boolean;
   reset: boolean;
   adminToken: string;
@@ -105,8 +105,7 @@ export async function runPractice(o: PracticeOptions): Promise<number> {
       const r = await bot.cmd('JOIN_TEAM', { code });
       if (r?.body.ok) return;
       const err = r?.body.error;
-      if (err === 'ROLE_TAKEN') await bot.cmd('REROLL_ROLE', {});
-      else if (err === 'TEAM_FULL' || err === 'UNKNOWN_CODE' || err === 'ALREADY_IN_TEAM') return;
+      if (err === 'TEAM_FULL' || err === 'UNKNOWN_CODE' || err === 'ALREADY_IN_TEAM') return;
       await sleep(400 + rng() * 1200);
     }
   }
@@ -129,7 +128,7 @@ export async function runPractice(o: PracticeOptions): Promise<number> {
       const c = crews[crew];
       c.teamId = v.team.id;
       c.emojiCode = v.team.emojiCode;
-      c.battleCode = v.team.battleCode;
+      c.battleCode = v.team.emojiCode;
     }
     const name = v.phase.name;
     const step = v.phase.step;
@@ -167,7 +166,7 @@ export async function runPractice(o: PracticeOptions): Promise<number> {
       const target = partnerOf.get(crew);
       if (target !== undefined && !acted(bot, `pair:${v.sid}`)) {
         later(bot, v, 1000 + rng() * 6000, async () => {
-          const code = crews[target].battleCode;
+          const code = crews[target].emojiCode;
           if (code) await bot.cmd('R2_PAIR', { code });
         });
       }
@@ -249,7 +248,7 @@ export async function runPractice(o: PracticeOptions): Promise<number> {
   console.log(`  you drive the phases from /admin. Bots follow at human pace until the game is FINISHED (Ctrl+C to stop).`);
   console.log(
     `  pairing: ${[...partnerOf].map(([a, b]) => `crew ${a + 1} types crew ${b + 1}`).join(', ') || 'none'}${
-      reservedCrew >= 0 ? `; crew ${reservedCrew + 1} waits for YOU to enter its battle code` : ''
+      reservedCrew >= 0 ? `; crew ${reservedCrew + 1} waits for YOU to enter its crew code` : ''
     }`,
   );
   const first = await bots[0]?.waitFor(v => !!v.me || v.phase.name === 'LOBBY', 20_000);
@@ -265,7 +264,7 @@ export async function runPractice(o: PracticeOptions): Promise<number> {
         await sleep(1000);
         const c = crews[reservedCrew];
         if (c.battleCode) {
-          console.log(`  waiting crew "${`Practice crew ${reservedCrew + 1}`}": team code ${c.emojiCode}, battle code ${c.battleCode}`);
+          console.log(`  waiting crew "${`Practice crew ${reservedCrew + 1}`}": team code ${c.emojiCode}, crew code ${c.emojiCode}`);
           return;
         }
       }

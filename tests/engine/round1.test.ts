@@ -17,11 +17,11 @@ test('golden: hint configuration (2m, 3m, 4m, -30 each)', () => {
 
 test('golden: hint text identifies left, right and centre players', () => {
   const members = [
-    { slotIndex: 0, playerName: 'Orpheus', roleName: 'Navigator' },
-    { slotIndex: 1, playerName: 'Elena', roleName: 'Oracle' },
-    { slotIndex: 2, playerName: 'Marcus', roleName: 'Scholar' },
-    { slotIndex: 3, playerName: 'Hesper', roleName: 'Torchbearer' },
-    { slotIndex: 4, playerName: 'Damon', roleName: 'Negotiator' },
+    { slotIndex: 0, playerName: 'Orpheus' },
+    { slotIndex: 1, playerName: 'Elena' },
+    { slotIndex: 2, playerName: 'Marcus' },
+    { slotIndex: 3, playerName: 'Hesper' },
+    { slotIndex: 4, playerName: 'Damon' },
   ];
   const h1 = generateHintText(1, 5, members);
   assert.ok(h1.includes('Orpheus') && h1.includes('LEFT'));

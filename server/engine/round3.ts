@@ -277,7 +277,7 @@ export function startRound3(d: GameState, now: number, ev: GameEvent[]): void {
     setStep(d, now, 'R3_RESULTS', null, { durationMs: null }, ev);
     return;
   }
-  // The story plays first (BRIEFING); wave 1's BLUFF timer starts when it ends (phases.ts).
+  // The story plays first (BRIEFING); wave 1's VOTE timer starts when it ends (phases.ts).
   setStep(d, now, 'R3_ACTIVE', 'BRIEFING', { durationMs: briefingSeconds(3) * 1000, wave: 1 }, ev);
 }
 
@@ -351,7 +351,7 @@ export function startNextWave(d: GameState, now: number, ev: GameEvent[]): void 
   const r3 = d.r3!;
   r3.votes = {};
   r3.leash = {};
-  setStep(d, now, 'R3_ACTIVE', 'BLUFF', { durationMs: d.config.r3.BLUFF * 1000, wave: d.wave + 1 }, ev);
+  setStep(d, now, 'R3_ACTIVE', 'VOTE', { durationMs: d.config.r3.VOTE * 1000, wave: d.wave + 1 }, ev);
 }
 
 /** Escape a team outside a wave (admin distance changes). */
@@ -393,6 +393,25 @@ function checkWaveVoteOpen(d: GameState, now: number, c: { actor: { kind: string
   return { player: p, teamId: p.teamId };
 }
 
+/** Everyone still racing has voted: close the vote 2 s from now (never later than the existing deadline). */
+export const EARLY_REVEAL_MS = 2000;
+function maybeRevealEarly(d: GameState, now: number): void {
+  const r3 = d.r3;
+  if (!r3 || d.pausedAt != null || d.endsAt == null) return;
+  let racing = 0;
+  for (const tid of d.teamOrder) {
+    const t3 = r3.teams[tid];
+    if (!t3 || t3.escaped) continue;
+    const members = d.teams[tid].playerIds;
+    if (members.length === 0) continue;
+    racing++;
+    const votes = r3.votes[tid] || {};
+    if (!members.every(pid => votes[pid] !== undefined)) return;
+  }
+  if (racing === 0) return;
+  d.endsAt = Math.min(d.endsAt, now + EARLY_REVEAL_MS);
+}
+
 const vote: Handler = (d, c, now) => {
   const chk = checkWaveVoteOpen(d, now, c as never);
   if ('error' in chk) return chk.error;
@@ -412,6 +431,7 @@ const vote: Handler = (d, c, now) => {
   if (bucket[chk.player.id] === undefined) {
     bucket[chk.player.id] = vessel; // first vote is final
     changed = true;
+    maybeRevealEarly(d, now);
   }
   return changed ? undefined : NOOP;
 };

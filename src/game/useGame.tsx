@@ -18,7 +18,7 @@ export type GameStatus = FeedStatus;
 export interface GameApi {
   /** The last view received (or cached from the previous visit). Null only on a first-ever load. */
   view: View | null;
-  /** Static content from /api/meta (roles, briefings, texts). Null until loaded (cached between visits). */
+  /** Static content from /api/meta (briefings, texts). Null until loaded (cached between visits). */
   meta: Meta | null;
   status: GameStatus;
   /** True once a live view arrived in this page load. Until then a cached view may be stale. */
@@ -43,10 +43,7 @@ export interface TeamPreview {
   maxMembers: number;
   isFull: boolean;
   leaderName: string;
-  members: { name: string; role: string }[];
-  missingRoles: string[];
-  hasRoleConflict: boolean;
-  conflictingRole?: string;
+  members: { name: string }[];
 }
 
 const Ctx = createContext<GameApi | null>(null);

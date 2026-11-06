@@ -182,9 +182,7 @@ export class ViewBuilder {
       id: tp.id,
       name: tp.name,
       emojiCode: tp.emojiCode,
-      battleCode: tp.battleCode,
-      members: tp.members.map(m => ({ name: m.name, role: m.role })),
-      missingRoles: tp.missingRoles,
+      members: tp.members.map(m => ({ name: m.name })),
       score: tp.score,
       rank: g.ranks.get(teamId) ?? 0,
     };
@@ -217,7 +215,7 @@ export class ViewBuilder {
       if (m) {
         const r2: R2View = { paired: m.paired, clashes: m.history, teamSize: tp.size };
         if (m.paired && m.rivalTeamId && m.rivalName != null) {
-          r2.rival = { name: m.rivalName, battleCode: state.teams[m.rivalTeamId]?.battleCode ?? '' };
+          r2.rival = { name: m.rivalName, code: state.teams[m.rivalTeamId]?.emojiCode ?? '' };
         }
         if (m.voting) {
           r2.votedCount = m.voting.votedCount;
@@ -320,7 +318,7 @@ export class ViewBuilder {
     if (known && playerId) {
       const priv = playerPrivate(state, playerId);
       if (priv) {
-        me = { id: priv.playerId, name: priv.name, role: priv.role, joinedTeam: priv.teamId != null };
+        me = { id: priv.playerId, name: priv.name, joinedTeam: priv.teamId != null };
         if (priv.r1) {
           me.slot = priv.r1.slot;
           me.slotCount = priv.r1.slotCount;
@@ -364,7 +362,7 @@ export class ViewBuilder {
           rest.board = rest.board.slice(0, 3).map(r => [clip(r[0], 12), r[1]] as [string, number]);
         },
         () => {
-          if (rest.team) rest.team = { ...rest.team, members: rest.team.members.map(m => ({ name: clip(m.name, 12), role: m.role })) };
+          if (rest.team) rest.team = { ...rest.team, members: rest.team.members.map(m => ({ name: clip(m.name, 12) })) };
           if (rest.r1) rest.r1 = { ...rest.r1, hints: rest.r1.hints.map(h => (h.text ? { ...h, text: clip(h.text, 80) } : h)) };
         },
         () => {

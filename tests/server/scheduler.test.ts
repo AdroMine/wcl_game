@@ -18,7 +18,7 @@ function fixture() {
     send('JOIN', { kind: 'player', playerId: id }, { playerId: id, tokenHash: `h${i}`, name: `P${i}` });
   }
   send('ADMIN_AUTO_GROUP', { kind: 'admin' });
-  send('ADMIN_SET_DURATIONS', { kind: 'admin' }, { r1Seconds: 30, r2: { HUDDLE: 10, PARLEY: 10, VOTE: 10, DEBRIEF: 10 } });
+  send('ADMIN_SET_DURATIONS', { kind: 'admin' }, { r1Seconds: 30, r2: { VOTE: 10, DEBRIEF: 10 } });
   send('ADMIN_START_GAME', { kind: 'admin' });
   const sched = new Scheduler(rt);
   // the scheduler ends the Round 1 briefing at its deadline and the 30 s clock starts then
@@ -51,13 +51,13 @@ test('an event-loop stall of ten minutes advances exactly one step per overdue d
   assert.equal(f.rt.state.step, 'BRIEFING');
   f.advance(briefingSeconds(2) * 1000);
   assert.equal(f.sched.tick(), 1);
-  assert.equal(f.rt.state.step, 'HUDDLE');
+  assert.equal(f.rt.state.step, 'VOTE');
   const seq0 = f.rt.state.phaseSeq;
   f.advance(10 * 60_000); // stall
   f.sched.tick();
   f.sched.tick();
   f.sched.tick();
-  assert.equal(f.rt.state.step, 'PARLEY', 'one step, not a cascade that skips the vote');
+  assert.equal(f.rt.state.step, 'DEBRIEF', 'one step, not a cascade that skips the reveal');
   assert.equal(f.rt.state.phaseSeq, seq0 + 1);
   // the same system command delivered again is a no-op
   const before = f.rt.state.version;
@@ -84,8 +84,8 @@ test('a full Round 2 plays out with irregular ticks and each step is entered exa
   }
   assert.equal(f.rt.state.phase, 'R2_RESULTS');
   const entered = f.rt.state.phaseLog.filter(e => e.phase === 'R2_CLASH').map(e => `${e.clash}/${e.step}`);
-  assert.equal(entered.length, 13); // BRIEFING + 12
-  assert.equal(new Set(entered).size, 13);
+  assert.equal(entered.length, 7); // BRIEFING + 3 x (VOTE, DEBRIEF)
+  assert.equal(new Set(entered).size, 7);
   assert.equal(entered[0], '1/BRIEFING');
 });
 

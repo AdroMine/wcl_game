@@ -259,7 +259,7 @@ export class Chaos {
     const key = admKey(a);
     for (const k of [`phase:${name}`, `step:${key}`]) if (!this.seenAt.has(k)) this.seenAt.set(k, now);
     if (!this.phaseSeen.has(name)) this.phaseSeen.set(name, now);
-    // A clash starts at its huddle; clash 1's BRIEFING (story, skipped by the host) is not clash time.
+    // A clash starts at its VOTE (talk and vote); clash 1's BRIEFING (story, skipped by the host) is not clash time.
     if (name === 'R2_CLASH' && step !== 'BRIEFING' && !this.clashSeen.has(a.phase.clash)) this.clashSeen.set(a.phase.clash, now);
     if (name === 'R3_ACTIVE' && !this.waveSeen.has(a.phase.wave)) this.waveSeen.set(a.phase.wave, now);
     if (step === 'VOTE') {
@@ -447,13 +447,13 @@ export class Chaos {
       this.refreshResults.push({ ok: false, ms: 0, detail: `${b.cfg.name} had no seat to refresh from` });
       return;
     }
-    const before = { id: v.me.id, name: v.me.name, role: v.me.role, team: v.team.id, joined: v.me.joinedTeam };
+    const before = { id: v.me.id, name: v.me.name, team: v.team.id, joined: v.me.joinedTeam };
     const t0 = Date.now();
     b.refresh(this.between(500, 3000));
     const t = await b.waitFor(() => true, 20_000);
     const w = b.view;
-    const same = !!w?.me && w.me.id === before.id && w.me.name === before.name && w.me.role === before.role && w.me.joinedTeam === before.joined && w.team?.id === before.team;
-    this.refreshResults.push({ ok: t !== null && same, ms: t === null ? -1 : t - t0, detail: same ? '' : `${b.cfg.name}: ${JSON.stringify(before)} -> ${JSON.stringify({ id: w?.me?.id, name: w?.me?.name, role: w?.me?.role, team: w?.team?.id })}` });
+    const same = !!w?.me && w.me.id === before.id && w.me.name === before.name && w.me.joinedTeam === before.joined && w.team?.id === before.team;
+    this.refreshResults.push({ ok: t !== null && same, ms: t === null ? -1 : t - t0, detail: same ? '' : `${b.cfg.name}: ${JSON.stringify(before)} -> ${JSON.stringify({ id: w?.me?.id, name: w?.me?.name, team: w?.team?.id })}` });
   }
 
   private async removePlayer(round: string): Promise<void> {
@@ -558,7 +558,7 @@ export class Chaos {
     // 2. page refresh
     const rfOk = this.refreshResults.filter(r => r.ok).length;
     const rfMs = this.refreshResults.filter(r => r.ms >= 0).map(r => r.ms).sort((x, y) => x - y);
-    this.check('page refresh: every refreshed phone got its own seat, crew and role back', this.refreshResults.length >= 2 && rfOk === this.refreshResults.length, `${rfOk}/${this.refreshResults.length}, fresh view after p50 ${fmt(percentile(rfMs, 50), 0)} ms, max ${fmt(rfMs[rfMs.length - 1] ?? 0, 0)} ms${this.refreshResults.filter(r => !r.ok).map(r => ` | ${r.detail}`).join('')}`);
+    this.check('page refresh: every refreshed phone got its own seat and crew back', this.refreshResults.length >= 2 && rfOk === this.refreshResults.length, `${rfOk}/${this.refreshResults.length}, fresh view after p50 ${fmt(percentile(rfMs, 50), 0)} ms, max ${fmt(rfMs[rfMs.length - 1] ?? 0, 0)} ms${this.refreshResults.filter(r => !r.ok).map(r => ` | ${r.detail}`).join('')}`);
     const lateJoined = this.late.filter(l => l.joinOk).length;
     const expectedPlayers = this.basePlayers + lateJoined - this.removed.filter(r => r.viewGone).length;
     const ids = new Set(a.players.map(p => p.id));
@@ -568,7 +568,7 @@ export class Chaos {
     const decided = a.matches.filter(m => !m.cancelled);
     const allResolved = decided.length > 0 && decided.every(m => m.clashes.length === 3 && m.clashes.every(cl => cl.resolved));
     this.check('Round 2: every clash of every match resolved', allResolved, `${decided.length} matches`);
-    const r2Len = (FAST_DURATIONS.r2.HUDDLE + FAST_DURATIONS.r2.PARLEY + FAST_DURATIONS.r2.VOTE + FAST_DURATIONS.r2.DEBRIEF) * 1000;
+    const r2Len = (FAST_DURATIONS.r2.VOTE + FAST_DURATIONS.r2.DEBRIEF) * 1000;
     const slow2: string[] = [];
     for (const i of [1, 2]) {
       const s0 = this.clashSeen.get(i);
@@ -602,13 +602,13 @@ export class Chaos {
       this.check(`${label}: clash resolved on time with no votes counted -> TRUCE`, evaluated >= minEvaluated && bad.length === 0, `${evaluated} clashes checked${bad.length ? `; ${bad.join('; ')}` : ''}`);
     };
     if (this.silencedR2At) {
-      const first = this.silencedR2At.step === 'HUDDLE' || this.silencedR2At.step === 'PARLEY' || this.silencedR2At.step === 'BRIEFING' ? this.silencedR2At.clash : this.silencedR2At.clash + 1;
+      const first = this.silencedR2At.step === 'BRIEFING' ? this.silencedR2At.clash : this.silencedR2At.clash + 1;
       r2Expect(this.silentR2, [1, 2, 3].filter(i => i >= first), 'silent crew (gone from Round 2)', 2);
     } else if (this.silentR2) this.check('silent crew in Round 2 was silenced', false, 'the moment never came');
     for (const t of this.abstainR2) r2Expect(t, [2], 'crew that did not vote (Round 2 clash 2)', 1);
 
     // Round 3
-    const waveLen = (FAST_DURATIONS.r3.BLUFF + FAST_DURATIONS.r3.VOTE + FAST_DURATIONS.r3.REVEAL) * 1000;
+    const waveLen = (FAST_DURATIONS.r3.VOTE + FAST_DURATIONS.r3.REVEAL) * 1000;
     const waves = [...this.waveSeen.keys()].sort((x, y) => x - y);
     const slow3: string[] = [];
     for (let i = 0; i + 1 < waves.length; i++) {

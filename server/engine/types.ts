@@ -14,16 +14,15 @@ export type Phase =
 
 export type Step =
   | 'BRIEFING'
-  | 'HUDDLE'
-  | 'PARLEY'
+  | 'HUDDLE' // deprecated: only in old snapshots (restored into VOTE)
+  | 'PARLEY' // deprecated: only in old snapshots (restored into VOTE)
   | 'VOTE'
   | 'DEBRIEF'
-  | 'BLUFF'
+  | 'BLUFF' // deprecated: only in old snapshots (restored into VOTE)
   | 'REVEAL'
   | 'SUDDEN_DEATH'
   | null;
 
-export type RoleId = 'navigator' | 'oracle' | 'scholar' | 'torchbearer' | 'negotiator';
 export type Stance = 'TRUCE' | 'AMBUSH';
 export type Vessel = 'ROWBOAT' | 'SAILBOAT' | 'GHOST_SHIP';
 export type SdAction = 'SHIELDS' | 'RAM' | 'SAILS';
@@ -42,7 +41,6 @@ export type ErrorCode =
   | 'ALREADY_PAUSED'
   | 'NOT_PAUSED'
   | 'TEAM_FULL'
-  | 'ROLE_TAKEN'
   | 'UNKNOWN_CODE'
   | 'INVALID_CODE'
   | 'OWN_CODE'
@@ -95,8 +93,8 @@ export interface ReduceResult {
 
 export interface Durations {
   r1Seconds: number;
-  r2: { HUDDLE: number; PARLEY: number; VOTE: number; DEBRIEF: number };
-  r3: { BLUFF: number; VOTE: number; REVEAL: number };
+  r2: { VOTE: number; DEBRIEF: number };
+  r3: { VOTE: number; REVEAL: number };
   sdSeconds: number;
   /** Maximum crew size N (3..6, default 5). Old snapshots lack it: always read it through crewSizeOf(). */
   crewSize: number;
@@ -105,7 +103,6 @@ export interface Durations {
 export interface Player {
   id: string;
   name: string;
-  role: RoleId;
   /** Opaque hash stored for the server to compare. NEVER expose through selectors. */
   tokenHash: string;
   teamId: string | null;
@@ -139,7 +136,8 @@ export interface Team {
   id: string;
   name: string;
   emojiCode: string;
-  battleCode: string;
+  /** Legacy (2-digit pairing code, retired Nov 5 2026). Old snapshots may carry it; never read or generated. */
+  battleCode?: string;
   playerIds: string[];
   r1Points: number;
   r2Points: number;

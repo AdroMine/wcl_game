@@ -19,7 +19,7 @@ const PHASE_TITLES: Record<string, string> = {
   R3_RESULTS: 'The river is crossed',
   FINISHED: 'Final standings',
 };
-const STEP_NAMES: Record<string, string> = { BRIEFING: 'Briefing', HUDDLE: 'Huddle', PARLEY: 'Dialogue', VOTE: 'Vote', DEBRIEF: 'Reveal', BLUFF: 'Bluff', REVEAL: 'Reveal', SUDDEN_DEATH: 'Sudden Death' };
+const STEP_NAMES: Record<string, string> = { BRIEFING: 'Briefing', HUDDLE: 'Talk & vote', PARLEY: 'Talk & vote', VOTE: 'Talk & vote', DEBRIEF: 'Reveal', BLUFF: 'Decide', REVEAL: 'Reveal', SUDDEN_DEATH: 'Sudden Death' };
 const VESSELS: Record<string, string> = { R: 'Rowboat', S: 'Sailboat', G: 'Ghost Ship' };
 
 export const ScreenView: React.FC = () => {
@@ -75,7 +75,7 @@ export const ScreenView: React.FC = () => {
 
   const p = data.phase;
   const left = p.paused && p.pausedRemainingMs !== undefined ? p.pausedRemainingMs : p.endsAt == null ? null : Math.max(0, p.endsAt - (Date.now() + offset.current));
-  const stepName = p.step ? STEP_NAMES[p.step] ?? p.step : '';
+  const stepName = p.step ? (p.step === 'VOTE' && p.name.startsWith('R3') ? 'Decide' : STEP_NAMES[p.step] ?? p.step) : '';
   const inR3 = data.phase.name.startsWith('R3') || data.phase.name === 'FINISHED';
   const showFleet = !!data.fleet && data.fleet.length > 0 && inR3;
   const down = status === 'reconnecting' || status === 'offline';

@@ -159,7 +159,7 @@ test('round 3: vessels stay hidden until REVEAL and the leash target is only sho
     const vb = new ViewBuilder({ sid: 'x' });
     for (const pid of state.playerOrder.filter((_, i) => i % 7 === 0)) {
       const v = JSON.parse(vb.forPlayer(state, pid, hashToken(tokens[pid]), NOW).json) as View;
-      if (state.step === 'BLUFF' || state.step === 'VOTE') {
+      if (state.step === 'VOTE') {
         assert.ok(v.r3 === undefined || v.r3.fleet.every(r => r[3] === ''), 'no vessel before reveal');
         if (v.r3) assert.ok(!v.r3.lastWave || v.r3.lastWave.wave < state.wave);
       }
@@ -208,7 +208,7 @@ test('adversarial: maximum-length multibyte names, all hints taken, still <= 409
       t.name = long('漢', 32, i++);
       if (t.r1) {
         t.r1.hintsTaken = [1, 2, 3];
-        const slotMembers = Object.entries(t.r1.slots).map(([pid, slot]) => ({ slotIndex: slot, playerName: s.players[pid].name, roleName: 'Torchbearer' }));
+        const slotMembers = Object.entries(t.r1.slots).map(([pid, slot]) => ({ slotIndex: slot, playerName: s.players[pid].name }));
         for (const h of [1, 2, 3]) t.r1.hintTexts[String(h)] = generateHintText(h, t.r1.size, slotMembers);
       }
     }

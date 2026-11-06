@@ -57,13 +57,7 @@ export function advance(d: GameState, now: number, ev: GameEvent[]): HandlerResu
       return undefined;
     case 'R2_CLASH':
       switch (d.step) {
-        case 'BRIEFING': // the global clash clock starts now: clash 1 begins with its huddle
-          setStep(d, now, 'R2_CLASH', 'HUDDLE', { durationMs: c.r2.HUDDLE * 1000, clash: d.clash }, ev);
-          return undefined;
-        case 'HUDDLE':
-          setStep(d, now, 'R2_CLASH', 'PARLEY', { durationMs: c.r2.PARLEY * 1000, clash: d.clash }, ev);
-          return undefined;
-        case 'PARLEY':
+        case 'BRIEFING': // the global clash clock starts now: clash 1 opens straight into its VOTE (talk and vote)
           setStep(d, now, 'R2_CLASH', 'VOTE', { durationMs: c.r2.VOTE * 1000, clash: d.clash }, ev);
           return undefined;
         case 'VOTE':
@@ -73,7 +67,7 @@ export function advance(d: GameState, now: number, ev: GameEvent[]): HandlerResu
         case 'DEBRIEF':
           if (d.clash < R2_CLASHES) {
             beginNextClash(d, d.clash + 1);
-            setStep(d, now, 'R2_CLASH', 'HUDDLE', { durationMs: c.r2.HUDDLE * 1000, clash: d.clash + 1 }, ev);
+            setStep(d, now, 'R2_CLASH', 'VOTE', { durationMs: c.r2.VOTE * 1000, clash: d.clash + 1 }, ev);
           } else {
             computeAllMoral(d);
             setStep(d, now, 'R2_RESULTS', null, { durationMs: null }, ev);
@@ -84,10 +78,7 @@ export function advance(d: GameState, now: number, ev: GameEvent[]): HandlerResu
       }
     case 'R3_ACTIVE':
       switch (d.step) {
-        case 'BRIEFING': // wave 1 starts now
-          setStep(d, now, 'R3_ACTIVE', 'BLUFF', { durationMs: c.r3.BLUFF * 1000, wave: d.wave }, ev);
-          return undefined;
-        case 'BLUFF':
+        case 'BRIEFING': // wave 1 starts now, voting open from the first second
           setStep(d, now, 'R3_ACTIVE', 'VOTE', { durationMs: c.r3.VOTE * 1000, wave: d.wave }, ev);
           return undefined;
         case 'VOTE':

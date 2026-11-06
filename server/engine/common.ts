@@ -1,5 +1,5 @@
 // Shared helpers for command handlers: payload validation and team/player bookkeeping.
-import { CREW_SIZE_DEFAULT, CREW_SIZE_MAX, CREW_SIZE_MIN, MAX_NAME, UNIQUE_ROLE_SLOTS } from './config.ts';
+import { CREW_SIZE_DEFAULT, CREW_SIZE_MAX, CREW_SIZE_MIN, MAX_NAME } from './config.ts';
 import { resyncR1Slots } from './r1slots.ts';
 import type { GameState, Player, Team } from './types.ts';
 
@@ -17,11 +17,6 @@ export function maxJoinSize(d: Pick<GameState, 'config'>): number {
 /** Absolute cap on crew size whatever N is: the admin may add or move a player up to this (RULE_DECISIONS Q11). */
 export function maxAdminSize(_d?: Pick<GameState, 'config'>): number {
   return CREW_SIZE_MAX;
-}
-
-/** The first this-many members of a crew must have different roles. */
-export function uniqueRoleSlots(d: Pick<GameState, 'config'>): number {
-  return Math.min(crewSizeOf(d), UNIQUE_ROLE_SLOTS);
 }
 
 export function asObj(payload: unknown): Record<string, unknown> | null {

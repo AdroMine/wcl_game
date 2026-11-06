@@ -7,7 +7,7 @@ import { checkPlayer, hashToken } from '../auth.ts';
 import type { AdminAuth } from '../auth.ts';
 import type { ServerConfig } from '../config.ts';
 import { buildExportCsv, buildExportJson, buildMeta, buildRecap } from '../content.ts';
-import { COMMAND_TYPES, previewTeamByEmoji, ROLES } from '../engine/index.ts';
+import { COMMAND_TYPES, previewTeamByEmoji } from '../engine/index.ts';
 import type { Command, GameState } from '../engine/index.ts';
 import type { Persistence } from '../persistence/index.ts';
 import { gameStateProblem, pauseRestored } from '../persistence/index.ts';
@@ -296,10 +296,9 @@ export function createHttpServer(ctx: HttpContext): Server {
     if (!playerId || !tokenHash || checkPlayer(runtime.state, playerId, tokenHash) !== 'ok') return sendError(req, res, 401, 'UNAUTHORIZED');
     if (!viewLimiter.take(playerId, Date.now())) return sendError(req, res, 429, 'RATE_LIMITED', undefined, { 'Retry-After': 1 });
     const code = (url.searchParams.get('code') ?? '').slice(0, LIMITS.emojiCode);
-    const r = previewTeamByEmoji(runtime.state, code, playerId);
+    const r = previewTeamByEmoji(runtime.state, code);
     if (!r.ok) return sendError(req, res, r.error === 'INVALID_CODE' ? 400 : 404, r.error);
     const p = r.preview;
-    const have = new Set(p.members.map(m => m.role));
     sendJson(req, res, 200, {
       ok: true,
       team: {
@@ -309,10 +308,7 @@ export function createHttpServer(ctx: HttpContext): Server {
         maxMembers: p.maxMembers,
         isFull: p.isFull,
         leaderName: p.leaderName,
-        members: p.members.map(m => ({ name: m.name, role: m.role })),
-        missingRoles: ROLES.map(x => x.id).filter(x => !have.has(x)),
-        hasRoleConflict: p.hasRoleConflict,
-        ...(p.hasRoleConflict ? { conflictingRole: runtime.state.players[playerId]?.role } : {}),
+        members: p.members.map(m => ({ name: m.name })),
       },
     });
   }

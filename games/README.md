@@ -12,7 +12,7 @@ games/
     export.ts               end-of-game data export: buildGameExport (JSON) and buildGameCsv, called by GET /api/admin/export.json and .csv
     recap.ts                "Underworld Wrapped": buildRecap(state), crew-level recap data served by GET /api/recap once FINISHED
     recapContent.ts         editable words of the recap: title, award names and blurbs, the front page text (FRONT_PAGE), the "Christmas game is coming" teaser
-    recap/ui/               React for the recap, one lazy chunk loaded only at FINISHED: FrontPage ("The Underworld Times" card), WrappedCards (the phone recap: front page, crew cards, award cards), AwardCard, FrontPagePanel (admin and /front-page), WrappedPreview (test hooks), useRecap
+    recap/ui/               React for the recap, one lazy chunk loaded only at FINISHED: FrontPage ("The Underworld Times" card), WrappedCards (the phone "Underworld Wrap" overlay: swipeable crew, Round 2, room and award cards), FrontPagePanel (admin and /front-page), WrappedPreview (test hooks), useRecap
     rounds/
       tablet/   Round 1: The Shattered Tablet
         content.ts          story, rules, goal, codewords, hint cost and timing, projector lines

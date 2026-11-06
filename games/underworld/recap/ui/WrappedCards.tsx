@@ -5,17 +5,21 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { X } from 'lucide-react';
 import { useGame } from '../../../../src/game/useGame';
 import { ordinal } from '../../../../src/components/ui';
+import { ART } from '../../art.ts';
 import type { RecapCrew, RecapData } from '../../recap.ts';
 import { useRecap } from './useRecap.ts';
 
 const STANCE_ICON: Record<string, string> = { T: '🤝', A: '🗡️' };
 const MEDAL = ['🥇', '🥈', '🥉'];
 const MEDAL_NAME = ['Gold', 'Silver', 'Bronze'];
+const AWARD_ART: Record<string, string> = { treacherous: ART.emblem.dagger, saints: ART.emblem.angel, comeback: ART.emblem.wave };
 const count = (s: string, ch: string): number => s.split(ch).length - 1;
 
 interface CardDef {
   id: string;
   emoji: string;
+  /** Emblem image url; the emoji shows if it is missing or fails. */
+  art?: string;
   big: string;
   lines: string[];
   /** Small label above the card, e.g. "Your results". */
@@ -33,6 +37,7 @@ export function buildCards(recap: RecapData, crew: RecapCrew | undefined): CardD
       id: 'crew',
       label: 'Your results',
       emoji: medal ? MEDAL[crew.escape - 1] : '🌊',
+      art: medal ? ART.emblem.laurel : ART.emblem.rowboat,
       big: medal ? MEDAL_NAME[crew.escape - 1] : ordinal(place),
       lines: [`${crew.emoji} ${crew.name}`, `${metres} m`],
     });
@@ -48,21 +53,23 @@ export function buildCards(recap: RecapData, crew: RecapCrew | undefined): CardD
   const ambush = recap.betrayal.reduce((a, b) => a + b.ambush, 0);
   if (truce + ambush > 0) {
     const t = truce >= ambush;
-    cards.push({ id: 'room', emoji: t ? '🤝' : '🗡️', big: `${Math.round(((t ? truce : ambush) / (truce + ambush)) * 100)}%`, lines: [`chose ${t ? 'Truce' : 'Betrayal'}`] });
+    cards.push({ id: 'room', emoji: t ? '🤝' : '🗡️', art: t ? ART.emblem.hands : ART.emblem.dagger, big: `${Math.round(((t ? truce : ambush) / (truce + ambush)) * 100)}%`, lines: [`chose ${t ? 'Truce' : 'Betrayal'}`] });
   }
   for (const id of ['treacherous', 'saints', 'comeback']) {
     const a = recap.awards.find(x => x.id === id);
     const c = a ? recap.crews[a.crew] : undefined;
     if (a && c) {
       const names = [a.crew, ...(a.tied ?? [])].map(i => `${recap.crews[i].emoji} ${recap.crews[i].name}`);
-      cards.push({ id: `award-${id}`, emoji: a.emoji, big: a.title, lines: [...names, a.stat] });
+      cards.push({ id: `award-${id}`, emoji: a.emoji, art: AWARD_ART[id], big: a.title, lines: [...names, a.stat] });
     }
   }
-  cards.push({ id: 'teaser', emoji: '🎄', big: recap.teaser.title, lines: [] });
+  cards.push({ id: 'teaser', emoji: '🎄', art: ART.emblem.holly, big: recap.teaser.title, lines: [] });
   return cards;
 }
 
-const Card: React.FC<{ card: CardDef; index: number }> = ({ card, index }) => (
+const Card: React.FC<{ card: CardDef; index: number }> = ({ card, index }) => {
+  const [artBad, setArtBad] = useState(false);
+  return (
   <section
     data-testid="wrapped-card"
     data-card={card.id}
@@ -70,7 +77,11 @@ const Card: React.FC<{ card: CardDef; index: number }> = ({ card, index }) => (
     className="w-full h-full shrink-0 snap-center flex flex-col items-center justify-center gap-4 px-8 text-center bg-gradient-to-b from-[#1a1710] via-[#10121a] to-[#08090c]"
   >
     {card.label && <p className="text-base font-bold uppercase tracking-widest text-[#c4a45a]">{card.label}</p>}
-    {card.emoji && <div className="text-7xl">{card.emoji}</div>}
+    {card.art && !artBad ? (
+      <img src={card.art} alt="" aria-hidden="true" decoding="async" onError={() => setArtBad(true)} className="w-44 h-44 rounded-md" />
+    ) : (
+      card.emoji && <div className="text-7xl">{card.emoji}</div>
+    )}
     <h3 className="text-4xl font-serif font-black text-[#e5cb87] leading-tight [overflow-wrap:anywhere]">{card.big}</h3>
     {card.lines.map((l, i) => (
       <p key={i} className="text-xl text-[#f4f0e8] leading-snug [overflow-wrap:anywhere]">
@@ -78,7 +89,8 @@ const Card: React.FC<{ card: CardDef; index: number }> = ({ card, index }) => (
       </p>
     ))}
   </section>
-);
+  );
+};
 
 /** Dialog, scroll-snap track, dots, close. Escape closes; tapping the left or right edge goes back or forward. */
 const Shell: React.FC<{ count: number; onClose: () => void; children: React.ReactNode }> = ({ count: n, onClose, children }) => {

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useGame } from '../game/useGame';
-import { ordinal } from './ui';
+import { ArtImage, ordinal } from './ui';
+import { ART } from '../../games/underworld/art.ts';
 import { Podium } from '../../games/underworld/rounds/styx/ui/OdysseyEscapeRoyaleRound';
 
 // The Wrap (a full-screen card story) is a separate chunk, fetched only when the player taps the button.
@@ -14,6 +15,7 @@ export const FinishedScreen: React.FC = () => {
   const place = r3?.escaped ? r3.escapedRank : (r3?.myPos ?? view?.team?.rank);
   return (
     <div className="space-y-5 pt-2">
+      <ArtImage src={ART.end} className="aspect-[780/449] w-full rounded-2xl overflow-hidden" imgClassName="object-cover" />
       <Podium names={r3?.podium ?? []} />
       {place ? (
         <p data-testid="final-rank" className="text-center text-2xl font-serif font-black text-[#f4f0e8]">

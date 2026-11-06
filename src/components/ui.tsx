@@ -1,5 +1,5 @@
 // Small shared pieces: class strings, helpers. The only timer on a phone is the rope (Rope.tsx).
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 
 export const CARD = 'bg-[#10121a] border border-[#3a4157] rounded-2xl p-5 shadow-xl';
 export const LABEL = 'text-sm font-serif font-bold text-[#e5cb87]';
@@ -35,6 +35,28 @@ export function reducedMotion(): boolean {
   } catch {
     return false;
   }
+}
+
+/** Decorative picture: reserves its box, fades in when loaded, hides itself if it fails. Never blocks anything. */
+export function ArtImage({ src, className = '', imgClassName = '', onError }: { src: string; className?: string; imgClassName?: string; onError?: () => void }) {
+  const [state, setState] = useState<'wait' | 'ok' | 'bad'>('wait');
+  if (state === 'bad') return null;
+  return (
+    <div className={className}>
+      <img
+        src={src}
+        alt=""
+        aria-hidden="true"
+        decoding="async"
+        onLoad={() => setState('ok')}
+        onError={() => {
+          setState('bad');
+          onError?.();
+        }}
+        className={`block w-full h-full ${imgClassName} transition-opacity duration-500 motion-reduce:transition-none ${state === 'ok' ? 'opacity-100' : 'opacity-0'}`}
+      />
+    </div>
+  );
 }
 
 export function ErrorNote({ text }: { text: string | null | undefined }) {

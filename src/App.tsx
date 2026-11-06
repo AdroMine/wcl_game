@@ -7,6 +7,7 @@ import { JoinModal } from './components/JoinModal';
 import { LobbyTeamFormation } from './components/LobbyTeamFormation';
 import { RoundContainer, RulesSheet } from './components/RoundContainer';
 import { Rope } from './components/Rope';
+import { ART } from '../games/underworld/art.ts';
 import { LeaderboardDrawer } from './components/LeaderboardDrawer';
 
 const AdminControlPanel = React.lazy(() => import('./components/AdminControlPanel').then(m => ({ default: m.AdminControlPanel })));
@@ -83,6 +84,16 @@ const Banners: React.FC = () => {
 
 const PlayerContent: React.FC = () => {
   const { view, meta, synced, knownDevice } = useGame();
+  const phase = view?.phase.name;
+  // Fetch the next picture ahead of need, once per phase. Player app only; failures are ignored.
+  useEffect(() => {
+    if (!phase) return;
+    const E = ART.emblem;
+    if (phase === 'LOBBY') ART.preload([ART.lobby, ART.briefing[1]]);
+    else if (phase.startsWith('R1_')) ART.preload([ART.briefing[2]]);
+    else if (phase.startsWith('R2_')) ART.preload([ART.briefing[3]]);
+    else if (phase.startsWith('R3_') || phase === 'FINISHED') ART.preload([ART.end, ...Object.values(E)]);
+  }, [phase]);
   if (!view || !meta) return <Waiting known={knownDevice} />;
   // Only a live answer from the server can say "unknown player". A cached view without `me` is not proof.
   if (!view.me) return synced ? <JoinModal /> : <Waiting known={knownDevice} />;

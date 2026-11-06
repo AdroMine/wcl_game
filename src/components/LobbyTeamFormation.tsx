@@ -2,7 +2,8 @@ import React, { useEffect, useState } from 'react';
 import { Users, Plus, Edit2, Check, X } from 'lucide-react';
 import { useGame } from '../game/useGame';
 import type { TeamPreview } from '../game/useGame';
-import { BTN_DARK, BTN_GOLD, ErrorNote } from './ui';
+import { ART } from '../../games/underworld/art.ts';
+import { ArtImage, BTN_DARK, BTN_GOLD, ErrorNote } from './ui';
 import { EmojiKeypad } from './EmojiKeypad';
 
 export const LobbyTeamFormation: React.FC = () => {
@@ -154,6 +155,8 @@ export const LobbyTeamFormation: React.FC = () => {
             {team.emojiCode}
           </div>
         </section>
+
+        <ArtImage src={ART.lobby} className="aspect-[780/449] w-full rounded-2xl overflow-hidden" imgClassName="object-cover" />
 
         <ErrorNote text={error} />
 

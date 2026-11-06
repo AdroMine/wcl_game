@@ -8,6 +8,7 @@ A **disk** is one game. Each folder under `games/` holds everything that is spec
 games/
   underworld/
     game.ts                 game-level: title, round titles, roles, crew emblems, lobby and finish lines
+    art.ts                  URLs of the generated illustrations in art/ (lobby, round scenes, end, Wrap emblems); art/ is owned by the organizer; the web app preloads the next picture per phase
     analysis.ts             shared pure helpers for export and recap (clash outcomes, decoded Round 3 votes, final ranking)
     export.ts               end-of-game data export: buildGameExport (JSON) and buildGameCsv, called by GET /api/admin/export.json and .csv
     recap.ts                "Underworld Wrapped": buildRecap(state), crew-level recap data served by GET /api/recap once FINISHED

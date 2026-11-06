@@ -4,7 +4,8 @@ import type { Briefing, BriefingRule } from '../../shared/protocol.ts';
 import { briefingSchedule } from '../../shared/briefing.ts';
 import { useGame } from '../game/useGame';
 import { useTick } from '../game/useNow';
-import { OVERLAY_TOP, useOverlay } from './ui';
+import { ART } from '../../games/underworld/art.ts';
+import { ArtImage, OVERLAY_TOP, useOverlay } from './ui';
 
 const RULE_ICONS = [Users, Key, Shield, Compass, MessageSquare, Vote, Sparkles];
 // The boats use the same icons and colours as the Round 3 vessel buttons.
@@ -103,7 +104,14 @@ export const RoundBriefingModal: React.FC<Props> = ({ briefing, mode, startedAt,
           </div>
         )}
 
-        <div className="px-4 py-4 overflow-y-auto space-y-3 text-[#cbd5e1] flex-1 min-h-0">
+        <div className="overflow-y-auto text-[#cbd5e1] flex-1 min-h-0">
+          {showStory && ART.briefing[briefing.stageNumber] && (
+            <div className="relative shrink-0">
+              <ArtImage src={ART.briefing[briefing.stageNumber]} className="aspect-[780/449] max-h-[34vh] w-full overflow-hidden" imgClassName="object-cover object-center" />
+              <div className="absolute inset-x-0 bottom-0 h-1/2 bg-gradient-to-b from-transparent to-[#08090c] pointer-events-none" />
+            </div>
+          )}
+          <div className="px-4 py-4 space-y-3">
           {showStory &&
             (!auto ? (
               <div data-testid="briefing-story-full" className="space-y-3">
@@ -164,6 +172,7 @@ export const RoundBriefingModal: React.FC<Props> = ({ briefing, mode, startedAt,
               )}
             </div>
           )}
+          </div>
         </div>
 
         {(!auto || everythingShown) && (
